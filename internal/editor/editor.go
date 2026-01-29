@@ -286,7 +286,7 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	if e.handleSelectionMove(ev) {
 		return false
 	}
-	key := keyString(ev)
+	key := keyStringForMap(ev, e.keymap.normal)
 	if key == "" {
 		return false
 	}
@@ -302,7 +302,7 @@ func (e *Editor) handleInsert(ev *tcell.EventKey) bool {
 	if e.handleSelectionMove(ev) {
 		return false
 	}
-	key := keyString(ev)
+	key := keyStringForMap(ev, e.keymap.insert)
 	if key != "" {
 		if action, ok := e.keymap.insert[key]; ok {
 			e.clearSelection()
@@ -349,16 +349,30 @@ func (e *Editor) handleSelectionMove(ev *tcell.EventKey) bool {
 	}
 	switch ev.Key() {
 	case tcell.KeyLeft:
-		e.extendSelection(e.moveLeft)
+		if ev.Modifiers()&tcell.ModMeta != 0 {
+			e.extendSelection(e.moveWordLeft)
+		} else {
+			e.extendSelection(e.moveLeft)
+		}
 		return true
 	case tcell.KeyRight:
-		e.extendSelection(e.moveRight)
+		if ev.Modifiers()&tcell.ModMeta != 0 {
+			e.extendSelection(e.moveWordRight)
+		} else {
+			e.extendSelection(e.moveRight)
+		}
 		return true
 	case tcell.KeyUp:
 		e.extendSelection(e.moveUp)
 		return true
 	case tcell.KeyDown:
 		e.extendSelection(e.moveDown)
+		return true
+	case tcell.KeyPgUp:
+		e.extendSelection(e.pageUp)
+		return true
+	case tcell.KeyPgDn:
+		e.extendSelection(e.pageDown)
 		return true
 	case tcell.KeyHome:
 		if ev.Modifiers()&tcell.ModMeta != 0 {
@@ -1542,8 +1556,10 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 	if w < 6 || viewHeight < 3 {
 		return
 	}
-	title := "Branches"
-	maxItem := len([]rune(title))
+	title := "Select git branch"
+	titleRunes := []rune(title)
+	titleWidth := len(titleRunes) + 2
+	maxItem := titleWidth
 	for _, name := range e.branchPickerItems {
 		if l := len([]rune(name)); l > maxItem {
 			maxItem = l
@@ -1582,28 +1598,50 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 	}
 
 	borderStyle := e.styleStatus
-	itemStyle := e.styleMain
-	selectedStyle := itemStyle.Reverse(true)
+	itemStyle := e.styleStatus
+	selectedStyle := e.styleSelection
 	innerWidth := boxWidth - 2
 
+	topLeft := '┌'
+	topRight := '┐'
+	bottomLeft := '└'
+	bottomRight := '┘'
+	hLine := '─'
+	vLine := '│'
 	for x := 0; x < boxWidth; x++ {
-		ch := '-'
-		if x == 0 || x == boxWidth-1 {
-			ch = '+'
+		chTop := hLine
+		chBottom := hLine
+		if x == 0 {
+			chTop = topLeft
+			chBottom = bottomLeft
+		} else if x == boxWidth-1 {
+			chTop = topRight
+			chBottom = bottomRight
 		}
-		s.SetContent(x0+x, y0, rune(ch), nil, borderStyle)
-		s.SetContent(x0+x, y0+boxHeight-1, rune(ch), nil, borderStyle)
+		s.SetContent(x0+x, y0, chTop, nil, borderStyle)
+		s.SetContent(x0+x, y0+boxHeight-1, chBottom, nil, borderStyle)
 	}
 	for y := 1; y < boxHeight-1; y++ {
-		s.SetContent(x0, y0+y, '|', nil, borderStyle)
-		s.SetContent(x0+boxWidth-1, y0+y, '|', nil, borderStyle)
+		s.SetContent(x0, y0+y, vLine, nil, borderStyle)
+		s.SetContent(x0+boxWidth-1, y0+y, vLine, nil, borderStyle)
 		for x := 1; x < boxWidth-1; x++ {
 			s.SetContent(x0+x, y0+y, ' ', nil, itemStyle)
 		}
 	}
-	titleRunes := []rune(title)
-	for i := 0; i < len(titleRunes) && i < innerWidth; i++ {
-		s.SetContent(x0+1+i, y0, titleRunes[i], nil, borderStyle)
+	if innerWidth > 0 {
+		label := make([]rune, 0, innerWidth)
+		label = append(label, ' ')
+		label = append(label, titleRunes...)
+		label = append(label, ' ')
+		if len(label) > innerWidth {
+			label = titleRunes
+			if len(label) > innerWidth {
+				label = label[:innerWidth]
+			}
+		}
+		for i, r := range label {
+			s.SetContent(x0+1+i, y0, r, nil, borderStyle)
+		}
 	}
 
 	start := e.branchPickerIndex - listHeight/2
@@ -1734,6 +1772,22 @@ func keyString(ev *tcell.EventKey) string {
 		return "tab"
 	}
 	return ""
+}
+
+func keyStringForMap(ev *tcell.EventKey, keymap map[string]string) string {
+	if ev.Modifiers()&tcell.ModMeta != 0 {
+		switch ev.Key() {
+		case tcell.KeyHome:
+			if _, ok := keymap["cmd+left"]; ok {
+				return "cmd+left"
+			}
+		case tcell.KeyEnd:
+			if _, ok := keymap["cmd+right"]; ok {
+				return "cmd+right"
+			}
+		}
+	}
+	return keyString(ev)
 }
 
 func ctrlKeyName(key tcell.Key) string {
