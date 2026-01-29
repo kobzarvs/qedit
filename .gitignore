@@ -1,0 +1,7 @@
+/bin/
+/dist/
+/qedit
+*.log
+*.tmp
+.DS_Store
+.idea
