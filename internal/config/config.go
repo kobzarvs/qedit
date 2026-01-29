@@ -30,6 +30,20 @@ type Theme struct {
 	LineNumberActiveForeground string `toml:"line-number-active-foreground"`
 	SelectionForeground        string `toml:"selection-foreground"`
 	SelectionBackground        string `toml:"selection-background"`
+	SyntaxKeyword              string `toml:"syntax-keyword"`
+	SyntaxString               string `toml:"syntax-string"`
+	SyntaxComment              string `toml:"syntax-comment"`
+	SyntaxType                 string `toml:"syntax-type"`
+	SyntaxFunction             string `toml:"syntax-function"`
+	SyntaxNumber               string `toml:"syntax-number"`
+	SyntaxConstant             string `toml:"syntax-constant"`
+	SyntaxOperator             string `toml:"syntax-operator"`
+	SyntaxPunctuation          string `toml:"syntax-punctuation"`
+	SyntaxField                string `toml:"syntax-field"`
+	SyntaxBuiltin              string `toml:"syntax-builtin"`
+	SyntaxUnknown              string `toml:"syntax-unknown"`
+	SyntaxVariable             string `toml:"syntax-variable"`
+	SyntaxParameter            string `toml:"syntax-parameter"`
 }
 
 type Config struct {
@@ -57,6 +71,20 @@ func Default() Config {
 			LineNumberActiveForeground: "#B3B1AD",
 			SelectionForeground:        "#B3B1AD",
 			SelectionBackground:        "#27425A",
+			SyntaxKeyword:              "#FFA759",
+			SyntaxString:               "#BAE67E",
+			SyntaxComment:              "#5C6773",
+			SyntaxType:                 "#5CCFE6",
+			SyntaxFunction:             "#FFD173",
+			SyntaxNumber:               "#D4BFFF",
+			SyntaxConstant:             "#FFDD8E",
+			SyntaxOperator:             "#F29668",
+			SyntaxPunctuation:          "#C0C0C0",
+			SyntaxField:                "#E6B673",
+			SyntaxBuiltin:              "#73D0FF",
+			SyntaxUnknown:              "#FF0000",
+			SyntaxVariable:             "#B3B1AD",
+			SyntaxParameter:            "#B3B1AD",
 		},
 		Keymap: Keymap{
 			Normal: map[string]string{
@@ -190,6 +218,48 @@ func Load() (Config, error) {
 	if userCfg.Theme.SelectionBackground != "" {
 		cfg.Theme.SelectionBackground = userCfg.Theme.SelectionBackground
 	}
+	if userCfg.Theme.SyntaxKeyword != "" {
+		cfg.Theme.SyntaxKeyword = userCfg.Theme.SyntaxKeyword
+	}
+	if userCfg.Theme.SyntaxString != "" {
+		cfg.Theme.SyntaxString = userCfg.Theme.SyntaxString
+	}
+	if userCfg.Theme.SyntaxComment != "" {
+		cfg.Theme.SyntaxComment = userCfg.Theme.SyntaxComment
+	}
+	if userCfg.Theme.SyntaxType != "" {
+		cfg.Theme.SyntaxType = userCfg.Theme.SyntaxType
+	}
+	if userCfg.Theme.SyntaxFunction != "" {
+		cfg.Theme.SyntaxFunction = userCfg.Theme.SyntaxFunction
+	}
+	if userCfg.Theme.SyntaxNumber != "" {
+		cfg.Theme.SyntaxNumber = userCfg.Theme.SyntaxNumber
+	}
+	if userCfg.Theme.SyntaxConstant != "" {
+		cfg.Theme.SyntaxConstant = userCfg.Theme.SyntaxConstant
+	}
+	if userCfg.Theme.SyntaxOperator != "" {
+		cfg.Theme.SyntaxOperator = userCfg.Theme.SyntaxOperator
+	}
+	if userCfg.Theme.SyntaxPunctuation != "" {
+		cfg.Theme.SyntaxPunctuation = userCfg.Theme.SyntaxPunctuation
+	}
+	if userCfg.Theme.SyntaxField != "" {
+		cfg.Theme.SyntaxField = userCfg.Theme.SyntaxField
+	}
+	if userCfg.Theme.SyntaxBuiltin != "" {
+		cfg.Theme.SyntaxBuiltin = userCfg.Theme.SyntaxBuiltin
+	}
+	if userCfg.Theme.SyntaxUnknown != "" {
+		cfg.Theme.SyntaxUnknown = userCfg.Theme.SyntaxUnknown
+	}
+	if userCfg.Theme.SyntaxVariable != "" {
+		cfg.Theme.SyntaxVariable = userCfg.Theme.SyntaxVariable
+	}
+	if userCfg.Theme.SyntaxParameter != "" {
+		cfg.Theme.SyntaxParameter = userCfg.Theme.SyntaxParameter
+	}
 	if userCfg.Keymap.Normal != nil {
 		for k, v := range userCfg.Keymap.Normal {
 			cfg.Keymap.Normal[k] = v
@@ -234,6 +304,48 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.SelectionBackground != "" {
 		dst.SelectionBackground = src.SelectionBackground
+	}
+	if src.SyntaxKeyword != "" {
+		dst.SyntaxKeyword = src.SyntaxKeyword
+	}
+	if src.SyntaxString != "" {
+		dst.SyntaxString = src.SyntaxString
+	}
+	if src.SyntaxComment != "" {
+		dst.SyntaxComment = src.SyntaxComment
+	}
+	if src.SyntaxType != "" {
+		dst.SyntaxType = src.SyntaxType
+	}
+	if src.SyntaxFunction != "" {
+		dst.SyntaxFunction = src.SyntaxFunction
+	}
+	if src.SyntaxNumber != "" {
+		dst.SyntaxNumber = src.SyntaxNumber
+	}
+	if src.SyntaxConstant != "" {
+		dst.SyntaxConstant = src.SyntaxConstant
+	}
+	if src.SyntaxOperator != "" {
+		dst.SyntaxOperator = src.SyntaxOperator
+	}
+	if src.SyntaxPunctuation != "" {
+		dst.SyntaxPunctuation = src.SyntaxPunctuation
+	}
+	if src.SyntaxField != "" {
+		dst.SyntaxField = src.SyntaxField
+	}
+	if src.SyntaxBuiltin != "" {
+		dst.SyntaxBuiltin = src.SyntaxBuiltin
+	}
+	if src.SyntaxUnknown != "" {
+		dst.SyntaxUnknown = src.SyntaxUnknown
+	}
+	if src.SyntaxVariable != "" {
+		dst.SyntaxVariable = src.SyntaxVariable
+	}
+	if src.SyntaxParameter != "" {
+		dst.SyntaxParameter = src.SyntaxParameter
 	}
 }
 

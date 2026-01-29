@@ -38,3 +38,14 @@ Config is stored under `~/.config/qedit/` and mirrors Helix structure where usef
 ## Performance Notes
 - Render uses a minimal cell-diff against the previous frame.
 - Avoid allocations on the hot path (input -> command -> render).
+
+## Large File Strategy (1GB+)
+The editor must remain responsive on very large files. The plan is:
+- **Storage**: move from `[]rune` lines to a piece table over an mmap'd file.
+- **Indexing**: maintain a line index (byte offsets) that updates incrementally.
+- **Rendering**: virtualize viewports; only decode the visible window.
+- **Parsing**: incremental tree-sitter with throttled reparse; disable heavy features over size thresholds.
+- **Safety**: fallback to "big file mode" that disables LSP/highlighting when needed.
+
+Near-term guardrails:
+- Syntax highlighting is skipped for files larger than 8MB by default.

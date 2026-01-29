@@ -73,16 +73,28 @@ func (a *App) Run() error {
 		}
 	}()
 
+	const maxHighlightBytes = 8 << 20
 	ed := editor.New(cfg)
 	gitPath := ""
+	var openPath string
+	var langName string
+	highlightEnabled := true
 	if len(a.args) > 0 {
-		if err := ed.OpenFile(a.args[0]); err != nil {
+		openPath = a.args[0]
+		if err := ed.OpenFile(openPath); err != nil {
 			return err
 		}
-		gitPath = a.args[0]
+		gitPath = openPath
+		if info, err := os.Stat(openPath); err == nil && info.Size() > maxHighlightBytes {
+			highlightEnabled = false
+		}
 		content := ed.Content()
-		ls.OpenFile(a.args[0], content)
-		ts.OpenFile(a.args[0], content)
+		ls.OpenFile(openPath, content)
+		if highlightEnabled {
+			if lang := langs.Match(openPath); lang != nil {
+				langName = lang.Name
+			}
+		}
 	}
 	if gitPath == "" {
 		if cwd, err := os.Getwd(); err == nil {
@@ -94,6 +106,48 @@ func (a *App) Run() error {
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
 	ed.SetGitBranch(gitinfo.Branch(gitPath))
 	lastGitCheck := time.Now()
+	lastChangeTick := ed.ChangeTick()
+	pendingParse := false
+	nextParseAt := time.Time{}
+	highlightsDirty := false
+	lastHighlightStart := -1
+	lastHighlightEnd := -1
+	if openPath != "" && highlightEnabled && langName != "" {
+		if ts.ParseSync(openPath, langName, ed.Content()) {
+			_, h := s.Size()
+			viewHeight := h - 2
+			if viewHeight < 0 {
+				viewHeight = 0
+			}
+			end := viewHeight - 1
+			if end < 0 {
+				end = 0
+			}
+			lineCount := ed.LineCount()
+			if lineCount > 0 && end >= lineCount {
+				end = lineCount - 1
+			}
+			spans := ts.Highlights(openPath, 0, end)
+			if spans != nil {
+				editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
+				for line, lineSpans := range spans {
+					dst := make([]editor.HighlightSpan, len(lineSpans))
+					for i, span := range lineSpans {
+						dst[i] = editor.HighlightSpan{
+							StartCol: span.StartCol,
+							EndCol:   span.EndCol,
+							Kind:     span.Kind,
+						}
+					}
+					editorSpans[line] = dst
+				}
+				ed.SetHighlights(0, end, editorSpans)
+				lastHighlightStart = 0
+				lastHighlightEnd = end
+				highlightsDirty = false
+			}
+		}
+	}
 	ed.Render(s)
 	for {
 		ev := s.PollEvent()
@@ -107,6 +161,17 @@ func (a *App) Run() error {
 		case *tcell.EventInterrupt:
 			// Layout updates are handled below.
 		}
+		for {
+			select {
+			case ev := <-ts.Events():
+				if ev.Kind == "parsed" && ev.Path == openPath {
+					highlightsDirty = true
+				}
+			default:
+				goto eventsDone
+			}
+		}
+	eventsDone:
 		if ed.ConsumeBranchPickerRequest() {
 			if gitPath == "" {
 				ed.SetStatusMessage("not a git repository")
@@ -128,6 +193,42 @@ func (a *App) Run() error {
 				ed.SetGitBranch(branch)
 				ed.SetStatusMessage("checked out " + branch)
 			}
+		}
+		if openPath != "" && highlightEnabled && langName != "" {
+			tick := ed.ChangeTick()
+			if tick != lastChangeTick {
+				lastChangeTick = tick
+				pendingParse = true
+				nextParseAt = time.Now().Add(150 * time.Millisecond)
+			}
+			if pendingParse && time.Now().After(nextParseAt) {
+				pendingParse = false
+				ts.Parse(openPath, langName, ed.Content())
+			}
+			start, end := ed.VisibleRange()
+			if highlightsDirty || start != lastHighlightStart || end != lastHighlightEnd {
+				spans := ts.Highlights(openPath, start, end)
+				if spans != nil {
+					editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
+					for line, lineSpans := range spans {
+						dst := make([]editor.HighlightSpan, len(lineSpans))
+						for i, span := range lineSpans {
+							dst[i] = editor.HighlightSpan{
+								StartCol: span.StartCol,
+								EndCol:   span.EndCol,
+								Kind:     span.Kind,
+							}
+						}
+						editorSpans[line] = dst
+					}
+					ed.SetHighlights(start, end, editorSpans)
+					lastHighlightStart = start
+					lastHighlightEnd = end
+					highlightsDirty = false
+				}
+			}
+		} else if openPath != "" {
+			ed.SetHighlights(-1, -1, nil)
 		}
 		layoutRaw := keyboard.CurrentLayoutRaw()
 		if layoutRaw != lastLayoutRaw {

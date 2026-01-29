@@ -76,44 +76,68 @@ type Cursor struct {
 	Col int
 }
 
+type HighlightSpan struct {
+	StartCol int
+	EndCol   int
+	Kind     string
+}
+
 type keymapSet struct {
 	normal map[string]string
 	insert map[string]string
 }
 
 type Editor struct {
-	lines                 [][]rune
-	cursor                Cursor
-	scroll                int
-	mode                  Mode
-	filename              string
-	dirty                 bool
-	keymap                keymapSet
-	cmd                   []rune
-	statusMessage         string
-	undo                  []action
-	redo                  []action
-	savePoint             int
-	tabWidth              int
-	viewHeight            int
-	styleMain             tcell.Style
-	styleStatus           tcell.Style
-	styleCommand          tcell.Style
-	styleLineNumber       tcell.Style
-	styleLineNumberActive tcell.Style
-	styleSelection        tcell.Style
-	lineNumberMode        LineNumberMode
-	layoutName            string
-	gitBranch             string
-	gitBranchSymbol       string
-	selectionActive       bool
-	selectionStart        Cursor
-	selectionEnd          Cursor
-	branchPickerActive    bool
-	branchPickerItems     []string
-	branchPickerIndex     int
-	branchPickerRequested bool
-	branchPickerSelection string
+	lines                  [][]rune
+	cursor                 Cursor
+	scroll                 int
+	mode                   Mode
+	filename               string
+	dirty                  bool
+	keymap                 keymapSet
+	cmd                    []rune
+	statusMessage          string
+	undo                   []action
+	redo                   []action
+	savePoint              int
+	tabWidth               int
+	viewHeight             int
+	styleMain              tcell.Style
+	styleStatus            tcell.Style
+	styleCommand           tcell.Style
+	styleLineNumber        tcell.Style
+	styleLineNumberActive  tcell.Style
+	styleSelection         tcell.Style
+	styleSyntaxKeyword     tcell.Style
+	styleSyntaxString      tcell.Style
+	styleSyntaxComment     tcell.Style
+	styleSyntaxType        tcell.Style
+	styleSyntaxFunction    tcell.Style
+	styleSyntaxNumber      tcell.Style
+	styleSyntaxConstant    tcell.Style
+	styleSyntaxOperator    tcell.Style
+	styleSyntaxPunctuation tcell.Style
+	styleSyntaxField       tcell.Style
+	styleSyntaxBuiltin     tcell.Style
+	styleSyntaxUnknown     tcell.Style
+	styleSyntaxVariable    tcell.Style
+	styleSyntaxParameter   tcell.Style
+	lineNumberMode         LineNumberMode
+	layoutName             string
+	gitBranch              string
+	gitBranchSymbol        string
+	selectionActive        bool
+	selectionStart         Cursor
+	selectionEnd           Cursor
+	highlights             map[int][]HighlightSpan
+	highlightStart         int
+	highlightEnd           int
+	changeTick             uint64
+	branchPickerActive     bool
+	branchPickerItems      []string
+	branchPickerIndex      int
+	branchPickerRequested  bool
+	branchPickerSelection  string
 }
 
 type LineNumberMode int
@@ -147,24 +171,68 @@ func New(cfg config.Config) *Editor {
 	lineNumberActiveFg := parseColor(cfg.Theme.LineNumberActiveForeground, mainFg)
 	selectionFg := parseColor(cfg.Theme.SelectionForeground, mainFg)
 	selectionBg := parseColor(cfg.Theme.SelectionBackground, mainBg)
+	syntaxKeyword := parseColor(cfg.Theme.SyntaxKeyword, mainFg)
+	syntaxString := parseColor(cfg.Theme.SyntaxString, mainFg)
+	syntaxComment := parseColor(cfg.Theme.SyntaxComment, mainFg)
+	syntaxType := parseColor(cfg.Theme.SyntaxType, mainFg)
+	syntaxFunction := parseColor(cfg.Theme.SyntaxFunction, mainFg)
+	syntaxNumber := parseColor(cfg.Theme.SyntaxNumber, mainFg)
+	syntaxConstant := parseColor(cfg.Theme.SyntaxConstant, mainFg)
+	syntaxOperator := parseColor(cfg.Theme.SyntaxOperator, mainFg)
+	syntaxPunctuation := parseColor(cfg.Theme.SyntaxPunctuation, mainFg)
+	syntaxField := parseColor(cfg.Theme.SyntaxField, mainFg)
+	syntaxBuiltin := parseColor(cfg.Theme.SyntaxBuiltin, mainFg)
+	syntaxUnknown := parseColor(cfg.Theme.SyntaxUnknown, tcell.ColorRed)
+	syntaxVariable := parseColor(cfg.Theme.SyntaxVariable, mainFg)
+	syntaxParameter := parseColor(cfg.Theme.SyntaxParameter, mainFg)
 	lineNumber := tcell.StyleDefault.Foreground(lineNumberFg).Background(mainBg)
 	lineNumberActive := tcell.StyleDefault.Foreground(lineNumberActiveFg).Background(mainBg)
 	selection := tcell.StyleDefault.Foreground(selectionFg).Background(selectionBg)
+	syntaxKeywordStyle := tcell.StyleDefault.Foreground(syntaxKeyword).Background(mainBg)
+	syntaxStringStyle := tcell.StyleDefault.Foreground(syntaxString).Background(mainBg)
+	syntaxCommentStyle := tcell.StyleDefault.Foreground(syntaxComment).Background(mainBg)
+	syntaxTypeStyle := tcell.StyleDefault.Foreground(syntaxType).Background(mainBg)
+	syntaxFunctionStyle := tcell.StyleDefault.Foreground(syntaxFunction).Background(mainBg)
+	syntaxNumberStyle := tcell.StyleDefault.Foreground(syntaxNumber).Background(mainBg)
+	syntaxConstantStyle := tcell.StyleDefault.Foreground(syntaxConstant).Background(mainBg)
+	syntaxOperatorStyle := tcell.StyleDefault.Foreground(syntaxOperator).Background(mainBg)
+	syntaxPunctuationStyle := tcell.StyleDefault.Foreground(syntaxPunctuation).Background(mainBg)
+	syntaxFieldStyle := tcell.StyleDefault.Foreground(syntaxField).Background(mainBg)
+	syntaxBuiltinStyle := tcell.StyleDefault.Foreground(syntaxBuiltin).Background(mainBg)
+	syntaxUnknownStyle := tcell.StyleDefault.Foreground(syntaxUnknown).Background(mainBg)
+	syntaxVariableStyle := tcell.StyleDefault.Foreground(syntaxVariable).Background(mainBg)
+	syntaxParameterStyle := tcell.StyleDefault.Foreground(syntaxParameter).Background(mainBg)
 	lineNumberMode := parseLineNumberMode(cfg.Editor.LineNumbers)
 	gitBranchSymbol := strings.TrimSpace(cfg.Editor.GitBranchSymbol)
 	return &Editor{
-		lines:                 [][]rune{[]rune{}},
-		mode:                  ModeNormal,
-		keymap:                keymapSet{normal: normal, insert: insert},
-		tabWidth:              tabWidth,
-		styleMain:             tcell.StyleDefault.Foreground(mainFg).Background(mainBg),
-		styleStatus:           tcell.StyleDefault.Foreground(statusFg).Background(statusBg),
-		styleCommand:          tcell.StyleDefault.Foreground(commandFg).Background(commandBg),
-		styleLineNumber:       lineNumber,
-		styleLineNumberActive: lineNumberActive,
-		styleSelection:        selection,
-		lineNumberMode:        lineNumberMode,
-		gitBranchSymbol:       gitBranchSymbol,
+		lines:                  [][]rune{[]rune{}},
+		mode:                   ModeNormal,
+		keymap:                 keymapSet{normal: normal, insert: insert},
+		tabWidth:               tabWidth,
+		styleMain:              tcell.StyleDefault.Foreground(mainFg).Background(mainBg),
+		styleStatus:            tcell.StyleDefault.Foreground(statusFg).Background(statusBg),
+		styleCommand:           tcell.StyleDefault.Foreground(commandFg).Background(commandBg),
+		styleLineNumber:        lineNumber,
+		styleLineNumberActive:  lineNumberActive,
+		styleSelection:         selection,
+		styleSyntaxKeyword:     syntaxKeywordStyle,
+		styleSyntaxString:      syntaxStringStyle,
+		styleSyntaxComment:     syntaxCommentStyle,
+		styleSyntaxType:        syntaxTypeStyle,
+		styleSyntaxFunction:    syntaxFunctionStyle,
+		styleSyntaxNumber:      syntaxNumberStyle,
+		styleSyntaxConstant:    syntaxConstantStyle,
+		styleSyntaxOperator:    syntaxOperatorStyle,
+		styleSyntaxPunctuation: syntaxPunctuationStyle,
+		styleSyntaxField:       syntaxFieldStyle,
+		styleSyntaxBuiltin:     syntaxBuiltinStyle,
+		styleSyntaxUnknown:     syntaxUnknownStyle,
+		styleSyntaxVariable:    syntaxVariableStyle,
+		styleSyntaxParameter:   syntaxParameterStyle,
+		lineNumberMode:         lineNumberMode,
+		gitBranchSymbol:        gitBranchSymbol,
+		highlightStart:         -1,
+		highlightEnd:           -1,
 	}
 }
 
@@ -186,6 +254,10 @@ func (e *Editor) OpenFile(path string) error {
 	e.undo = nil
 	e.redo = nil
 	e.savePoint = 0
+	e.changeTick = 0
+	e.highlights = nil
+	e.highlightStart = -1
+	e.highlightEnd = -1
 	e.updateDirty()
 	return nil
 }
@@ -625,6 +697,7 @@ func (e *Editor) replaceBuffer(text string, markDirty bool) {
 	} else {
 		e.savePoint = 0
 	}
+	e.changeTick++
 	e.updateDirty()
 }
 
@@ -642,6 +715,7 @@ func (e *Editor) Undo() {
 		return
 	}
 	e.redo = append(e.redo, inv)
+	e.changeTick++
 	e.updateDirty()
 }
 
@@ -659,6 +733,7 @@ func (e *Editor) Redo() {
 		return
 	}
 	e.undo = append(e.undo, inv)
+	e.changeTick++
 	e.updateDirty()
 }
 
@@ -705,6 +780,7 @@ func (e *Editor) applyAction(act action) (action, bool) {
 func (e *Editor) recordUndo(act action) {
 	e.undo = append(e.undo, act)
 	e.redo = e.redo[:0]
+	e.changeTick++
 	e.updateDirty()
 }
 
@@ -1194,6 +1270,44 @@ func (e *Editor) SetStatusMessage(msg string) {
 	e.setStatus(msg)
 }
 
+func (e *Editor) ChangeTick() uint64 {
+	return e.changeTick
+}
+
+func (e *Editor) LineCount() int {
+	return len(e.lines)
+}
+
+func (e *Editor) VisibleRange() (int, int) {
+	if len(e.lines) == 0 {
+		return 0, 0
+	}
+	start := e.scroll
+	if start < 0 {
+		start = 0
+	}
+	end := start + e.viewHeight - 1
+	if end < start {
+		end = start
+	}
+	if end >= len(e.lines) {
+		end = len(e.lines) - 1
+	}
+	return start, end
+}
+
+func (e *Editor) SetHighlights(startLine, endLine int, spans map[int][]HighlightSpan) {
+	if spans == nil || startLine < 0 || endLine < startLine {
+		e.highlights = nil
+		e.highlightStart = -1
+		e.highlightEnd = -1
+		return
+	}
+	e.highlights = spans
+	e.highlightStart = startLine
+	e.highlightEnd = endLine
+}
+
 func (e *Editor) clearSelection() {
 	e.selectionActive = false
 	e.selectionStart = Cursor{}
@@ -1263,6 +1377,87 @@ func (e *Editor) selectionRangeForLine(lineIdx int) (int, int, bool) {
 		return 0, 0, false
 	}
 	return startCol, endCol, true
+}
+
+func (e *Editor) styleForHighlight(kind string) (tcell.Style, bool) {
+	switch kind {
+	case "keyword":
+		return e.styleSyntaxKeyword, true
+	case "string":
+		return e.styleSyntaxString, true
+	case "comment":
+		return e.styleSyntaxComment, true
+	case "type":
+		return e.styleSyntaxType, true
+	case "function":
+		return e.styleSyntaxFunction, true
+	case "number":
+		return e.styleSyntaxNumber, true
+	case "constant":
+		return e.styleSyntaxConstant, true
+	case "operator":
+		return e.styleSyntaxOperator, true
+	case "punctuation":
+		return e.styleSyntaxPunctuation, true
+	case "field":
+		return e.styleSyntaxField, true
+	case "builtin":
+		return e.styleSyntaxBuiltin, true
+	case "variable":
+		return e.styleSyntaxVariable, true
+	case "parameter":
+		return e.styleSyntaxParameter, true
+	default:
+		return e.styleMain, false
+	}
+}
+
+func highlightPriority(kind string) int {
+	switch kind {
+	case "comment":
+		return 7
+	case "string":
+		return 6
+	case "keyword":
+		return 5
+	case "constant":
+		return 4
+	case "builtin":
+		return 4
+	case "parameter":
+		return 3
+	case "type", "function", "number":
+		return 3
+	case "field":
+		return 2
+	case "variable":
+		return 2
+	case "operator":
+		return 1
+	case "punctuation":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func highlightKindAt(spans []HighlightSpan, col int) (string, bool) {
+	bestKind := ""
+	bestPriority := 0
+	for _, span := range spans {
+		if col < span.StartCol || col >= span.EndCol {
+			continue
+		}
+		priority := highlightPriority(span.Kind)
+		if priority > bestPriority {
+			bestPriority = priority
+			bestKind = span.Kind
+		}
+	}
+	if bestKind == "" {
+		return "", false
+	}
+	return bestKind, true
 }
 
 func clampRange(value, min, max int) int {
@@ -1345,20 +1540,29 @@ func isSpaceRune(r rune) bool {
 	return unicode.IsSpace(r)
 }
 
-func drawLine(s tcell.Screen, y, w, startX int, line []rune, style tcell.Style, selectionStyle tcell.Style, tabWidth int, selStart, selEnd int) {
+func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool) {
 	x := startX
 	col := 0
 	if tabWidth < 1 {
 		tabWidth = 1
 	}
+	fallbackStyle := e.styleMain
+	if highlightActive {
+		fallbackStyle = e.styleSyntaxUnknown
+	}
 	for idx, r := range line {
 		if x >= w {
 			break
 		}
-		useSelection := selStart >= 0 && selEnd > selStart && idx >= selStart && idx < selEnd
-		activeStyle := style
-		if useSelection {
-			activeStyle = selectionStyle
+		activeStyle := fallbackStyle
+		if selStart >= 0 && selEnd > selStart && idx >= selStart && idx < selEnd {
+			activeStyle = e.styleSelection
+		} else if kind, ok := highlightKindAt(spans, idx); ok {
+			if style, ok := e.styleForHighlight(kind); ok {
+				activeStyle = style
+			}
+		} else if highlightActive && !isWordRune(r) {
+			activeStyle = e.styleMain
 		}
 		if r == '\t' {
 			spaces := tabWidth - (col % tabWidth)
@@ -1374,7 +1578,7 @@ func drawLine(s tcell.Screen, y, w, startX int, line []rune, style tcell.Style, 
 		col++
 	}
 	for x < w {
-		s.SetContent(x, y, ' ', nil, style)
+		s.SetContent(x, y, ' ', nil, fallbackStyle)
 		x++
 	}
 }
@@ -1546,7 +1750,12 @@ func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx i
 		selStart = -1
 		selEnd = -1
 	}
-	drawLine(s, y, w, gutterWidth, e.lines[lineIdx], e.styleMain, e.styleSelection, e.tabWidth, selStart, selEnd)
+	highlightActive := e.highlightStart >= 0 && lineIdx >= e.highlightStart && lineIdx <= e.highlightEnd
+	var spans []HighlightSpan
+	if highlightActive {
+		spans = e.highlights[lineIdx]
+	}
+	e.drawLine(s, y, w, gutterWidth, e.lines[lineIdx], e.tabWidth, selStart, selEnd, spans, highlightActive)
 }
 
 func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {

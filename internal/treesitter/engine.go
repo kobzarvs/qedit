@@ -1,6 +1,9 @@
 package treesitter
 
 import (
+	"math"
+	"sync"
+
 	"github.com/kobzarvs/qedit/internal/config"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -16,9 +19,18 @@ type Engine struct {
 	langs   config.Languages
 	parsers map[string]*sitter.Parser
 	trees   map[string]*sitter.Tree
+	queries map[string]*sitter.Query
+	sources map[string][]byte
 	reqCh   chan parseRequest
 	events  chan Event
 	stopCh  chan struct{}
+	mu      sync.RWMutex
+}
+
+type HighlightSpan struct {
+	StartCol int
+	EndCol   int
+	Kind     string
 }
 
 type parseRequest struct {
@@ -32,6 +44,8 @@ func New(langs config.Languages) *Engine {
 		langs:   langs,
 		parsers: make(map[string]*sitter.Parser),
 		trees:   make(map[string]*sitter.Tree),
+		queries: make(map[string]*sitter.Query),
+		sources: make(map[string][]byte),
 		reqCh:   make(chan parseRequest, 8),
 		events:  make(chan Event, 16),
 		stopCh:  make(chan struct{}),
@@ -42,6 +56,11 @@ func (e *Engine) Start() error {
 	p := sitter.NewParser()
 	p.SetLanguage(golang.GetLanguage())
 	e.parsers["go"] = p
+	query, err := sitter.NewQuery([]byte(goHighlightQuery), golang.GetLanguage())
+	if err != nil {
+		return err
+	}
+	e.queries["go"] = query
 
 	go e.loop()
 	return nil
@@ -86,9 +105,12 @@ func (e *Engine) loop() {
 			if !ok {
 				continue
 			}
+			e.mu.Lock()
 			prev := e.trees[req.path]
 			tree := parser.Parse(prev, []byte(req.text))
 			e.trees[req.path] = tree
+			e.sources[req.path] = []byte(req.text)
+			e.mu.Unlock()
 			e.sendEvent("parsed", req.path)
 		}
 	}
@@ -100,3 +122,153 @@ func (e *Engine) sendEvent(kind, path string) {
 	default:
 	}
 }
+
+func (e *Engine) ParseSync(path, language, text string) bool {
+	lang := language
+	if lang == "" {
+		if detected := e.langs.Match(path); detected != nil {
+			lang = detected.Name
+		}
+	}
+	if lang == "" {
+		return false
+	}
+	var tsLang *sitter.Language
+	switch lang {
+	case "go":
+		tsLang = golang.GetLanguage()
+	default:
+		return false
+	}
+	parser := sitter.NewParser()
+	parser.SetLanguage(tsLang)
+	tree := parser.Parse(nil, []byte(text))
+	e.mu.Lock()
+	e.trees[path] = tree
+	e.sources[path] = []byte(text)
+	e.mu.Unlock()
+	e.sendEvent("parsed", path)
+	return true
+}
+
+func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]HighlightSpan {
+	if startLine < 0 || endLine < startLine {
+		return nil
+	}
+	lang := e.langs.Match(path)
+	if lang == nil {
+		return nil
+	}
+	e.mu.RLock()
+	query, ok := e.queries[lang.Name]
+	if !ok || query == nil {
+		e.mu.RUnlock()
+		return nil
+	}
+	tree := e.trees[path]
+	if tree == nil {
+		e.mu.RUnlock()
+		return nil
+	}
+	source := e.sources[path]
+	e.mu.RUnlock()
+	cursor := sitter.NewQueryCursor()
+	defer cursor.Close()
+	cursor.SetPointRange(
+		sitter.Point{Row: uint32(startLine), Column: 0},
+		sitter.Point{Row: uint32(endLine + 1), Column: 0},
+	)
+	cursor.Exec(query, tree.RootNode())
+
+	out := make(map[int][]HighlightSpan)
+	for {
+		match, ok := cursor.NextMatch()
+		if !ok {
+			break
+		}
+		if source != nil {
+			match = cursor.FilterPredicates(match, source)
+			if match == nil {
+				continue
+			}
+		}
+		for _, capture := range match.Captures {
+			kind := query.CaptureNameForId(capture.Index)
+			node := capture.Node
+			start := node.StartPoint()
+			end := node.EndPoint()
+			if int(end.Row) < startLine || int(start.Row) > endLine {
+				continue
+			}
+			startRow := int(start.Row)
+			endRow := int(end.Row)
+			for row := startRow; row <= endRow; row++ {
+				if row < startLine || row > endLine {
+					continue
+				}
+				startCol := 0
+				endCol := int(math.MaxInt32)
+				if row == startRow {
+					startCol = int(start.Column)
+				}
+				if row == endRow {
+					endCol = int(end.Column)
+				}
+				out[row] = append(out[row], HighlightSpan{
+					StartCol: startCol,
+					EndCol:   endCol,
+					Kind:     kind,
+				})
+			}
+		}
+	}
+	return out
+}
+
+const goHighlightQuery = `
+((comment) @comment)
+((interpreted_string_literal) @string)
+((raw_string_literal) @string)
+((rune_literal) @string)
+((escape_sequence) @string)
+((int_literal) @number)
+((float_literal) @number)
+((imaginary_literal) @number)
+[
+  "break" "case" "chan" "const" "continue" "default" "defer" "else"
+  "fallthrough" "for" "func" "go" "goto" "if" "import" "interface"
+  "map" "package" "range" "return" "select" "struct" "switch"
+  "type" "var"
+] @keyword
+((nil) @constant)
+((true) @constant)
+((false) @constant)
+((iota) @constant)
+((identifier) @type (#match? @type "^(bool|byte|rune|string|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|uintptr|float32|float64|complex64|complex128|error|any|comparable)$"))
+((identifier) @builtin (#match? @builtin "^(append|cap|clear|close|complex|copy|delete|imag|len|make|max|min|new|panic|print|println|real|recover)$"))
+((const_spec name: (identifier) @constant))
+((type_spec name: (type_identifier) @type))
+((type_identifier) @type)
+((package_identifier) @type)
+((type_parameter_declaration (identifier) @type))
+((function_declaration name: (identifier) @function))
+((method_declaration name: (field_identifier) @function))
+((method_elem (field_identifier) @function))
+((call_expression function: (identifier) @function))
+((call_expression function: (selector_expression field: (field_identifier) @function)))
+((selector_expression field: (field_identifier) @field))
+((field_identifier) @field)
+((parameter_declaration (identifier) @parameter))
+((variadic_parameter_declaration (identifier) @parameter))
+((label_name) @keyword)
+((blank_identifier) @variable)
+((identifier) @variable)
+[
+  "+" "-" "*" "/" "%" "==" "!=" "<=" ">=" "<" ">" "=" ":=" "&&" "||"
+  "!" "&" "|" "^" "<<" ">>" "&^" "+=" "-=" "*=" "/=" "%=" "&=" "|="
+  "^=" "<<=" ">>=" "&^=" "<-" "++" "--" "..."
+] @operator
+[
+  "." "," ";" ":" "(" ")" "[" "]" "{" "}"
+] @punctuation
+`
