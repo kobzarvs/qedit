@@ -5594,19 +5594,35 @@ func (e *Editor) toggleSelectMode() {
 	}
 }
 
-// Helix-style extend line (x) - select current line
+// Helix-style extend line (x) - select current line with cursor at end
+// If already selecting and cursor at line end, extend selection to next line
 func (e *Editor) extendLine() {
 	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
 		return
 	}
 
-	// Select entire current line including newline
-	e.selectionStart = Cursor{Row: e.cursor.Row, Col: 0}
-	if e.cursor.Row < len(e.lines)-1 {
-		e.selectionEnd = Cursor{Row: e.cursor.Row + 1, Col: 0}
-	} else {
-		e.selectionEnd = Cursor{Row: e.cursor.Row, Col: len(e.lines[e.cursor.Row])}
+	lineLen := len(e.lines[e.cursor.Row])
+
+	// Check if we should extend to next line:
+	// - selection is active
+	// - cursor is at the end of current line
+	// - selection end matches cursor position
+	if e.selectionActive && e.cursor.Col == lineLen &&
+		e.selectionEnd.Row == e.cursor.Row && e.selectionEnd.Col == lineLen {
+		// Extend to next line if available
+		if e.cursor.Row < len(e.lines)-1 {
+			e.cursor.Row++
+			newLineLen := len(e.lines[e.cursor.Row])
+			e.cursor.Col = newLineLen
+			e.selectionEnd = Cursor{Row: e.cursor.Row, Col: newLineLen}
+		}
+		return
 	}
+
+	// First press: select entire current line with cursor at end
+	e.selectionStart = Cursor{Row: e.cursor.Row, Col: 0}
+	e.selectionEnd = Cursor{Row: e.cursor.Row, Col: lineLen}
+	e.cursor.Col = lineLen
 	e.selectionActive = true
 	e.selectMode = true
 }
