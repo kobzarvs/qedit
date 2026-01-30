@@ -337,8 +337,8 @@ func (i EditInput) c() *C.TSInputEdit {
 			column: C.uint32_t(i.OldEndPoint.Column),
 		},
 		new_end_point: C.TSPoint{
-			row:    C.uint32_t(i.OldEndPoint.Row),
-			column: C.uint32_t(i.OldEndPoint.Column),
+			row:    C.uint32_t(i.NewEndPoint.Row),
+			column: C.uint32_t(i.NewEndPoint.Column),
 		},
 	}
 }
