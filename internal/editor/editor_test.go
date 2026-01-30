@@ -359,3 +359,362 @@ func TestBranchPickerCancel(t *testing.T) {
 func keyRune(r rune) *tcell.EventKey {
 	return tcell.NewEventKey(tcell.KeyRune, r, 0)
 }
+
+// ============================================================================
+// TAB / Shift+TAB (indent/unindent) tests - REAL WORKFLOW via HandleKey
+// ============================================================================
+
+func keyTab() *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyTab, 0, 0)
+}
+
+func keyShiftTab() *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyBacktab, 0, 0)
+}
+
+func keyUndo() *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyRune, 'u', 0)
+}
+
+func keyShiftDown() *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift)
+}
+
+func TestKeyStringForTab(t *testing.T) {
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, 0)
+	key := keyString(ev)
+	if key != "tab" {
+		t.Fatalf("keyString(Tab) = %q, want %q", key, "tab")
+	}
+}
+
+func TestKeyStringForShiftTab(t *testing.T) {
+	// Test KeyTab with ModShift
+	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModShift)
+	key := keyString(ev)
+	if key != "shift+tab" {
+		t.Fatalf("keyString(Shift+Tab) = %q, want %q", key, "shift+tab")
+	}
+
+	// Test KeyBacktab (alternative representation)
+	ev2 := tcell.NewEventKey(tcell.KeyBacktab, 0, 0)
+	key2 := keyString(ev2)
+	if key2 != "shift+tab" {
+		t.Fatalf("keyString(Backtab) = %q, want %q", key2, "shift+tab")
+	}
+}
+
+// Test: INSERT mode + selection + TAB key press
+func TestInsertModeWithSelectionTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("aa", "bb", "cc")
+	e.mode = ModeInsert
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 0}
+	e.selectionEnd = Cursor{Row: 1, Col: 2}
+	e.cursor = Cursor{Row: 1, Col: 2}
+
+	// Send TAB key event
+	e.HandleKey(keyTab())
+
+	if string(e.lines[0]) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	}
+	if string(e.lines[1]) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	}
+	if string(e.lines[2]) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	}
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+}
+
+// Test: INSERT mode + selection + Shift+TAB key press
+func TestInsertModeWithSelectionShiftTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("\taa", "\tbb", "cc")
+	e.mode = ModeInsert
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 0}
+	e.selectionEnd = Cursor{Row: 1, Col: 3}
+	e.cursor = Cursor{Row: 1, Col: 3}
+
+	// Send Shift+TAB key event
+	e.HandleKey(keyShiftTab())
+
+	if string(e.lines[0]) != "aa" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "aa")
+	}
+	if string(e.lines[1]) != "bb" {
+		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "bb")
+	}
+	if string(e.lines[2]) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	}
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+}
+
+// Test: INSERT mode + NO selection + TAB (insert at cursor position)
+func TestInsertModeNoSelectionTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("ab")
+	e.mode = ModeInsert
+	e.cursor = Cursor{Row: 0, Col: 1}
+	e.selectionActive = false
+
+	// Send TAB key event
+	e.HandleKey(keyTab())
+
+	if string(e.lines[0]) != "a\tb" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "a\tb")
+	}
+	if e.cursor.Col != 2 {
+		t.Fatalf("cursor.Col = %d, want 2", e.cursor.Col)
+	}
+}
+
+// Test: INSERT mode + NO selection + Shift+TAB (unindent current line)
+func TestInsertModeNoSelectionShiftTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("\tab")
+	e.mode = ModeInsert
+	e.cursor = Cursor{Row: 0, Col: 1}
+	e.selectionActive = false
+
+	// Send Shift+TAB key event
+	e.HandleKey(keyShiftTab())
+
+	if string(e.lines[0]) != "ab" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "ab")
+	}
+}
+
+// Test: NORMAL mode + selection + TAB key press
+func TestNormalModeWithSelectionTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("aa", "bb", "cc")
+	e.mode = ModeNormal
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 0}
+	e.selectionEnd = Cursor{Row: 1, Col: 2}
+	e.cursor = Cursor{Row: 1, Col: 2}
+
+	// Send TAB key event
+	e.HandleKey(keyTab())
+
+	if string(e.lines[0]) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	}
+	if string(e.lines[1]) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	}
+	if string(e.lines[2]) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	}
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+}
+
+// Test: NORMAL mode + selection + Shift+TAB key press
+func TestNormalModeWithSelectionShiftTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("\taa", "\tbb", "cc")
+	e.mode = ModeNormal
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 0}
+	e.selectionEnd = Cursor{Row: 1, Col: 3}
+	e.cursor = Cursor{Row: 1, Col: 3}
+
+	// Send Shift+TAB key event
+	e.HandleKey(keyShiftTab())
+
+	if string(e.lines[0]) != "aa" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "aa")
+	}
+	if string(e.lines[1]) != "bb" {
+		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "bb")
+	}
+	if string(e.lines[2]) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	}
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+}
+
+// Test: NORMAL mode + NO selection + TAB (indent at LINE START, not cursor!)
+func TestNormalModeNoSelectionTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("ab")
+	e.mode = ModeNormal
+	e.cursor = Cursor{Row: 0, Col: 1} // cursor in middle
+	e.selectionActive = false
+
+	// Send TAB key event
+	e.HandleKey(keyTab())
+
+	// Tab should go at LINE START, not cursor position!
+	if string(e.lines[0]) != "\tab" {
+		t.Fatalf("line0 = %q, want %q (tab at LINE START)", string(e.lines[0]), "\tab")
+	}
+}
+
+// Test: NORMAL mode + NO selection + Shift+TAB
+func TestNormalModeNoSelectionShiftTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("\tab")
+	e.mode = ModeNormal
+	e.cursor = Cursor{Row: 0, Col: 0}
+	e.selectionActive = false
+
+	// Send Shift+TAB key event
+	e.HandleKey(keyShiftTab())
+
+	if string(e.lines[0]) != "ab" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "ab")
+	}
+}
+
+// Test: Selection with end.Col == 0 should NOT include that last line
+func TestSelectionWithEndColZeroExcludesLastLineViaHandleKey(t *testing.T) {
+	e := newTestEditor("aa", "bb", "cc", "dd")
+	e.mode = ModeInsert
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 1}
+	e.selectionEnd = Cursor{Row: 3, Col: 0} // Col=0 means line 3 is NOT selected
+	e.cursor = Cursor{Row: 3, Col: 0}
+
+	// Send TAB key event
+	e.HandleKey(keyTab())
+
+	if string(e.lines[0]) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	}
+	if string(e.lines[1]) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	}
+	if string(e.lines[2]) != "\tcc" {
+		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "\tcc")
+	}
+	// Line 3 should NOT be indented because selectionEnd.Col == 0
+	if string(e.lines[3]) != "dd" {
+		t.Fatalf("line3 = %q, want %q (should NOT be indented)", string(e.lines[3]), "dd")
+	}
+}
+
+// Test: Undo after indent should restore ALL lines in one undo
+func TestUndoAfterIndentViaHandleKey(t *testing.T) {
+	e := newTestEditor("aa", "bb")
+	e.mode = ModeNormal
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 0}
+	e.selectionEnd = Cursor{Row: 1, Col: 2}
+	e.cursor = Cursor{Row: 1, Col: 2}
+
+	// Send TAB key event
+	e.HandleKey(keyTab())
+
+	if string(e.lines[0]) != "\taa" || string(e.lines[1]) != "\tbb" {
+		t.Fatalf("after indent: lines = %q, %q", string(e.lines[0]), string(e.lines[1]))
+	}
+
+	// Send 'u' for undo
+	e.HandleKey(keyUndo())
+
+	if string(e.lines[0]) != "aa" {
+		t.Fatalf("after undo line0 = %q, want %q", string(e.lines[0]), "aa")
+	}
+	if string(e.lines[1]) != "bb" {
+		t.Fatalf("after undo line1 = %q, want %q", string(e.lines[1]), "bb")
+	}
+}
+
+// Test: Selection should be preserved after TAB
+func TestSelectionPreservedAfterTabViaHandleKey(t *testing.T) {
+	e := newTestEditor("aa", "bb")
+	e.mode = ModeInsert
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 0}
+	e.selectionEnd = Cursor{Row: 1, Col: 2}
+	e.cursor = Cursor{Row: 1, Col: 2}
+
+	// Send TAB key event
+	e.HandleKey(keyTab())
+
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+}
+
+// Test: Verify keybindings exist in config
+func TestNormalModeTabKeybinding(t *testing.T) {
+	cfg := config.Default()
+	// Verify that tab and shift+tab are in Normal keymap
+	if _, ok := cfg.Keymap.Normal["tab"]; !ok {
+		t.Fatalf("Normal keymap missing 'tab' binding")
+	}
+	if _, ok := cfg.Keymap.Normal["shift+tab"]; !ok {
+		t.Fatalf("Normal keymap missing 'shift+tab' binding")
+	}
+}
+
+// ============================================================================
+// REAL WORKFLOW TEST - selection created via Shift+Down, then TAB
+// ============================================================================
+
+func TestRealWorkflowInsertModeShiftSelectThenTab(t *testing.T) {
+	// Реальный сценарий как на скриншоте:
+	// 1. Файл с несколькими строками
+	// 2. INSERT режим
+	// 3. Курсор в середине текста (не в начале!)
+	// 4. Shift+Down несколько раз
+	// 5. TAB
+
+	e := newTestEditor(
+		`import (`,
+		`	"os"`,
+		`	"os/exec"`,
+		`	"path/filepath"`,
+		`	"testing"`,
+		`)`,
+	)
+	e.mode = ModeInsert
+	e.cursor = Cursor{Row: 1, Col: 4} // курсор на "os", col=4 (после tab и ")
+
+	t.Logf("BEFORE: cursor=%+v, selectionActive=%v", e.cursor, e.selectionActive)
+
+	// Shift+Down 3 раза (выделяем строки 1,2,3,4)
+	e.HandleKey(keyShiftDown())
+	t.Logf("After 1st Shift+Down: cursor=%+v, selStart=%+v, selEnd=%+v, active=%v",
+		e.cursor, e.selectionStart, e.selectionEnd, e.selectionActive)
+
+	e.HandleKey(keyShiftDown())
+	t.Logf("After 2nd Shift+Down: cursor=%+v, selStart=%+v, selEnd=%+v, active=%v",
+		e.cursor, e.selectionStart, e.selectionEnd, e.selectionActive)
+
+	e.HandleKey(keyShiftDown())
+	t.Logf("After 3rd Shift+Down: cursor=%+v, selStart=%+v, selEnd=%+v, active=%v",
+		e.cursor, e.selectionStart, e.selectionEnd, e.selectionActive)
+
+	// Проверяем что выделение создано
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+
+	// TAB
+	e.HandleKey(keyTab())
+
+	t.Logf("AFTER TAB:")
+	for i, line := range e.lines {
+		t.Logf("  line[%d] = %q", i, string(line))
+	}
+	t.Logf("  cursor=%+v, selectionActive=%v", e.cursor, e.selectionActive)
+
+	// Строки 1,2,3 должны получить indent (строка 4 - зависит от Col)
+	if string(e.lines[1]) != "\t\t\"os\"" {
+		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\t\t\"os\"")
+	}
+	if string(e.lines[2]) != "\t\t\"os/exec\"" {
+		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "\t\t\"os/exec\"")
+	}
+	if string(e.lines[3]) != "\t\t\"path/filepath\"" {
+		t.Fatalf("line3 = %q, want %q", string(e.lines[3]), "\t\t\"path/filepath\"")
+	}
+}

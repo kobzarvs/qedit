@@ -122,6 +122,9 @@ func Default() Config {
 				"U":              "redo",
 				"ctrl+c":         "quit",
 				"ctrl+r":         "redo",
+				"tab":            "indent",
+				"shift+tab":      "unindent",
+				"cmd+a":          "select_all",
 			},
 			Insert: map[string]string{
 				"esc":            "enter_normal",
@@ -151,7 +154,9 @@ func Default() Config {
 				"pgdn":           "page_down",
 				"backspace":      "backspace",
 				"enter":          "newline",
-				"tab":            "insert_tab",
+				"tab":            "indent",
+				"shift+tab":      "unindent",
+				"cmd+a":          "select_all",
 			},
 		},
 	}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -59,6 +60,9 @@ const (
 	actionUndoLine          = "undo_line"
 	actionScrollUp          = "scroll_up"
 	actionScrollDown        = "scroll_down"
+	actionIndent            = "indent"
+	actionUnindent          = "unindent"
+	actionSelectAll         = "select_all"
 )
 
 type actionKind int
@@ -77,6 +81,7 @@ type action struct {
 	r       rune
 	rowFrom int
 	rowTo   int
+	group   uint64
 }
 
 type Cursor struct {
@@ -165,6 +170,8 @@ type Editor struct {
 	lineUndoValid          bool
 	lastKeyCombo           string
 	freeScroll             bool
+	lastScrollTime         time.Time
+	undoGroup              uint64
 }
 
 type LineNumberMode int
@@ -313,9 +320,11 @@ func (e *Editor) HandleMouse(ev *tcell.EventMouse) {
 	if ev.Buttons() == tcell.WheelUp {
 		e.scrollUp(3)
 		e.freeScroll = true
+		e.lastScrollTime = time.Now()
 	} else if ev.Buttons() == tcell.WheelDown {
 		e.scrollDown(3)
 		e.freeScroll = true
+		e.lastScrollTime = time.Now()
 	} else if ev.Buttons() == tcell.Button1 {
 		e.handleMouseClick(ev)
 	}
@@ -382,6 +391,7 @@ func (e *Editor) scrollViewUp() {
 		return
 	}
 	e.scroll--
+	e.lastScrollTime = time.Now()
 	// If cursor is now below visible area, move it up
 	viewHeight := e.viewHeightCached()
 	if e.cursor.Row >= e.scroll+viewHeight {
@@ -402,6 +412,7 @@ func (e *Editor) scrollViewDown() {
 		return
 	}
 	e.scroll++
+	e.lastScrollTime = time.Now()
 	// If cursor is now above visible area, move it down
 	if e.cursor.Row < e.scroll {
 		e.cursor.Row = e.scroll
@@ -442,6 +453,9 @@ func (e *Editor) Render(s tcell.Screen) {
 		}
 		e.drawLineWithGutter(s, y, w, gutterWidth, lineIdx)
 	}
+
+	// Draw scroll indicator if recently scrolled
+	e.renderScrollIndicator(s, w, viewHeight)
 
 	var cx, cy int
 	if statusY >= 0 {
@@ -701,6 +715,15 @@ func (e *Editor) execAction(action string) bool {
 		e.scrollViewUp()
 	case actionScrollDown:
 		e.scrollViewDown()
+	case actionIndent:
+		e.indentSelection()
+		return false // Don't clear selection
+	case actionUnindent:
+		e.unindentSelection()
+		return false // Don't clear selection
+	case actionSelectAll:
+		e.selectAll()
+		return false // Don't clear selection
 	}
 	e.clearSelection()
 	return false
@@ -852,17 +875,27 @@ func (e *Editor) Undo() {
 		e.setStatus("nothing to undo")
 		return
 	}
-	idx := len(e.undo) - 1
-	act := e.undo[idx]
-	e.undo = e.undo[:idx]
-	inv, ok := e.applyAction(act)
-	if !ok {
-		e.setStatus("undo failed")
-		return
+
+	// Get the group of the last action
+	group := e.undo[len(e.undo)-1].group
+
+	// Undo all actions in this group
+	for len(e.undo) > 0 && e.undo[len(e.undo)-1].group == group {
+		idx := len(e.undo) - 1
+		act := e.undo[idx]
+		e.undo = e.undo[:idx]
+		inv, ok := e.applyAction(act)
+		if !ok {
+			e.setStatus("undo failed")
+			return
+		}
+		inv.group = act.group
+		e.redo = append(e.redo, inv)
 	}
-	e.redo = append(e.redo, inv)
 	e.changeTick++
 	e.updateDirty()
+	// Invalidate lastEdit to force full reparse for syntax highlighting
+	e.lastEdit.Valid = false
 }
 
 func (e *Editor) Redo() {
@@ -870,17 +903,27 @@ func (e *Editor) Redo() {
 		e.setStatus("nothing to redo")
 		return
 	}
-	idx := len(e.redo) - 1
-	act := e.redo[idx]
-	e.redo = e.redo[:idx]
-	inv, ok := e.applyAction(act)
-	if !ok {
-		e.setStatus("redo failed")
-		return
+
+	// Get the group of the last action
+	group := e.redo[len(e.redo)-1].group
+
+	// Redo all actions in this group
+	for len(e.redo) > 0 && e.redo[len(e.redo)-1].group == group {
+		idx := len(e.redo) - 1
+		act := e.redo[idx]
+		e.redo = e.redo[:idx]
+		inv, ok := e.applyAction(act)
+		if !ok {
+			e.setStatus("redo failed")
+			return
+		}
+		inv.group = act.group
+		e.undo = append(e.undo, inv)
 	}
-	e.undo = append(e.undo, inv)
 	e.changeTick++
 	e.updateDirty()
+	// Invalidate lastEdit to force full reparse for syntax highlighting
+	e.lastEdit.Valid = false
 }
 
 func (e *Editor) applyAction(act action) (action, bool) {
@@ -924,7 +967,29 @@ func (e *Editor) applyAction(act action) (action, bool) {
 }
 
 func (e *Editor) recordUndo(act action) {
+	e.undoGroup++
+	act.group = e.undoGroup
 	e.undo = append(e.undo, act)
+	e.redo = e.redo[:0]
+	e.changeTick++
+	e.updateDirty()
+}
+
+// startUndoGroup starts a new undo group. All subsequent appendUndo calls will use this group.
+// Call this before a series of appendUndo calls, then call finishUndoGroup at the end.
+func (e *Editor) startUndoGroup() {
+	e.undoGroup++
+}
+
+// appendUndo adds an action to undo stack with the current group.
+// Use this when recording multiple actions as part of a single logical operation.
+func (e *Editor) appendUndo(act action) {
+	act.group = e.undoGroup
+	e.undo = append(e.undo, act)
+}
+
+// finishUndoGroup clears redo and updates state after a group of undo actions.
+func (e *Editor) finishUndoGroup() {
 	e.redo = e.redo[:0]
 	e.changeTick++
 	e.updateDirty()
@@ -1068,14 +1133,14 @@ func (e *Editor) deleteLine() {
 			NewEndRow:      0,
 			NewEndColBytes: 0,
 		}
-		// Record undo for each character
+		// Record undo for each character as a group
+		e.startUndoGroup()
 		for i := len(line) - 1; i >= 0; i-- {
-			e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: 0, Col: i}, r: line[i]})
+			e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: 0, Col: i}, r: line[i]})
 		}
+		e.finishUndoGroup()
 		e.lines[0] = []rune{}
 		e.cursor.Col = 0
-		e.changeTick++
-		e.updateDirty()
 		return
 	}
 
@@ -1126,15 +1191,17 @@ func (e *Editor) deleteLine() {
 		NewEndColBytes: newEndColBytes,
 	}
 
-	// Record undo: first the line join, then the characters
+	// Record undo: first the line join, then the characters as a group
+	e.startUndoGroup()
 	if row < len(e.lines)-1 {
-		e.recordUndo(action{kind: actionSplitLine, pos: Cursor{Row: row, Col: 0}})
+		e.appendUndo(action{kind: actionSplitLine, pos: Cursor{Row: row, Col: 0}})
 	} else {
-		e.recordUndo(action{kind: actionSplitLine, pos: Cursor{Row: row - 1, Col: len(e.lines[row-1])}})
+		e.appendUndo(action{kind: actionSplitLine, pos: Cursor{Row: row - 1, Col: len(e.lines[row-1])}})
 	}
 	for i := len(line) - 1; i >= 0; i-- {
-		e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: i}, r: line[i]})
+		e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: i}, r: line[i]})
 	}
+	e.finishUndoGroup()
 
 	// Actually remove the line
 	newLines := make([][]rune, 0, len(e.lines)-1)
@@ -1195,11 +1262,12 @@ func (e *Editor) deleteSelection(start, end Cursor) {
 	startByte, startColBytes := e.byteOffset(start)
 	oldEndByte, oldEndColBytes := e.byteOffset(end)
 
-	// Collect deleted content for undo (from end to start)
+	// Collect deleted content for undo (from end to start) as a group
+	e.startUndoGroup()
 	// First, record line joins for multi-line selections
 	for row := end.Row; row > start.Row; row-- {
 		joinPos := Cursor{Row: row - 1, Col: len(e.lines[row-1])}
-		e.recordUndo(action{kind: actionSplitLine, pos: joinPos})
+		e.appendUndo(action{kind: actionSplitLine, pos: joinPos})
 	}
 
 	// Then record character deletions
@@ -1215,10 +1283,11 @@ func (e *Editor) deleteSelection(start, end Cursor) {
 		}
 		for col := endCol - 1; col >= startCol; col-- {
 			if col >= 0 && col < len(line) {
-				e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: col}, r: line[col]})
+				e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: col}, r: line[col]})
 			}
 		}
 	}
+	e.finishUndoGroup()
 
 	// Record text edit for tree-sitter
 	e.lastEdit = TextEdit{
@@ -1344,12 +1413,14 @@ func (e *Editor) deleteWordLeft() {
 		NewEndColBytes: startColBytes,
 	}
 
-	// Record undo for each character (backwards)
+	// Record undo for each character (backwards) as a group
+	e.startUndoGroup()
 	for col := endCol - 1; col >= startCol; col-- {
 		if col >= 0 && col < len(line) {
-			e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: e.cursor.Row, Col: col}, r: line[col]})
+			e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: e.cursor.Row, Col: col}, r: line[col]})
 		}
 	}
+	e.finishUndoGroup()
 
 	// Actually delete the range
 	newLine := append([]rune(nil), line[:startCol]...)
@@ -1357,8 +1428,6 @@ func (e *Editor) deleteWordLeft() {
 	e.lines[e.cursor.Row] = newLine
 
 	e.cursor.Col = startCol
-	e.changeTick++
-	e.updateDirty()
 }
 
 func (e *Editor) insertLineBelow() {
@@ -1380,18 +1449,172 @@ func (e *Editor) insertLineBelow() {
 	// Move cursor to end of line
 	e.cursor.Col = len(line)
 
-	// Split line (creates new line below)
+	// Split line (creates new line below) and insert indentation as a group
+	e.startUndoGroup()
 	pos := e.cursor
 	if !e.splitLineAt(pos) {
 		return
 	}
-	e.recordUndo(action{kind: actionJoinLine, pos: pos})
+	e.appendUndo(action{kind: actionJoinLine, pos: pos})
 
 	// Insert indentation on the new line
 	for _, r := range indent {
 		insertPos := e.cursor
 		if e.insertRuneAt(insertPos, r) {
-			e.recordUndo(action{kind: actionDeleteRune, pos: insertPos, r: r})
+			e.appendUndo(action{kind: actionDeleteRune, pos: insertPos, r: r})
+		}
+	}
+	e.finishUndoGroup()
+}
+
+func (e *Editor) indentSelection() {
+	start, end, ok := e.selectionRange()
+	if !ok {
+		// No selection - behavior depends on mode
+		if e.mode == ModeNormal {
+			// In Normal mode, indent the current line (tab at beginning)
+			e.indentCurrentLine()
+		} else {
+			// In Insert mode, insert tab at cursor position
+			e.insertTab()
+		}
+		return
+	}
+
+	// Calculate actual end row - if end.Col == 0, don't include that row
+	endRow := end.Row
+	if end.Col == 0 && end.Row > start.Row {
+		endRow = end.Row - 1
+	}
+
+	// Indent all lines in selection as a group
+	e.startUndoGroup()
+	for row := start.Row; row <= endRow; row++ {
+		if row < 0 || row >= len(e.lines) {
+			continue
+		}
+		// Insert tab at beginning of line
+		line := e.lines[row]
+		newLine := make([]rune, len(line)+1)
+		newLine[0] = '\t'
+		copy(newLine[1:], line)
+		e.lines[row] = newLine
+		e.appendUndo(action{kind: actionDeleteRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
+	}
+	e.finishUndoGroup()
+	e.lastEdit.Valid = false
+
+	// Adjust cursor and selection columns - they shift by 1 for affected lines
+	if e.cursor.Row >= start.Row && e.cursor.Row <= endRow {
+		e.cursor.Col++
+	}
+	if e.selectionStart.Row >= start.Row && e.selectionStart.Row <= endRow {
+		e.selectionStart.Col++
+	}
+	if e.selectionEnd.Row >= start.Row && e.selectionEnd.Row <= endRow && end.Col > 0 {
+		e.selectionEnd.Col++
+	}
+}
+
+// indentCurrentLine adds a tab at the beginning of the current line (for Normal mode)
+func (e *Editor) indentCurrentLine() {
+	row := e.cursor.Row
+	if row < 0 || row >= len(e.lines) {
+		return
+	}
+	line := e.lines[row]
+	newLine := make([]rune, len(line)+1)
+	newLine[0] = '\t'
+	copy(newLine[1:], line)
+	e.lines[row] = newLine
+	e.recordUndo(action{kind: actionDeleteRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
+	e.cursor.Col++
+	e.lastEdit.Valid = false
+}
+
+func (e *Editor) unindentSelection() {
+	start, end, hasSelection := e.selectionRange()
+	if !hasSelection {
+		// No selection - unindent current line only
+		start = e.cursor
+		end = e.cursor
+	}
+
+	// Calculate actual end row - if end.Col == 0, don't include that row
+	endRow := end.Row
+	if hasSelection && end.Col == 0 && end.Row > start.Row {
+		endRow = end.Row - 1
+	}
+
+	// Track how many chars removed from each relevant line
+	cursorLineRemoved := 0
+	startLineRemoved := 0
+	endLineRemoved := 0
+
+	// Unindent all lines in selection as a group
+	e.startUndoGroup()
+	for row := start.Row; row <= endRow; row++ {
+		if row < 0 || row >= len(e.lines) {
+			continue
+		}
+		line := e.lines[row]
+		if len(line) == 0 {
+			continue
+		}
+
+		removed := 0
+		// Remove leading tab or spaces (up to tabWidth)
+		if line[0] == '\t' {
+			e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
+			e.lines[row] = line[1:]
+			removed = 1
+		} else if line[0] == ' ' {
+			// Count spaces to remove (up to tabWidth)
+			for i := 0; i < e.tabWidth && i < len(line) && line[i] == ' '; i++ {
+				removed++
+			}
+			// Record undo for each space (backwards)
+			for i := removed - 1; i >= 0; i-- {
+				e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: i}, r: ' '})
+			}
+			e.lines[row] = line[removed:]
+		}
+
+		if row == e.cursor.Row {
+			cursorLineRemoved = removed
+		}
+		if row == e.selectionStart.Row {
+			startLineRemoved = removed
+		}
+		if row == e.selectionEnd.Row {
+			endLineRemoved = removed
+		}
+	}
+	e.finishUndoGroup()
+	e.lastEdit.Valid = false
+
+	// Adjust cursor column
+	if cursorLineRemoved > 0 {
+		e.cursor.Col -= cursorLineRemoved
+		if e.cursor.Col < 0 {
+			e.cursor.Col = 0
+		}
+	}
+
+	// Adjust selection columns if there was a selection
+	if hasSelection {
+		if startLineRemoved > 0 {
+			e.selectionStart.Col -= startLineRemoved
+			if e.selectionStart.Col < 0 {
+				e.selectionStart.Col = 0
+			}
+		}
+		// Only adjust selectionEnd.Col if it's on an affected line
+		if endLineRemoved > 0 && end.Col > 0 {
+			e.selectionEnd.Col -= endLineRemoved
+			if e.selectionEnd.Col < 0 {
+				e.selectionEnd.Col = 0
+			}
 		}
 	}
 }
@@ -1430,12 +1653,14 @@ func (e *Editor) undoLine() {
 		return
 	}
 
+	e.startUndoGroup()
+
 	// Delete current line content (backwards for proper undo)
 	for i := len(currentLine) - 1; i >= 0; i-- {
 		pos := Cursor{Row: row, Col: i}
 		r := currentLine[i]
 		if e.deleteRuneAt(pos) {
-			e.recordUndo(action{kind: actionInsertRune, pos: pos, r: r})
+			e.appendUndo(action{kind: actionInsertRune, pos: pos, r: r})
 		}
 	}
 
@@ -1443,9 +1668,11 @@ func (e *Editor) undoLine() {
 	for i, r := range originalLine {
 		pos := Cursor{Row: row, Col: i}
 		if e.insertRuneAt(pos, r) {
-			e.recordUndo(action{kind: actionDeleteRune, pos: pos, r: r})
+			e.appendUndo(action{kind: actionDeleteRune, pos: pos, r: r})
 		}
 	}
+
+	e.finishUndoGroup()
 
 	// Position cursor at start of line
 	e.cursor.Row = row
@@ -1740,6 +1967,15 @@ func (e *Editor) ensureCursorVisible(viewHeight int) {
 	if viewHeight <= 0 {
 		return
 	}
+	// If cursor is far outside visible area, center it
+	if e.cursor.Row < e.scroll-1 || e.cursor.Row >= e.scroll+viewHeight+1 {
+		e.scroll = e.cursor.Row - viewHeight/2
+		if e.scroll < 0 {
+			e.scroll = 0
+		}
+		return
+	}
+	// Otherwise just make it visible at the edge
 	if e.cursor.Row < e.scroll {
 		e.scroll = e.cursor.Row
 		return
@@ -1844,6 +2080,82 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 		cursorX = w - 1
 	}
 	return cursorX
+}
+
+const scrollIndicatorDuration = 1500 * time.Millisecond
+
+func (e *Editor) renderScrollIndicator(s tcell.Screen, w, viewHeight int) {
+	if viewHeight < 1 || w < 1 {
+		return
+	}
+
+	// Check if scroll indicator should be visible
+	elapsed := time.Since(e.lastScrollTime)
+	if elapsed >= scrollIndicatorDuration {
+		return
+	}
+
+	totalLines := len(e.lines)
+	if totalLines <= viewHeight {
+		return // No need for scroll indicator if all content fits
+	}
+
+	// Calculate thumb size (minimum 1 row)
+	thumbSize := viewHeight * viewHeight / totalLines
+	if thumbSize < 1 {
+		thumbSize = 1
+	}
+
+	// Calculate thumb position
+	maxScroll := totalLines - viewHeight
+	if maxScroll < 1 {
+		maxScroll = 1
+	}
+	thumbPos := e.scroll * (viewHeight - thumbSize) / maxScroll
+	if thumbPos < 0 {
+		thumbPos = 0
+	}
+	if thumbPos+thumbSize > viewHeight {
+		thumbPos = viewHeight - thumbSize
+	}
+
+	// Calculate opacity based on time elapsed (fade out effect)
+	// 0-1000ms: full opacity, 1000-1500ms: fade out
+	var thumbChar rune
+	var trackChar rune
+	fadeStart := 1000 * time.Millisecond
+	if elapsed < fadeStart {
+		thumbChar = '█'
+		trackChar = '░'
+	} else {
+		// Fade out: use lighter characters
+		fadeProgress := float64(elapsed-fadeStart) / float64(scrollIndicatorDuration-fadeStart)
+		if fadeProgress < 0.33 {
+			thumbChar = '▓'
+			trackChar = '░'
+		} else if fadeProgress < 0.66 {
+			thumbChar = '▒'
+			trackChar = ' '
+		} else {
+			thumbChar = '░'
+			trackChar = ' '
+		}
+	}
+
+	// Draw scroll indicator in the rightmost column
+	x := w - 1
+	style := tcell.StyleDefault.Foreground(tcell.ColorGray)
+	for y := 0; y < viewHeight; y++ {
+		var ch rune
+		if y >= thumbPos && y < thumbPos+thumbSize {
+			ch = thumbChar
+		} else {
+			ch = trackChar
+		}
+		if ch != ' ' {
+			s.SetContent(x, y, ch, nil, style)
+		}
+	}
 }
 
 func (e *Editor) viewHeightCached() int {
@@ -1955,6 +2267,16 @@ func (e *Editor) clearSelection() {
 	e.selectionActive = false
 	e.selectionStart = Cursor{}
 	e.selectionEnd = Cursor{}
+}
+
+func (e *Editor) selectAll() {
+	if len(e.lines) == 0 {
+		return
+	}
+	e.selectionStart = Cursor{Row: 0, Col: 0}
+	lastRow := len(e.lines) - 1
+	e.selectionEnd = Cursor{Row: lastRow, Col: len(e.lines[lastRow])}
+	e.selectionActive = true
 }
 
 func (e *Editor) extendSelection(move func()) {
@@ -2702,6 +3024,16 @@ func keyString(ev *tcell.EventKey) string {
 		}
 		return string(r)
 	}
+	// Check Tab before ctrlKeyName since KeyTab == KeyCtrlI (0x09)
+	switch ev.Key() {
+	case tcell.KeyTab:
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			return "shift+tab"
+		}
+		return "tab"
+	case tcell.KeyBacktab:
+		return "shift+tab"
+	}
 	if name := ctrlKeyName(ev.Key()); name != "" {
 		return name
 	}
@@ -2730,8 +3062,6 @@ func keyString(ev *tcell.EventKey) string {
 		return "del"
 	case tcell.KeyEscape:
 		return "esc"
-	case tcell.KeyTab:
-		return "tab"
 	}
 	return ""
 }
