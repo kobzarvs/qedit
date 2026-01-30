@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 
@@ -51,6 +52,13 @@ const (
 	actionInsertTab         = "insert_tab"
 	actionUndo              = "undo"
 	actionRedo              = "redo"
+	actionDeleteLine        = "delete_line"
+	actionDeleteChar        = "delete_char"
+	actionDeleteWordLeft    = "delete_word_left"
+	actionInsertLineBelow   = "insert_line_below"
+	actionUndoLine          = "undo_line"
+	actionScrollUp          = "scroll_up"
+	actionScrollDown        = "scroll_down"
 )
 
 type actionKind int
@@ -74,6 +82,19 @@ type action struct {
 type Cursor struct {
 	Row int
 	Col int
+}
+
+type TextEdit struct {
+	Valid          bool
+	StartByte      int
+	OldEndByte     int
+	NewEndByte     int
+	StartRow       int
+	StartColBytes  int
+	OldEndRow      int
+	OldEndColBytes int
+	NewEndRow      int
+	NewEndColBytes int
 }
 
 type HighlightSpan struct {
@@ -133,11 +154,17 @@ type Editor struct {
 	highlightStart         int
 	highlightEnd           int
 	changeTick             uint64
+	lastEdit               TextEdit
 	branchPickerActive     bool
 	branchPickerItems      []string
 	branchPickerIndex      int
 	branchPickerRequested  bool
 	branchPickerSelection  string
+	lineUndoRow            int
+	lineUndoContent        []rune
+	lineUndoValid          bool
+	lastKeyCombo           string
+	freeScroll             bool
 }
 
 type LineNumberMode int
@@ -255,6 +282,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.redo = nil
 	e.savePoint = 0
 	e.changeTick = 0
+	e.lastEdit.Valid = false
 	e.highlights = nil
 	e.highlightStart = -1
 	e.highlightEnd = -1
@@ -263,9 +291,12 @@ func (e *Editor) OpenFile(path string) error {
 }
 
 func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
+	e.freeScroll = false
 	if e.mode != ModeCommand && e.statusMessage != "" {
 		e.statusMessage = ""
 	}
+	// Track last key combination for display
+	e.lastKeyCombo = keyStringDisplay(ev)
 	switch e.mode {
 	case ModeInsert:
 		return e.handleInsert(ev)
@@ -275,6 +306,106 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		return e.handleBranchPicker(ev)
 	default:
 		return e.handleNormal(ev)
+	}
+}
+
+func (e *Editor) HandleMouse(ev *tcell.EventMouse) {
+	if ev.Buttons() == tcell.WheelUp {
+		e.scrollUp(3)
+		e.freeScroll = true
+	} else if ev.Buttons() == tcell.WheelDown {
+		e.scrollDown(3)
+		e.freeScroll = true
+	} else if ev.Buttons() == tcell.Button1 {
+		e.handleMouseClick(ev)
+	}
+}
+
+func (e *Editor) handleMouseClick(ev *tcell.EventMouse) {
+	x, y := ev.Position()
+
+	// Convert screen Y to line number
+	row := y + e.scroll
+	if row < 0 {
+		row = 0
+	}
+	if row >= len(e.lines) {
+		row = len(e.lines) - 1
+	}
+	if row < 0 {
+		return // empty file
+	}
+
+	// Convert screen X to column (accounting for gutter)
+	gutterW := e.gutterWidth()
+	visualX := x - gutterW
+	if visualX < 0 {
+		visualX = 0
+	}
+
+	// Convert visual column to logical column
+	col := visualToLogicalCol(e.lines[row], visualX, e.tabWidth)
+
+	// Set cursor position
+	e.cursor.Row = row
+	e.cursor.Col = col
+	e.clampCursorCol()
+
+	// Clear selection and free scroll mode
+	e.selectionActive = false
+	e.freeScroll = false
+}
+
+func (e *Editor) scrollUp(lines int) {
+	e.scroll -= lines
+	if e.scroll < 0 {
+		e.scroll = 0
+	}
+}
+
+func (e *Editor) scrollDown(lines int) {
+	// Keep last line at least 5 lines above status line
+	viewHeight := e.viewHeightCached()
+	maxScroll := len(e.lines) - viewHeight + 5
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	e.scroll += lines
+	if e.scroll > maxScroll {
+		e.scroll = maxScroll
+	}
+}
+
+// scrollViewUp scrolls the view up (shows earlier lines), keeping cursor visible
+func (e *Editor) scrollViewUp() {
+	if e.scroll <= 0 {
+		return
+	}
+	e.scroll--
+	// If cursor is now below visible area, move it up
+	viewHeight := e.viewHeightCached()
+	if e.cursor.Row >= e.scroll+viewHeight {
+		e.cursor.Row = e.scroll + viewHeight - 1
+		e.clampCursorCol()
+	}
+}
+
+// scrollViewDown scrolls the view down (shows later lines), keeping cursor visible
+func (e *Editor) scrollViewDown() {
+	// Keep last line at least 5 lines above status line
+	viewHeight := e.viewHeightCached()
+	maxScroll := len(e.lines) - viewHeight + 5
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if e.scroll >= maxScroll {
+		return
+	}
+	e.scroll++
+	// If cursor is now above visible area, move it down
+	if e.cursor.Row < e.scroll {
+		e.cursor.Row = e.scroll
+		e.clampCursorCol()
 	}
 }
 
@@ -295,7 +426,9 @@ func (e *Editor) Render(s tcell.Screen) {
 		viewHeight = 0
 	}
 	e.viewHeight = viewHeight
-	e.ensureCursorVisible(viewHeight)
+	if !e.freeScroll {
+		e.ensureCursorVisible(viewHeight)
+	}
 
 	s.SetStyle(e.styleMain)
 	s.Clear()
@@ -321,13 +454,11 @@ func (e *Editor) Render(s tcell.Screen) {
 			cy = cmdY
 		}
 	}
+	cursorVisible := true
 	if e.mode != ModeCommand && e.mode != ModeBranchPicker {
 		cy = e.cursor.Row - e.scroll
-		if cy < 0 {
-			cy = 0
-		}
-		if cy >= viewHeight {
-			cy = viewHeight - 1
+		if cy < 0 || cy >= viewHeight {
+			cursorVisible = false
 		}
 		if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
 			cx = gutterWidth + visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth)
@@ -340,7 +471,7 @@ func (e *Editor) Render(s tcell.Screen) {
 	if e.branchPickerActive {
 		e.renderBranchPicker(s, w, viewHeight)
 	}
-	if e.mode == ModeBranchPicker {
+	if e.mode == ModeBranchPicker || !cursorVisible {
 		s.HideCursor()
 		s.Show()
 		return
@@ -366,7 +497,6 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	if !ok {
 		return false
 	}
-	e.clearSelection()
 	return e.execAction(action)
 }
 
@@ -377,7 +507,6 @@ func (e *Editor) handleInsert(ev *tcell.EventKey) bool {
 	key := keyStringForMap(ev, e.keymap.insert)
 	if key != "" {
 		if action, ok := e.keymap.insert[key]; ok {
-			e.clearSelection()
 			return e.execAction(action)
 		}
 	}
@@ -540,6 +669,7 @@ func (e *Editor) execAction(action string) bool {
 		e.branchPickerRequested = true
 	case actionEnterInsert:
 		e.mode = ModeInsert
+		e.saveLineState()
 	case actionEnterNormal:
 		e.mode = ModeNormal
 	case actionEnterCommand:
@@ -557,7 +687,22 @@ func (e *Editor) execAction(action string) bool {
 		e.Undo()
 	case actionRedo:
 		e.Redo()
+	case actionDeleteLine:
+		e.deleteLine()
+	case actionDeleteChar:
+		e.deleteChar()
+	case actionDeleteWordLeft:
+		e.deleteWordLeft()
+	case actionInsertLineBelow:
+		e.insertLineBelow()
+	case actionUndoLine:
+		e.undoLine()
+	case actionScrollUp:
+		e.scrollViewUp()
+	case actionScrollDown:
+		e.scrollViewDown()
 	}
+	e.clearSelection()
 	return false
 }
 
@@ -697,6 +842,7 @@ func (e *Editor) replaceBuffer(text string, markDirty bool) {
 	} else {
 		e.savePoint = 0
 	}
+	e.lastEdit.Valid = false
 	e.changeTick++
 	e.updateDirty()
 }
@@ -819,6 +965,7 @@ func (e *Editor) insertRuneAt(pos Cursor, r rune) bool {
 	if pos.Col > len(line) {
 		pos.Col = len(line)
 	}
+	e.recordTextEdit(pos, pos, Cursor{Row: pos.Row, Col: pos.Col + 1}, runeByteLen(r))
 	line = append(line, 0)
 	copy(line[pos.Col+1:], line[pos.Col:])
 	line[pos.Col] = r
@@ -850,6 +997,7 @@ func (e *Editor) splitLineAt(pos Cursor) bool {
 	if pos.Col > len(line) {
 		pos.Col = len(line)
 	}
+	e.recordTextEdit(pos, pos, Cursor{Row: pos.Row + 1, Col: 0}, 1)
 	left := append([]rune(nil), line[:pos.Col]...)
 	right := append([]rune(nil), line[pos.Col:]...)
 
@@ -890,6 +1038,427 @@ func (e *Editor) backspace() {
 	e.recordUndo(action{kind: actionSplitLine, pos: pos})
 }
 
+func (e *Editor) deleteLine() {
+	if len(e.lines) == 0 {
+		return
+	}
+	row := e.cursor.Row
+	if row < 0 || row >= len(e.lines) {
+		return
+	}
+
+	line := e.lines[row]
+
+	if len(e.lines) == 1 {
+		// Only one line - just clear it
+		if len(line) == 0 {
+			return
+		}
+		// Calculate byte offset BEFORE changes
+		deletedBytes := runeSliceByteLen(line)
+		e.lastEdit = TextEdit{
+			Valid:          true,
+			StartByte:      0,
+			OldEndByte:     deletedBytes,
+			NewEndByte:     0,
+			StartRow:       0,
+			StartColBytes:  0,
+			OldEndRow:      0,
+			OldEndColBytes: deletedBytes,
+			NewEndRow:      0,
+			NewEndColBytes: 0,
+		}
+		// Record undo for each character
+		for i := len(line) - 1; i >= 0; i-- {
+			e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: 0, Col: i}, r: line[i]})
+		}
+		e.lines[0] = []rune{}
+		e.cursor.Col = 0
+		e.changeTick++
+		e.updateDirty()
+		return
+	}
+
+	// Calculate byte offsets BEFORE making changes
+	startByte, startColBytes := e.byteOffset(Cursor{Row: row, Col: 0})
+	lineBytes := runeSliceByteLen(line)
+
+	var oldEndByte int
+	var oldEndRow int
+	var oldEndColBytes int
+	var newEndRow int
+	var newEndColBytes int
+
+	if row < len(e.lines)-1 {
+		// Not the last line: delete from start of line to start of next line
+		oldEndByte = startByte + lineBytes + 1 // +1 for newline
+		oldEndRow = row + 1
+		oldEndColBytes = 0
+		newEndRow = row
+		newEndColBytes = 0
+	} else {
+		// Last line: delete from end of previous line (newline) to end of this line
+		prevLineBytes := runeSliceByteLen(e.lines[row-1])
+		startByte = startByte - 1 // include the newline before this line
+		startColBytes = prevLineBytes
+		oldEndByte = startByte + 1 + lineBytes // newline + line content
+		oldEndRow = row
+		oldEndColBytes = lineBytes
+		newEndRow = row - 1
+		newEndColBytes = prevLineBytes
+	}
+
+	startRow := row
+	if row >= len(e.lines)-1 && row > 0 {
+		startRow = row - 1
+	}
+
+	e.lastEdit = TextEdit{
+		Valid:          true,
+		StartByte:      startByte,
+		OldEndByte:     oldEndByte,
+		NewEndByte:     startByte, // Nothing inserted
+		StartRow:       startRow,
+		StartColBytes:  startColBytes,
+		OldEndRow:      oldEndRow,
+		OldEndColBytes: oldEndColBytes,
+		NewEndRow:      newEndRow,
+		NewEndColBytes: newEndColBytes,
+	}
+
+	// Record undo: first the line join, then the characters
+	if row < len(e.lines)-1 {
+		e.recordUndo(action{kind: actionSplitLine, pos: Cursor{Row: row, Col: 0}})
+	} else {
+		e.recordUndo(action{kind: actionSplitLine, pos: Cursor{Row: row - 1, Col: len(e.lines[row-1])}})
+	}
+	for i := len(line) - 1; i >= 0; i-- {
+		e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: i}, r: line[i]})
+	}
+
+	// Actually remove the line
+	newLines := make([][]rune, 0, len(e.lines)-1)
+	newLines = append(newLines, e.lines[:row]...)
+	newLines = append(newLines, e.lines[row+1:]...)
+	e.lines = newLines
+
+	// Adjust cursor
+	if row >= len(e.lines) {
+		e.cursor.Row = len(e.lines) - 1
+		if e.cursor.Row < 0 {
+			e.cursor.Row = 0
+		}
+	}
+	e.cursor.Col = 0
+	e.clampCursorCol()
+	e.changeTick++
+	e.updateDirty()
+}
+
+func (e *Editor) deleteChar() {
+	// If there's a selection, delete the selected text
+	if start, end, ok := e.selectionRange(); ok {
+		e.deleteSelection(start, end)
+		return
+	}
+
+	// No selection - delete character to the right
+	row := e.cursor.Row
+	col := e.cursor.Col
+	if row < 0 || row >= len(e.lines) {
+		return
+	}
+	line := e.lines[row]
+
+	if col < len(line) {
+		// Delete character at cursor position
+		pos := Cursor{Row: row, Col: col}
+		r := line[col]
+		if e.deleteRuneAt(pos) {
+			e.recordUndo(action{kind: actionInsertRune, pos: pos, r: r})
+		}
+	} else if row < len(e.lines)-1 {
+		// At end of line, join with next line
+		pos := Cursor{Row: row, Col: len(line)}
+		if e.joinLineAt(pos) {
+			e.recordUndo(action{kind: actionSplitLine, pos: pos})
+		}
+	}
+}
+
+func (e *Editor) deleteSelection(start, end Cursor) {
+	if start.Row < 0 || end.Row >= len(e.lines) {
+		return
+	}
+
+	// Calculate byte offsets BEFORE making changes
+	startByte, startColBytes := e.byteOffset(start)
+	oldEndByte, oldEndColBytes := e.byteOffset(end)
+
+	// Collect deleted content for undo (from end to start)
+	// First, record line joins for multi-line selections
+	for row := end.Row; row > start.Row; row-- {
+		joinPos := Cursor{Row: row - 1, Col: len(e.lines[row-1])}
+		e.recordUndo(action{kind: actionSplitLine, pos: joinPos})
+	}
+
+	// Then record character deletions
+	for row := end.Row; row >= start.Row; row-- {
+		line := e.lines[row]
+		startCol := 0
+		endCol := len(line)
+		if row == start.Row {
+			startCol = start.Col
+		}
+		if row == end.Row {
+			endCol = end.Col
+		}
+		for col := endCol - 1; col >= startCol; col-- {
+			if col >= 0 && col < len(line) {
+				e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: col}, r: line[col]})
+			}
+		}
+	}
+
+	// Record text edit for tree-sitter
+	e.lastEdit = TextEdit{
+		Valid:          true,
+		StartByte:      startByte,
+		OldEndByte:     oldEndByte,
+		NewEndByte:     startByte, // Nothing inserted
+		StartRow:       start.Row,
+		StartColBytes:  startColBytes,
+		OldEndRow:      end.Row,
+		OldEndColBytes: oldEndColBytes,
+		NewEndRow:      start.Row,
+		NewEndColBytes: startColBytes,
+	}
+
+	// Actually delete the selection
+	if start.Row == end.Row {
+		// Single line deletion
+		line := e.lines[start.Row]
+		newLine := append([]rune(nil), line[:start.Col]...)
+		newLine = append(newLine, line[end.Col:]...)
+		e.lines[start.Row] = newLine
+	} else {
+		// Multi-line deletion
+		firstLine := e.lines[start.Row][:start.Col]
+		lastLine := e.lines[end.Row][end.Col:]
+		mergedLine := append([]rune(nil), firstLine...)
+		mergedLine = append(mergedLine, lastLine...)
+
+		newLines := make([][]rune, 0, len(e.lines)-(end.Row-start.Row))
+		newLines = append(newLines, e.lines[:start.Row]...)
+		newLines = append(newLines, mergedLine)
+		newLines = append(newLines, e.lines[end.Row+1:]...)
+		e.lines = newLines
+	}
+
+	e.cursor = start
+	e.clearSelection()
+	e.changeTick++
+	e.updateDirty()
+}
+
+func (e *Editor) deleteWordLeft() {
+	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+		return
+	}
+
+	if e.cursor.Col == 0 {
+		// At start of line - join with previous line
+		if e.cursor.Row > 0 {
+			// Calculate byte offset BEFORE change
+			pos := Cursor{Row: e.cursor.Row - 1, Col: len(e.lines[e.cursor.Row-1])}
+			startByte, startColBytes := e.byteOffset(pos)
+			oldEndByte := startByte + 1 // +1 for newline
+
+			e.lastEdit = TextEdit{
+				Valid:          true,
+				StartByte:      startByte,
+				OldEndByte:     oldEndByte,
+				NewEndByte:     startByte,
+				StartRow:       pos.Row,
+				StartColBytes:  startColBytes,
+				OldEndRow:      e.cursor.Row,
+				OldEndColBytes: 0,
+				NewEndRow:      pos.Row,
+				NewEndColBytes: startColBytes,
+			}
+
+			if e.joinLineAt(pos) {
+				e.recordUndo(action{kind: actionSplitLine, pos: pos})
+			}
+		}
+		return
+	}
+
+	line := e.lines[e.cursor.Row]
+	endCol := e.cursor.Col
+	idx := endCol - 1
+
+	if idx >= len(line) {
+		idx = len(line) - 1
+	}
+	if idx < 0 {
+		return
+	}
+
+	// Skip spaces first
+	for idx > 0 && isSpaceRune(line[idx]) {
+		idx--
+	}
+
+	// Then skip word characters or non-word/non-space characters
+	if idx >= 0 && isWordRune(line[idx]) {
+		for idx > 0 && isWordRune(line[idx-1]) {
+			idx--
+		}
+	} else if idx >= 0 && !isSpaceRune(line[idx]) {
+		for idx > 0 && !isSpaceRune(line[idx-1]) && !isWordRune(line[idx-1]) {
+			idx--
+		}
+	}
+
+	startCol := idx
+	if startCol >= endCol {
+		return
+	}
+
+	// Calculate byte offsets BEFORE making changes
+	startByte, startColBytes := e.byteOffset(Cursor{Row: e.cursor.Row, Col: startCol})
+	oldEndByte, oldEndColBytes := e.byteOffset(Cursor{Row: e.cursor.Row, Col: endCol})
+
+	// Record text edit for tree-sitter
+	e.lastEdit = TextEdit{
+		Valid:          true,
+		StartByte:      startByte,
+		OldEndByte:     oldEndByte,
+		NewEndByte:     startByte,
+		StartRow:       e.cursor.Row,
+		StartColBytes:  startColBytes,
+		OldEndRow:      e.cursor.Row,
+		OldEndColBytes: oldEndColBytes,
+		NewEndRow:      e.cursor.Row,
+		NewEndColBytes: startColBytes,
+	}
+
+	// Record undo for each character (backwards)
+	for col := endCol - 1; col >= startCol; col-- {
+		if col >= 0 && col < len(line) {
+			e.recordUndo(action{kind: actionInsertRune, pos: Cursor{Row: e.cursor.Row, Col: col}, r: line[col]})
+		}
+	}
+
+	// Actually delete the range
+	newLine := append([]rune(nil), line[:startCol]...)
+	newLine = append(newLine, line[endCol:]...)
+	e.lines[e.cursor.Row] = newLine
+
+	e.cursor.Col = startCol
+	e.changeTick++
+	e.updateDirty()
+}
+
+func (e *Editor) insertLineBelow() {
+	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+		return
+	}
+
+	// Get current line's indentation
+	line := e.lines[e.cursor.Row]
+	indent := make([]rune, 0)
+	for _, r := range line {
+		if r == ' ' || r == '\t' {
+			indent = append(indent, r)
+		} else {
+			break
+		}
+	}
+
+	// Move cursor to end of line
+	e.cursor.Col = len(line)
+
+	// Split line (creates new line below)
+	pos := e.cursor
+	if !e.splitLineAt(pos) {
+		return
+	}
+	e.recordUndo(action{kind: actionJoinLine, pos: pos})
+
+	// Insert indentation on the new line
+	for _, r := range indent {
+		insertPos := e.cursor
+		if e.insertRuneAt(insertPos, r) {
+			e.recordUndo(action{kind: actionDeleteRune, pos: insertPos, r: r})
+		}
+	}
+}
+
+func (e *Editor) saveLineState() {
+	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+		e.lineUndoValid = false
+		return
+	}
+	if e.lineUndoValid && e.lineUndoRow == e.cursor.Row {
+		return // Already tracking this line
+	}
+	e.lineUndoRow = e.cursor.Row
+	e.lineUndoContent = append([]rune(nil), e.lines[e.cursor.Row]...)
+	e.lineUndoValid = true
+}
+
+func (e *Editor) undoLine() {
+	if !e.lineUndoValid {
+		e.setStatus("no line changes to undo")
+		return
+	}
+	row := e.lineUndoRow
+	if row < 0 || row >= len(e.lines) {
+		e.setStatus("line no longer exists")
+		e.lineUndoValid = false
+		return
+	}
+
+	currentLine := e.lines[row]
+	originalLine := e.lineUndoContent
+
+	// If line hasn't changed, nothing to do
+	if string(currentLine) == string(originalLine) {
+		e.setStatus("no changes on this line")
+		return
+	}
+
+	// Delete current line content (backwards for proper undo)
+	for i := len(currentLine) - 1; i >= 0; i-- {
+		pos := Cursor{Row: row, Col: i}
+		r := currentLine[i]
+		if e.deleteRuneAt(pos) {
+			e.recordUndo(action{kind: actionInsertRune, pos: pos, r: r})
+		}
+	}
+
+	// Insert original content
+	for i, r := range originalLine {
+		pos := Cursor{Row: row, Col: i}
+		if e.insertRuneAt(pos, r) {
+			e.recordUndo(action{kind: actionDeleteRune, pos: pos, r: r})
+		}
+	}
+
+	// Position cursor at start of line
+	e.cursor.Row = row
+	e.cursor.Col = 0
+	if e.cursor.Col > len(e.lines[row]) {
+		e.cursor.Col = len(e.lines[row])
+	}
+
+	// Invalidate line undo since we've restored it
+	e.lineUndoValid = false
+	e.setStatus("line restored")
+}
+
 func (e *Editor) deleteRuneAt(pos Cursor) bool {
 	if pos.Row < 0 || pos.Row >= len(e.lines) {
 		return false
@@ -898,6 +1467,7 @@ func (e *Editor) deleteRuneAt(pos Cursor) bool {
 	if pos.Col < 0 || pos.Col >= len(line) {
 		return false
 	}
+	e.recordTextEdit(pos, Cursor{Row: pos.Row, Col: pos.Col + 1}, pos, 0)
 	copy(line[pos.Col:], line[pos.Col+1:])
 	line = line[:len(line)-1]
 	e.lines[pos.Row] = line
@@ -917,6 +1487,7 @@ func (e *Editor) joinLineAt(pos Cursor) bool {
 	if pos.Col > len(left) {
 		pos.Col = len(left)
 	}
+	e.recordTextEdit(pos, Cursor{Row: pos.Row + 1, Col: 0}, pos, 0)
 	merged := append(left, right...)
 
 	newLines := make([][]rune, 0, len(e.lines)-1)
@@ -960,6 +1531,9 @@ func (e *Editor) moveUp() {
 	}
 	e.cursor.Row--
 	e.clampCursorCol()
+	if e.mode == ModeInsert {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) moveDown() {
@@ -968,6 +1542,9 @@ func (e *Editor) moveDown() {
 	}
 	e.cursor.Row++
 	e.clampCursorCol()
+	if e.mode == ModeInsert {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) moveWordLeft() {
@@ -1063,8 +1640,12 @@ func (e *Editor) moveLineEnd() {
 }
 
 func (e *Editor) moveFileStart() {
+	prevRow := e.cursor.Row
 	e.cursor.Row = 0
 	e.cursor.Col = 0
+	if e.mode == ModeInsert && e.cursor.Row != prevRow {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) moveFileEnd() {
@@ -1073,8 +1654,12 @@ func (e *Editor) moveFileEnd() {
 		e.cursor.Col = 0
 		return
 	}
+	prevRow := e.cursor.Row
 	e.cursor.Row = len(e.lines) - 1
 	e.cursor.Col = len(e.lines[e.cursor.Row])
+	if e.mode == ModeInsert && e.cursor.Row != prevRow {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) moveLineUp() {
@@ -1088,6 +1673,9 @@ func (e *Editor) moveLineUp() {
 	}
 	e.cursor.Row = to
 	e.recordUndo(action{kind: actionMoveLine, rowFrom: from, rowTo: to})
+	if e.mode == ModeInsert {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) moveLineDown() {
@@ -1101,6 +1689,9 @@ func (e *Editor) moveLineDown() {
 	}
 	e.cursor.Row = to
 	e.recordUndo(action{kind: actionMoveLine, rowFrom: from, rowTo: to})
+	if e.mode == ModeInsert {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) pageUp() {
@@ -1108,11 +1699,15 @@ func (e *Editor) pageUp() {
 	if height < 1 {
 		height = 1
 	}
+	prevRow := e.cursor.Row
 	e.cursor.Row -= height
 	if e.cursor.Row < 0 {
 		e.cursor.Row = 0
 	}
 	e.clampCursorCol()
+	if e.mode == ModeInsert && e.cursor.Row != prevRow {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) pageDown() {
@@ -1120,6 +1715,7 @@ func (e *Editor) pageDown() {
 	if height < 1 {
 		height = 1
 	}
+	prevRow := e.cursor.Row
 	e.cursor.Row += height
 	if e.cursor.Row >= len(e.lines) {
 		e.cursor.Row = len(e.lines) - 1
@@ -1128,6 +1724,9 @@ func (e *Editor) pageDown() {
 		}
 	}
 	e.clampCursorCol()
+	if e.mode == ModeInsert && e.cursor.Row != prevRow {
+		e.saveLineState()
+	}
 }
 
 func (e *Editor) clampCursorCol() {
@@ -1201,19 +1800,43 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 	if e.mode == ModeCommand {
 		cmdRunes = append([]rune{':'}, e.cmd...)
 	}
+
+	// Prepare right side: last key combo
+	rightText := ""
+	if e.lastKeyCombo != "" {
+		rightText = " " + e.lastKeyCombo + " "
+	}
+	rightRunes := []rune(rightText)
+	rightStart := w - len(rightRunes)
+	if rightStart < 0 {
+		rightStart = 0
+		rightRunes = rightRunes[:w]
+	}
+
+	// Calculate available width for command
+	availableWidth := rightStart
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+
 	cursorX := len(cmdRunes)
-	if len(cmdRunes) > w {
-		start := len(cmdRunes) - w
+	if len(cmdRunes) > availableWidth {
+		start := len(cmdRunes) - availableWidth
 		cmdRunes = cmdRunes[start:]
 		cursorX = len(cmdRunes)
 	}
+
+	// Draw command line content
 	for x := 0; x < w; x++ {
 		if x < len(cmdRunes) {
 			s.SetContent(x, y, cmdRunes[x], nil, e.styleCommand)
-			continue
+		} else if x >= rightStart && x-rightStart < len(rightRunes) {
+			s.SetContent(x, y, rightRunes[x-rightStart], nil, e.styleCommand)
+		} else {
+			s.SetContent(x, y, ' ', nil, e.styleCommand)
 		}
-		s.SetContent(x, y, ' ', nil, e.styleCommand)
 	}
+
 	if cursorX < 0 {
 		cursorX = 0
 	}
@@ -1274,6 +1897,22 @@ func (e *Editor) ChangeTick() uint64 {
 	return e.changeTick
 }
 
+func (e *Editor) UpdateScroll() {
+	if e.freeScroll {
+		return
+	}
+	e.ensureCursorVisible(e.viewHeightCached())
+}
+
+func (e *Editor) ConsumeLastEdit() (TextEdit, bool) {
+	if !e.lastEdit.Valid {
+		return TextEdit{}, false
+	}
+	edit := e.lastEdit
+	e.lastEdit.Valid = false
+	return edit, true
+}
+
 func (e *Editor) LineCount() int {
 	return len(e.lines)
 }
@@ -1306,6 +1945,10 @@ func (e *Editor) SetHighlights(startLine, endLine int, spans map[int][]Highlight
 	e.highlights = spans
 	e.highlightStart = startLine
 	e.highlightEnd = endLine
+}
+
+func (e *Editor) HasHighlights() bool {
+	return e.highlights != nil && e.highlightStart >= 0 && e.highlightEnd >= e.highlightStart
 }
 
 func (e *Editor) clearSelection() {
@@ -1529,7 +2172,74 @@ func (e *Editor) swapLines(a, b int) bool {
 		return false
 	}
 	e.lines[a], e.lines[b] = e.lines[b], e.lines[a]
+	e.lastEdit.Valid = false
 	return true
+}
+
+func runeByteLen(r rune) int {
+	n := utf8.RuneLen(r)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+func runeSliceByteLen(rs []rune) int {
+	n := 0
+	for _, r := range rs {
+		n += runeByteLen(r)
+	}
+	return n
+}
+
+func (e *Editor) byteOffset(pos Cursor) (int, int) {
+	row := pos.Row
+	if row < 0 {
+		row = 0
+	}
+	if row > len(e.lines) {
+		row = len(e.lines)
+	}
+	offset := 0
+	for i := 0; i < row && i < len(e.lines); i++ {
+		offset += runeSliceByteLen(e.lines[i]) + 1
+	}
+	if row >= len(e.lines) {
+		return offset, 0
+	}
+	line := e.lines[row]
+	col := pos.Col
+	if col < 0 {
+		col = 0
+	}
+	if col > len(line) {
+		col = len(line)
+	}
+	colBytes := runeSliceByteLen(line[:col])
+	offset += colBytes
+	return offset, colBytes
+}
+
+func (e *Editor) recordTextEdit(start, oldEnd, newEnd Cursor, insertedBytes int) {
+	startByte, startColBytes := e.byteOffset(start)
+	oldEndByte, oldEndColBytes := e.byteOffset(oldEnd)
+	newEndByte := startByte + insertedBytes
+	newEndColBytes := 0
+	if newEnd.Row == start.Row {
+		newEndColBytes = startColBytes + insertedBytes
+	}
+	e.lastEdit = TextEdit{
+		Valid:          true,
+		StartByte:      startByte,
+		OldEndByte:     oldEndByte,
+		NewEndByte:     newEndByte,
+		StartRow:       start.Row,
+		StartColBytes:  startColBytes,
+		OldEndRow:      oldEnd.Row,
+		OldEndColBytes: oldEndColBytes,
+		NewEndRow:      newEnd.Row,
+		NewEndColBytes: newEndColBytes,
+	}
 }
 
 func isWordRune(r rune) bool {
@@ -1673,6 +2383,34 @@ func visualCol(line []rune, logicalCol int, tabWidth int) int {
 	return col
 }
 
+func visualToLogicalCol(line []rune, visualX int, tabWidth int) int {
+	if tabWidth < 1 {
+		tabWidth = 1
+	}
+	if visualX <= 0 {
+		return 0
+	}
+	col := 0
+	for i, r := range line {
+		var advance int
+		if r == '\t' {
+			advance = tabWidth - (col % tabWidth)
+		} else {
+			advance = 1
+		}
+		if col+advance > visualX {
+			// Click is within this character - return current position
+			return i
+		}
+		col += advance
+		if col >= visualX {
+			return i + 1
+		}
+	}
+	// Click is past end of line
+	return len(line)
+}
+
 func parseLineNumberMode(value string) LineNumberMode {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "relative", "rel":
@@ -1710,12 +2448,14 @@ func (e *Editor) gutterWidth() int {
 	if digits < 2 {
 		digits = 2
 	}
-	return digits + 1
+	// Format: " " + digits + " " (leading space + number + trailing space)
+	return 1 + digits + 1
 }
 
 func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx int) {
 	if gutterWidth > 0 {
-		digits := gutterWidth - 1
+		// gutterWidth = 1 (leading space) + digits + 1 (trailing space)
+		digits := gutterWidth - 2
 		if digits < 1 {
 			digits = 1
 		}
@@ -1732,12 +2472,19 @@ func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx i
 		if lineIdx == e.cursor.Row {
 			style = e.styleLineNumberActive
 		}
+		// Draw leading space
+		if w > 0 {
+			s.SetContent(0, y, ' ', nil, e.styleMain)
+		}
+		// Draw number (right-aligned with leading spaces)
 		for i, r := range numStr {
-			if i >= gutterWidth-1 || i >= w {
+			x := 1 + i
+			if x >= gutterWidth-1 || x >= w {
 				break
 			}
-			s.SetContent(i, y, r, nil, style)
+			s.SetContent(x, y, r, nil, style)
 		}
+		// Draw trailing space
 		if gutterWidth-1 < w {
 			s.SetContent(gutterWidth-1, y, ' ', nil, e.styleMain)
 		}
@@ -1912,6 +2659,10 @@ func keyString(ev *tcell.EventKey) string {
 			return "cmd+" + strings.ToLower(string(r))
 		}
 		switch ev.Key() {
+		case tcell.KeyBackspace, tcell.KeyBackspace2:
+			return "cmd+backspace"
+		case tcell.KeyEnter:
+			return "cmd+enter"
 		case tcell.KeyLeft:
 			if ev.Modifiers()&tcell.ModShift != 0 {
 				return "cmd+shift+left"
@@ -1975,12 +2726,135 @@ func keyString(ev *tcell.EventKey) string {
 		return "backspace"
 	case tcell.KeyEnter:
 		return "enter"
+	case tcell.KeyDelete:
+		return "del"
 	case tcell.KeyEscape:
 		return "esc"
 	case tcell.KeyTab:
 		return "tab"
 	}
 	return ""
+}
+
+func keyStringDisplay(ev *tcell.EventKey) string {
+	var parts []string
+
+	// Build modifier prefix in order: CMD, CTRL, SHIFT, ALT
+	if ev.Modifiers()&tcell.ModMeta != 0 {
+		parts = append(parts, "CMD")
+	}
+	if ev.Modifiers()&tcell.ModCtrl != 0 {
+		parts = append(parts, "CTRL")
+	}
+	if ev.Modifiers()&tcell.ModShift != 0 {
+		parts = append(parts, "SHIFT")
+	}
+	if ev.Modifiers()&tcell.ModAlt != 0 {
+		parts = append(parts, "ALT")
+	}
+
+	// Get key name
+	var keyName string
+	if ev.Key() == tcell.KeyRune {
+		r := ev.Rune()
+		if r == ' ' {
+			keyName = "SPACE"
+		} else {
+			keyName = strings.ToUpper(string(r))
+		}
+	} else {
+		switch ev.Key() {
+		case tcell.KeyUp:
+			keyName = "UP"
+		case tcell.KeyDown:
+			keyName = "DOWN"
+		case tcell.KeyLeft:
+			keyName = "LEFT"
+		case tcell.KeyRight:
+			keyName = "RIGHT"
+		case tcell.KeyPgUp:
+			keyName = "PGUP"
+		case tcell.KeyPgDn:
+			keyName = "PGDN"
+		case tcell.KeyHome:
+			keyName = "HOME"
+		case tcell.KeyEnd:
+			keyName = "END"
+		case tcell.KeyBackspace, tcell.KeyBackspace2:
+			keyName = "BKSP"
+		case tcell.KeyEnter:
+			keyName = "ENTER"
+		case tcell.KeyDelete:
+			keyName = "DEL"
+		case tcell.KeyEscape:
+			keyName = "ESC"
+		case tcell.KeyTab:
+			keyName = "TAB"
+		case tcell.KeyCtrlA:
+			keyName = "A"
+		case tcell.KeyCtrlB:
+			keyName = "B"
+		case tcell.KeyCtrlC:
+			keyName = "C"
+		case tcell.KeyCtrlD:
+			keyName = "D"
+		case tcell.KeyCtrlE:
+			keyName = "E"
+		case tcell.KeyCtrlF:
+			keyName = "F"
+		case tcell.KeyCtrlG:
+			keyName = "G"
+		case tcell.KeyCtrlH:
+			keyName = "H"
+		case tcell.KeyCtrlI:
+			keyName = "I"
+		case tcell.KeyCtrlJ:
+			keyName = "J"
+		case tcell.KeyCtrlK:
+			keyName = "K"
+		case tcell.KeyCtrlL:
+			keyName = "L"
+		case tcell.KeyCtrlM:
+			keyName = "M"
+		case tcell.KeyCtrlN:
+			keyName = "N"
+		case tcell.KeyCtrlO:
+			keyName = "O"
+		case tcell.KeyCtrlP:
+			keyName = "P"
+		case tcell.KeyCtrlQ:
+			keyName = "Q"
+		case tcell.KeyCtrlR:
+			keyName = "R"
+		case tcell.KeyCtrlS:
+			keyName = "S"
+		case tcell.KeyCtrlT:
+			keyName = "T"
+		case tcell.KeyCtrlU:
+			keyName = "U"
+		case tcell.KeyCtrlV:
+			keyName = "V"
+		case tcell.KeyCtrlW:
+			keyName = "W"
+		case tcell.KeyCtrlX:
+			keyName = "X"
+		case tcell.KeyCtrlY:
+			keyName = "Y"
+		case tcell.KeyCtrlZ:
+			keyName = "Z"
+		default:
+			keyName = fmt.Sprintf("KEY%d", ev.Key())
+		}
+	}
+
+	if keyName != "" {
+		parts = append(parts, keyName)
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "-")
 }
 
 func keyStringForMap(ev *tcell.EventKey, keymap map[string]string) string {

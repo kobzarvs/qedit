@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
@@ -42,6 +43,7 @@ func (a *App) Run() error {
 	if err := s.Init(); err != nil {
 		return err
 	}
+	s.EnableMouse()
 	defer s.Fini()
 
 	ls := lsp.NewManager(langs)
@@ -79,6 +81,7 @@ func (a *App) Run() error {
 	var openPath string
 	var langName string
 	highlightEnabled := true
+	highlightExpected := false
 	if len(a.args) > 0 {
 		openPath = a.args[0]
 		if err := ed.OpenFile(openPath); err != nil {
@@ -95,6 +98,7 @@ func (a *App) Run() error {
 				langName = lang.Name
 			}
 		}
+		highlightExpected = highlightEnabled && langName != ""
 	}
 	if gitPath == "" {
 		if cwd, err := os.Getwd(); err == nil {
@@ -107,9 +111,6 @@ func (a *App) Run() error {
 	ed.SetGitBranch(gitinfo.Branch(gitPath))
 	lastGitCheck := time.Now()
 	lastChangeTick := ed.ChangeTick()
-	pendingParse := false
-	nextParseAt := time.Time{}
-	highlightsDirty := false
 	lastHighlightStart := -1
 	lastHighlightEnd := -1
 	if openPath != "" && highlightEnabled && langName != "" {
@@ -144,34 +145,31 @@ func (a *App) Run() error {
 				ed.SetHighlights(0, end, editorSpans)
 				lastHighlightStart = 0
 				lastHighlightEnd = end
-				highlightsDirty = false
 			}
+		} else {
+			highlightExpected = false
 		}
 	}
 	ed.Render(s)
 	for {
 		ev := s.PollEvent()
+		isMouseScroll := false
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
 			if ed.HandleKey(ev) {
 				return nil
 			}
+		case *tcell.EventMouse:
+			ed.HandleMouse(ev)
+			isMouseScroll = true
 		case *tcell.EventResize:
 			s.Sync()
 		case *tcell.EventInterrupt:
 			// Layout updates are handled below.
 		}
-		for {
-			select {
-			case ev := <-ts.Events():
-				if ev.Kind == "parsed" && ev.Path == openPath {
-					highlightsDirty = true
-				}
-			default:
-				goto eventsDone
-			}
+		if !isMouseScroll {
+			ed.UpdateScroll()
 		}
-	eventsDone:
 		if ed.ConsumeBranchPickerRequest() {
 			if gitPath == "" {
 				ed.SetStatusMessage("not a git repository")
@@ -196,17 +194,34 @@ func (a *App) Run() error {
 		}
 		if openPath != "" && highlightEnabled && langName != "" {
 			tick := ed.ChangeTick()
-			if tick != lastChangeTick {
+			changed := tick != lastChangeTick
+			if changed {
 				lastChangeTick = tick
-				pendingParse = true
-				nextParseAt = time.Now().Add(150 * time.Millisecond)
-			}
-			if pendingParse && time.Now().After(nextParseAt) {
-				pendingParse = false
-				ts.Parse(openPath, langName, ed.Content())
+				if edit, ok := ed.ConsumeLastEdit(); ok {
+					tsEdit := sitter.EditInput{
+						StartIndex:  uint32(edit.StartByte),
+						OldEndIndex: uint32(edit.OldEndByte),
+						NewEndIndex: uint32(edit.NewEndByte),
+						StartPoint: sitter.Point{
+							Row:    uint32(edit.StartRow),
+							Column: uint32(edit.StartColBytes),
+						},
+						OldEndPoint: sitter.Point{
+							Row:    uint32(edit.OldEndRow),
+							Column: uint32(edit.OldEndColBytes),
+						},
+						NewEndPoint: sitter.Point{
+							Row:    uint32(edit.NewEndRow),
+							Column: uint32(edit.NewEndColBytes),
+						},
+					}
+					ts.ParseSyncEdit(openPath, langName, ed.Content(), &tsEdit)
+				} else {
+					ts.ParseSync(openPath, langName, ed.Content())
+				}
 			}
 			start, end := ed.VisibleRange()
-			if highlightsDirty || start != lastHighlightStart || end != lastHighlightEnd {
+			if changed || start != lastHighlightStart || end != lastHighlightEnd {
 				spans := ts.Highlights(openPath, start, end)
 				if spans != nil {
 					editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
@@ -224,7 +239,10 @@ func (a *App) Run() error {
 					ed.SetHighlights(start, end, editorSpans)
 					lastHighlightStart = start
 					lastHighlightEnd = end
-					highlightsDirty = false
+				} else {
+					ed.SetHighlights(-1, -1, nil)
+					lastHighlightStart = -1
+					lastHighlightEnd = -1
 				}
 			}
 		} else if openPath != "" {
@@ -238,6 +256,9 @@ func (a *App) Run() error {
 		if gitPath != "" && time.Since(lastGitCheck) > 2*time.Second {
 			lastGitCheck = time.Now()
 			ed.SetGitBranch(gitinfo.Branch(gitPath))
+		}
+		if highlightExpected && !ed.HasHighlights() {
+			continue
 		}
 		ed.Render(s)
 	}
