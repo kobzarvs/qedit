@@ -827,8 +827,8 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 	e.Render(s)
 
 	e.HandleMouse(tcell.NewEventMouse(0, 0, tcell.WheelDown, 0))
-	if e.scroll != 2 {
-		t.Fatalf("scroll = %d, want 2", e.scroll)
+	if e.scroll != 1 {
+		t.Fatalf("scroll = %d, want 1", e.scroll)
 	}
 	if !e.freeScroll {
 		t.Fatalf("freeScroll = false, want true")

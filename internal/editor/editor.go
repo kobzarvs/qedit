@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -179,11 +180,11 @@ var GotoMenuItems = []SpaceMenuItem{
 	{'h', "Go to line start", "line_start", true},
 	{'l', "Go to line end", "line_end", true},
 	{'s', "Go to first non-whitespace", "goto_first_nonblank", true},
-	{'d', "Go to definition", "goto_definition", false},
-	{'D', "Go to declaration", "goto_declaration", false},
-	{'y', "Go to type definition", "goto_type_definition", false},
-	{'r', "Go to references", "goto_references", false},
-	{'i', "Go to implementation", "goto_implementation", false},
+	{'d', "Go to definition", "goto_definition", true},
+	{'D', "Go to declaration", "goto_declaration", true},
+	{'y', "Go to type definition", "goto_type_definition", true},
+	{'r', "Go to references", "goto_references", true},
+	{'i', "Go to implementation", "goto_implementation", true},
 	{'t', "Go to window top", "goto_window_top", true},
 	{'c', "Go to window center", "goto_window_center", true},
 	{'b', "Go to window bottom", "goto_window_bottom", true},
@@ -309,6 +310,21 @@ type NodeRange struct {
 // NodeStackFunc is a callback to get syntax node stack at a position
 type NodeStackFunc func(path string, row, col int) []NodeRange
 
+// LSPLocation represents a location returned by LSP
+type LSPLocation struct {
+	Path      string
+	StartLine int
+	StartCol  int
+	EndLine   int
+	EndCol    int
+}
+
+// LSPGotoFunc is a callback to perform LSP goto operations
+type LSPGotoFunc func(method, path string, line, col int) ([]LSPLocation, error)
+
+// HighlightRangeFunc is a callback to get syntax highlights for a range
+type HighlightRangeFunc func(path string, startLine, endLine int) map[int][]HighlightSpan
+
 type Editor struct {
 	lines                  [][]rune
 	cursor                 Cursor
@@ -353,6 +369,9 @@ type Editor struct {
 	styleSyntaxParameter   tcell.Style
 	styleBranch            tcell.Style
 	styleMainBranch        tcell.Style
+	styleLayoutUS          tcell.Style
+	styleLayoutRU          tcell.Style
+	styleLayoutOther       tcell.Style
 	lineNumberMode         LineNumberMode
 	layoutName             string
 	gitBranch              string
@@ -393,8 +412,12 @@ type Editor struct {
 	pendingKeys            string                 // keys typed so far in a sequence (e.g., "g" waiting for second key)
 	lastCommand            string                 // last executed command for display (e.g., "gg", "ge", "fw")
 	spaceMenuActive        bool                   // whether space menu is open
-	keybindingsHelpActive  bool                   // whether keybindings help popup is open
-	keybindingsHelpScroll  int                    // scroll position in keybindings help
+	keybindingsHelpActive      bool     // whether keybindings help popup is open
+	keybindingsHelpScroll      int      // scroll position in keybindings help
+	keybindingsHelpFilterKey   []rune   // filter for Key column
+	keybindingsHelpFilterAct   []rune   // filter for Action column
+	keybindingsHelpFilterDesc  []rune   // filter for Description column
+	keybindingsHelpFilterFocus int      // 0=Key, 1=Action, 2=Description
 
 	// Search state
 	searchQuery            []rune                 // current search query
@@ -410,7 +433,10 @@ type Editor struct {
 	searchHistoryPrefix    string                 // prefix for filtered search history
 
 	// Terminal zoom state
-	zoomPendingRestore     bool                   // true = waiting for space to restore zoom
+	zoomPendingRestore bool // true = waiting for space to restore zoom
+	zoomAnimating      bool // true = zoom animation in progress, block new zooms
+	zoomSavedScroll    int  // original scroll (vertical) before zoom
+	zoomSavedScrollX   int  // original scrollX before zoom
 
 	// Copied message state
 	copiedMessageTime      time.Time              // when "copied" was shown
@@ -419,6 +445,16 @@ type Editor struct {
 	nodeStackFunc          NodeStackFunc          // callback to get syntax node stack
 	selectionScopeStack    []NodeRange            // stack of selection scopes for shrinking
 	selectionScopeIndex    int                    // current index in scope stack
+
+	// LSP integration
+	lspGotoFunc            LSPGotoFunc            // callback for LSP goto operations
+	highlightRangeFunc     HighlightRangeFunc     // callback to get highlights for a range
+	refsPickerActive       bool                   // whether references picker is shown
+	refsPickerItems        []LSPLocation          // list of references
+	refsPickerIndex        int                    // selected reference index
+	refsPickerTitle        string                 // picker title (e.g., "References", "Implementations")
+	refsPickerFileCache    map[string][][]rune    // cache of file lines for preview
+	refsPickerHighlights   map[string]map[int][]HighlightSpan // cache of highlights for preview
 
 	// Session persistence
 	sessionManager         *session.Manager
@@ -503,6 +539,13 @@ func New(cfg config.Config) *Editor {
 	colors["main-branch-foreground"] = resolve(cfg.Theme.MainBranchForeground, mainBranchDefaultFg)
 	colors["main-branch-background"] = resolve(cfg.Theme.MainBranchBackground, colors["statusline-background"])
 
+	// Keyboard layout colors
+	layoutUSFg := tcell.NewRGBColor(144, 238, 144)  // #90EE90 light green
+	layoutRUFg := tcell.NewRGBColor(135, 206, 250)  // #87CEFA light sky blue
+	colors["layout-us-foreground"] = layoutUSFg
+	colors["layout-ru-foreground"] = layoutRUFg
+	colors["layout-other-foreground"] = colors["statusline-foreground"]
+
 	lineNumberMode := parseLineNumberMode(cfg.Editor.LineNumbers)
 	gitBranchSymbol := strings.TrimSpace(cfg.Editor.GitBranchSymbol)
 
@@ -537,6 +580,9 @@ func New(cfg config.Config) *Editor {
 		styleSyntaxParameter:   tcell.StyleDefault.Foreground(colors["syntax-parameter"]).Background(colors["background"]),
 		styleBranch:            tcell.StyleDefault.Foreground(colors["branch-foreground"]).Background(colors["branch-background"]),
 		styleMainBranch:        tcell.StyleDefault.Foreground(colors["main-branch-foreground"]).Background(colors["main-branch-background"]),
+		styleLayoutUS:          tcell.StyleDefault.Foreground(colors["layout-us-foreground"]).Background(colors["statusline-background"]),
+		styleLayoutRU:          tcell.StyleDefault.Foreground(colors["layout-ru-foreground"]).Background(colors["statusline-background"]),
+		styleLayoutOther:       tcell.StyleDefault.Foreground(colors["layout-other-foreground"]).Background(colors["statusline-background"]),
 		lineNumberMode:         lineNumberMode,
 		gitBranchSymbol:        gitBranchSymbol,
 		highlightStart:         -1,
@@ -693,12 +739,24 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 }
 
 func (e *Editor) HandleMouse(ev *tcell.EventMouse) {
+	// Intercept mouse events when modal is open
+	if e.keybindingsHelpActive {
+		if ev.Buttons() == tcell.WheelUp {
+			if e.keybindingsHelpScroll > 0 {
+				e.keybindingsHelpScroll--
+			}
+		} else if ev.Buttons() == tcell.WheelDown {
+			e.keybindingsHelpScroll++
+		}
+		return
+	}
+
 	if ev.Buttons() == tcell.WheelUp {
-		e.scrollUp(2)
+		e.scrollUp(1)
 		e.freeScroll = true
 		e.lastScrollTime = time.Now()
 	} else if ev.Buttons() == tcell.WheelDown {
-		e.scrollDown(2)
+		e.scrollDown(1)
 		e.freeScroll = true
 		e.lastScrollTime = time.Now()
 	} else if ev.Buttons() == tcell.WheelLeft {
@@ -869,22 +927,43 @@ func (e *Editor) Render(s tcell.Screen) {
 	}
 	e.viewHeight = viewHeight
 	e.viewWidth = w
+
+	// Calculate sidebar width if refs picker is active
+	sidebarWidth := 0
+	if e.refsPickerActive && len(e.refsPickerItems) > 0 {
+		sidebarWidth = w / 4
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if sidebarWidth > w/2 {
+			sidebarWidth = w / 2
+		}
+	}
+	editorX := sidebarWidth
+	editorWidth := w - sidebarWidth
+
 	gutterWidth := e.gutterWidth()
 	if !e.freeScroll {
 		e.ensureCursorVisible(viewHeight)
-		e.ensureCursorVisibleHorizontal(w, gutterWidth)
+		e.ensureCursorVisibleHorizontal(editorWidth, gutterWidth)
 	}
 
 	s.SetStyle(e.styleMain)
 	s.Clear()
 
+	// Draw editor content (offset by sidebar)
 	for y := 0; y < viewHeight; y++ {
 		lineIdx := e.scroll + y
 		if lineIdx >= len(e.lines) {
-			clearLine(s, y, w, e.styleMain)
+			clearLineAt(s, editorX, y, editorWidth, e.styleMain)
 			continue
 		}
-		e.drawLineWithGutter(s, y, w, gutterWidth, lineIdx)
+		e.drawLineWithGutterAt(s, editorX, y, editorWidth, gutterWidth, lineIdx)
+	}
+
+	// Draw refs sidebar if active
+	if e.refsPickerActive && sidebarWidth > 0 {
+		e.renderRefsSidebar(s, sidebarWidth, viewHeight)
 	}
 
 	// Draw scroll indicator if recently scrolled
@@ -908,10 +987,10 @@ func (e *Editor) Render(s tcell.Screen) {
 			cursorVisible = false
 		}
 		if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
-			cx = gutterWidth + visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth) - e.scrollX
+			cx = editorX + gutterWidth + visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth) - e.scrollX
 		}
-		if cx < gutterWidth {
-			cx = gutterWidth
+		if cx < editorX+gutterWidth {
+			cx = editorX + gutterWidth
 		}
 		if cx >= w {
 			cx = w - 1
@@ -959,11 +1038,11 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 		if ev.Key() == tcell.KeyRune {
 			switch ev.Rune() {
 			case ' ':
-				e.sendTerminalZoom(false, 20) // zoom out 20 times
+				e.zoomWithAnimation(false, 20) // zoom out with scroll restore
 				e.zoomPendingRestore = false
 				return false
 			case '=':
-				e.sendTerminalZoom(true, 20) // zoom in more
+				e.zoomWithAnimation(true, 20) // zoom in more, keep centering
 				return false
 			}
 		}
@@ -974,6 +1053,14 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	// Handle space menu
 	if e.spaceMenuActive {
 		return e.handleSpaceMenu(ev)
+	}
+
+	// Handle refs picker - only intercept navigation keys, let others fall through
+	if e.refsPickerActive {
+		if handled := e.handleRefsPicker(ev); handled {
+			return false
+		}
+		// Key not handled by refs picker, continue to normal handling
 	}
 
 	// Handle keybindings help popup
@@ -1093,6 +1180,37 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 
 // handleGotoKey handles the second key after 'g' prefix
 func (e *Editor) handleGotoKey(ch rune) bool {
+	// Handle LSP goto commands
+	switch ch {
+	case 'd':
+		e.lastCommand = "gd"
+		return e.lspGoto("definition")
+	case 'D':
+		e.lastCommand = "gD"
+		return e.lspGoto("declaration")
+	case 'y':
+		e.lastCommand = "gy"
+		return e.lspGoto("typeDefinition")
+	case 'r':
+		e.lastCommand = "gr"
+		return e.lspGoto("references")
+	case 'i':
+		e.lastCommand = "gi"
+		return e.lspGoto("implementation")
+	case 't':
+		e.lastCommand = "gt"
+		e.scrollCursorToTop()
+		return false
+	case 'c':
+		e.lastCommand = "gc"
+		e.centerCursorLine()
+		return false
+	case 'b':
+		e.lastCommand = "gb"
+		e.scrollCursorToBottom()
+		return false
+	}
+
 	var action string
 	switch ch {
 	case 'g':
@@ -1123,6 +1241,58 @@ func (e *Editor) handleGotoKey(ch rune) bool {
 	}
 
 	return e.execAction(action)
+}
+
+// lspGoto performs an LSP goto operation
+func (e *Editor) lspGoto(method string) bool {
+	if e.lspGotoFunc == nil {
+		e.setStatus("LSP: callback not set")
+		return false
+	}
+	if e.filename == "" {
+		e.setStatus("LSP: no file open")
+		return false
+	}
+
+	locations, err := e.lspGotoFunc(method, e.filename, e.cursor.Row, e.cursor.Col)
+	if err != nil {
+		e.setStatus("LSP: " + err.Error())
+		return false
+	}
+	if len(locations) == 0 {
+		e.setStatus("LSP: no " + method + " found")
+		return false
+	}
+
+	// For references/implementations or multiple results, show picker
+	if method == "references" || method == "implementation" || len(locations) > 1 {
+		title := "References"
+		if method == "implementation" {
+			title = "Implementations"
+		} else if method == "definition" {
+			title = "Definitions"
+		} else if method == "declaration" {
+			title = "Declarations"
+		} else if method == "typeDefinition" {
+			title = "Type Definitions"
+		}
+		e.showRefsPicker(title, locations)
+		return false
+	}
+
+	// Single result: jump directly
+	loc := locations[0]
+	currentAbs, _ := filepath.Abs(e.filename)
+	if loc.Path != currentAbs && loc.Path != e.filename {
+		e.setStatus("LSP: " + loc.Path + ":" + strconv.Itoa(loc.StartLine+1) + " (cross-file)")
+		return false
+	}
+
+	e.cursor.Row = loc.StartLine
+	e.cursor.Col = loc.StartCol
+	e.ensureCursorVisible(e.viewHeightCached())
+	e.setStatus(method + " → line " + strconv.Itoa(loc.StartLine+1))
+	return false
 }
 
 // handleMatchKey handles the second key after 'm' prefix
@@ -1178,10 +1348,50 @@ func (e *Editor) handleWindowKey(ch rune) bool {
 
 // handleKeybindingsHelp handles key input in keybindings help popup
 func (e *Editor) handleKeybindingsHelp(ev *tcell.EventKey) bool {
+	// Get current filter based on focus
+	currentFilter := func() *[]rune {
+		switch e.keybindingsHelpFilterFocus {
+		case 0:
+			return &e.keybindingsHelpFilterKey
+		case 1:
+			return &e.keybindingsHelpFilterAct
+		default:
+			return &e.keybindingsHelpFilterDesc
+		}
+	}
+
 	switch ev.Key() {
-	case tcell.KeyEscape, tcell.KeyEnter:
+	case tcell.KeyEscape:
 		e.keybindingsHelpActive = false
+		e.keybindingsHelpFilterKey = nil
+		e.keybindingsHelpFilterAct = nil
+		e.keybindingsHelpFilterDesc = nil
+		e.keybindingsHelpScroll = 0
+		e.keybindingsHelpFilterFocus = 0
 		return false
+	case tcell.KeyEnter:
+		// Clear all filters on Enter
+		if len(e.keybindingsHelpFilterKey) > 0 || len(e.keybindingsHelpFilterAct) > 0 || len(e.keybindingsHelpFilterDesc) > 0 {
+			e.keybindingsHelpFilterKey = nil
+			e.keybindingsHelpFilterAct = nil
+			e.keybindingsHelpFilterDesc = nil
+			e.keybindingsHelpScroll = 0
+		} else {
+			e.keybindingsHelpActive = false
+		}
+		return false
+	case tcell.KeyTab:
+		// Switch between filter fields
+		e.keybindingsHelpFilterFocus = (e.keybindingsHelpFilterFocus + 1) % 3
+	case tcell.KeyBacktab:
+		// Switch backwards
+		e.keybindingsHelpFilterFocus = (e.keybindingsHelpFilterFocus + 2) % 3
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		f := currentFilter()
+		if len(*f) > 0 {
+			*f = (*f)[:len(*f)-1]
+			e.keybindingsHelpScroll = 0
+		}
 	case tcell.KeyUp, tcell.KeyCtrlP:
 		if e.keybindingsHelpScroll > 0 {
 			e.keybindingsHelpScroll--
@@ -1195,14 +1405,15 @@ func (e *Editor) handleKeybindingsHelp(ev *tcell.EventKey) bool {
 		}
 	case tcell.KeyPgDn:
 		e.keybindingsHelpScroll += 10
+	case tcell.KeyHome:
+		e.keybindingsHelpScroll = 0
+	case tcell.KeyEnd:
+		e.keybindingsHelpScroll = 999999 // will be clamped in render
 	case tcell.KeyRune:
-		if ev.Rune() == 'q' {
-			e.keybindingsHelpActive = false
-		} else if ev.Rune() == 'j' {
-			e.keybindingsHelpScroll++
-		} else if ev.Rune() == 'k' && e.keybindingsHelpScroll > 0 {
-			e.keybindingsHelpScroll--
-		}
+		// Type into current filter
+		f := currentFilter()
+		*f = append(*f, ev.Rune())
+		e.keybindingsHelpScroll = 0
 	}
 	return false
 }
@@ -1611,6 +1822,10 @@ func (e *Editor) executeSpaceAction(item SpaceMenuItem) bool {
 	case "show_keybindings":
 		e.keybindingsHelpActive = true
 		e.keybindingsHelpScroll = 0
+		e.keybindingsHelpFilterKey = nil
+		e.keybindingsHelpFilterAct = nil
+		e.keybindingsHelpFilterDesc = nil
+		e.keybindingsHelpFilterFocus = 0
 	default:
 		e.setStatus(item.Label + " (not implemented)")
 	}
@@ -2636,6 +2851,58 @@ func (e *Editor) handleBranchPicker(ev *tcell.EventKey) bool {
 	return false
 }
 
+func (e *Editor) handleRefsPicker(ev *tcell.EventKey) bool {
+	switch keyString(ev) {
+	case "esc", "ctrl+c", "q":
+		e.closeRefsPicker(false)
+		return true
+	case "enter":
+		e.closeRefsPicker(true)
+		return true
+	case "up", "k":
+		e.refsPickerIndex--
+	case "down", "j":
+		e.refsPickerIndex++
+	case "pgup", "ctrl+u":
+		e.refsPickerIndex -= e.refsPickerPageSize()
+	case "pgdn", "ctrl+d":
+		e.refsPickerIndex += e.refsPickerPageSize()
+	case "home", "g":
+		e.refsPickerIndex = 0
+	case "end", "G":
+		e.refsPickerIndex = len(e.refsPickerItems) - 1
+	default:
+		return false // Not handled, let normal key handling proceed
+	}
+	// Clamp index
+	if e.refsPickerIndex < 0 {
+		e.refsPickerIndex = 0
+	}
+	if e.refsPickerIndex >= len(e.refsPickerItems) {
+		e.refsPickerIndex = len(e.refsPickerItems) - 1
+		if e.refsPickerIndex < 0 {
+			e.refsPickerIndex = 0
+		}
+	}
+	// Move cursor to selected reference (if same file)
+	e.jumpToSelectedRef()
+	return true // Key was handled
+}
+
+// jumpToSelectedRef moves cursor to the currently selected reference
+func (e *Editor) jumpToSelectedRef() {
+	if e.refsPickerIndex >= len(e.refsPickerItems) {
+		return
+	}
+	loc := e.refsPickerItems[e.refsPickerIndex]
+	currentAbs, _ := filepath.Abs(e.filename)
+	if loc.Path == currentAbs || loc.Path == e.filename {
+		e.cursor.Row = loc.StartLine
+		e.cursor.Col = loc.StartCol
+		e.ensureCursorVisible(e.viewHeightCached())
+	}
+}
+
 func (e *Editor) execAction(action string) bool {
 	if e.actionHook != nil {
 		e.actionHook(action)
@@ -2850,7 +3117,13 @@ func (e *Editor) execAction(action string) bool {
 
 	// Terminal zoom
 	case actionTerminalZoomIn:
-		e.sendTerminalZoom(true, 20) // zoom in 20 times
+		if e.zoomPendingRestore {
+			return false // already zoomed, ignore
+		}
+		// Save current scroll positions for restore
+		e.zoomSavedScroll = e.scroll
+		e.zoomSavedScrollX = e.scrollX
+		e.zoomWithAnimation(true, 20) // zoom in with scroll animation
 		e.zoomPendingRestore = true
 		return false
 
@@ -3367,23 +3640,73 @@ func (e *Editor) setStatus(msg string) {
 	e.statusMessage = msg
 }
 
-// sendTerminalZoom sends zoom commands to the terminal via AppleScript.
-// zoomIn=true sends Cmd++, zoomIn=false sends Cmd+-.
-func (e *Editor) sendTerminalZoom(zoomIn bool, times int) {
+// sendTerminalZoomStep sends a single zoom command to the terminal via AppleScript.
+func (e *Editor) sendTerminalZoomStep(zoomIn bool) {
 	key := "+"
 	if !zoomIn {
 		key = "-"
 	}
-
-	script := fmt.Sprintf(`
-		tell application "System Events"
-			repeat %d times
-				keystroke "%s" using command down
-			end repeat
-		end tell
-	`, times, key)
-
+	script := fmt.Sprintf(`tell application "System Events" to keystroke "%s" using command down`, key)
 	_ = exec.Command("osascript", "-e", script).Run()
+}
+
+// zoomWithAnimation performs zoom with synchronized scroll animation.
+// For zoom in: scrolls to center cursor. For zoom out: scrolls back to saved position.
+func (e *Editor) zoomWithAnimation(zoomIn bool, steps int) {
+	if e.zoomAnimating {
+		return // already animating, ignore
+	}
+	e.zoomAnimating = true
+	defer func() { e.zoomAnimating = false }()
+
+	// Calculate start and target scroll positions
+	startScroll := e.scroll
+	startScrollX := e.scrollX
+
+	var targetScroll, targetScrollX int
+	if zoomIn {
+		// Target: center cursor on screen
+		// Use current viewport, will be approximate but close enough
+		targetScroll = e.cursor.Row - e.viewHeight/2
+		targetScrollX = e.cursor.Col - e.viewWidth/2
+
+		// Clamp targets
+		if targetScroll < 0 {
+			targetScroll = 0
+		}
+		maxScroll := len(e.lines) - e.viewHeight
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		if targetScroll > maxScroll {
+			targetScroll = maxScroll
+		}
+		if targetScrollX < 0 {
+			targetScrollX = 0
+		}
+	} else {
+		// Target: restore saved scroll positions
+		targetScroll = e.zoomSavedScroll
+		targetScrollX = e.zoomSavedScrollX
+	}
+
+	// Perform animated zoom + scroll
+	for i := 1; i <= steps; i++ {
+		// Send one zoom step
+		e.sendTerminalZoomStep(zoomIn)
+
+		// Interpolate scroll position (linear)
+		progress := float64(i) / float64(steps)
+		e.scroll = startScroll + int(float64(targetScroll-startScroll)*progress)
+		e.scrollX = startScrollX + int(float64(targetScrollX-startScrollX)*progress)
+
+		// Small delay between steps for smoothness
+		time.Sleep(15 * time.Millisecond)
+	}
+
+	// Ensure final position is exact
+	e.scroll = targetScroll
+	e.scrollX = targetScrollX
 }
 
 func (e *Editor) insertRune(r rune) {
@@ -5218,6 +5541,8 @@ func (e *Editor) ensureCursorVisible(viewHeight int) {
 	if viewHeight <= 0 {
 		return
 	}
+	const margin = 5 // scroll when cursor is within 5 lines of edge
+
 	// If cursor is far outside visible area, center it
 	if e.cursor.Row < e.scroll-1 || e.cursor.Row >= e.scroll+viewHeight+1 {
 		e.scroll = e.cursor.Row - viewHeight/2
@@ -5226,13 +5551,17 @@ func (e *Editor) ensureCursorVisible(viewHeight int) {
 		}
 		return
 	}
-	// Otherwise just make it visible at the edge
-	if e.cursor.Row < e.scroll {
-		e.scroll = e.cursor.Row
+	// Scroll when cursor approaches top edge (within margin)
+	if e.cursor.Row < e.scroll+margin {
+		e.scroll = e.cursor.Row - margin
+		if e.scroll < 0 {
+			e.scroll = 0
+		}
 		return
 	}
-	if e.cursor.Row >= e.scroll+viewHeight {
-		e.scroll = e.cursor.Row - viewHeight + 1
+	// Scroll when cursor approaches bottom edge (within margin)
+	if e.cursor.Row >= e.scroll+viewHeight-margin {
+		e.scroll = e.cursor.Row - viewHeight + margin + 1
 	}
 }
 
@@ -5307,21 +5636,36 @@ func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
 		branchText = formatGitBranch(e.gitBranchSymbol, e.gitBranch)
 		rightParts = append(rightParts, branchText)
 	}
+	layoutText := ""
 	if e.layoutName != "" {
-		rightParts = append(rightParts, e.layoutName)
+		layoutText = e.layoutName + " "
+		rightParts = append(rightParts, layoutText)
 	}
 	right := strings.Join(rightParts, " | ")
 
 	line := composeStatusLine(status, right, w)
+	lineStr := string(line)
 
-	// Find branch position in the composed line
+	// Find branch position in the composed line (using rune indices)
 	branchStart := -1
 	branchEnd := -1
 	if branchText != "" {
-		idx := strings.Index(string(line), branchText)
-		if idx >= 0 {
-			branchStart = idx
-			branchEnd = idx + len(branchText)
+		branchRunes := []rune(branchText)
+		if idx := strings.Index(lineStr, branchText); idx >= 0 {
+			// Convert byte index to rune index
+			branchStart = utf8.RuneCountInString(lineStr[:idx])
+			branchEnd = branchStart + len(branchRunes)
+		}
+	}
+
+	// Find layout position in the composed line (using rune indices)
+	layoutStart := -1
+	layoutEnd := -1
+	if layoutText != "" {
+		layoutRunes := []rune(layoutText)
+		if idx := strings.Index(lineStr, layoutText); idx >= 0 {
+			layoutStart = utf8.RuneCountInString(lineStr[:idx])
+			layoutEnd = layoutStart + len(layoutRunes)
 		}
 	}
 
@@ -5331,6 +5675,15 @@ func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
 		branchStyle = e.styleMainBranch
 	}
 
+	// Choose layout style based on layout name
+	layoutStyle := e.styleLayoutOther
+	switch {
+	case strings.HasPrefix(e.layoutName, "US"):
+		layoutStyle = e.styleLayoutUS
+	case strings.HasPrefix(e.layoutName, "RU"):
+		layoutStyle = e.styleLayoutRU
+	}
+
 	for x, r := range line {
 		if x >= w {
 			break
@@ -5338,6 +5691,8 @@ func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
 		style := e.styleStatus
 		if branchStart >= 0 && x >= branchStart && x < branchEnd {
 			style = branchStyle
+		} else if layoutStart >= 0 && x >= layoutStart && x < layoutEnd {
+			style = layoutStyle
 		}
 		s.SetContent(x, y, r, nil, style)
 	}
@@ -5604,6 +5959,14 @@ func (e *Editor) GetSessionManager() *session.Manager {
 
 func (e *Editor) SetNodeStackFunc(fn NodeStackFunc) {
 	e.nodeStackFunc = fn
+}
+
+func (e *Editor) SetLSPGotoFunc(fn LSPGotoFunc) {
+	e.lspGotoFunc = fn
+}
+
+func (e *Editor) SetHighlightRangeFunc(fn HighlightRangeFunc) {
+	e.highlightRangeFunc = fn
 }
 
 func (e *Editor) SetStatusMessage(msg string) {
@@ -5946,6 +6309,49 @@ func (e *Editor) closeBranchPicker(selection string) {
 	e.branchPickerSelection = selection
 }
 
+// showRefsPicker shows the references/implementations picker
+func (e *Editor) showRefsPicker(title string, items []LSPLocation) {
+	if len(items) == 0 {
+		return
+	}
+	e.refsPickerActive = true
+	e.refsPickerTitle = title
+	e.refsPickerItems = items
+	e.refsPickerIndex = 0
+	e.refsPickerFileCache = make(map[string][][]rune)
+	e.refsPickerHighlights = make(map[string]map[int][]HighlightSpan)
+	e.mode = ModeNormal
+}
+
+// closeRefsPicker closes the picker and optionally jumps to selected location
+func (e *Editor) closeRefsPicker(jump bool) {
+	if jump && len(e.refsPickerItems) > 0 && e.refsPickerIndex < len(e.refsPickerItems) {
+		loc := e.refsPickerItems[e.refsPickerIndex]
+		currentAbs, _ := filepath.Abs(e.filename)
+		if loc.Path == currentAbs || loc.Path == e.filename {
+			e.cursor.Row = loc.StartLine
+			e.cursor.Col = loc.StartCol
+			e.ensureCursorVisible(e.viewHeightCached())
+		} else {
+			e.setStatus("cross-file: " + loc.Path + ":" + strconv.Itoa(loc.StartLine+1))
+		}
+	}
+	e.refsPickerActive = false
+	e.refsPickerItems = nil
+	e.refsPickerIndex = 0
+	e.refsPickerFileCache = nil
+	e.refsPickerHighlights = nil
+}
+
+// refsPickerPageSize returns the number of items per page
+func (e *Editor) refsPickerPageSize() int {
+	size := e.viewHeightCached() - 6
+	if size < 1 {
+		return 1
+	}
+	return size
+}
+
 func (e *Editor) swapLines(a, b int) bool {
 	if a < 0 || b < 0 || a >= len(e.lines) || b >= len(e.lines) {
 		return false
@@ -6126,9 +6532,9 @@ func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidt
 	}
 }
 
-func clearLine(s tcell.Screen, y, w int, style tcell.Style) {
+func clearLineAt(s tcell.Screen, x0, y, w int, style tcell.Style) {
 	for x := 0; x < w; x++ {
-		s.SetContent(x, y, ' ', nil, style)
+		s.SetContent(x0+x, y, ' ', nil, style)
 	}
 }
 
@@ -6285,7 +6691,7 @@ func (e *Editor) gutterWidth() int {
 	return 1 + digits + 1
 }
 
-func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx int) {
+func (e *Editor) drawLineWithGutterAt(s tcell.Screen, x0, y, w, gutterWidth, lineIdx int) {
 	if gutterWidth > 0 {
 		// gutterWidth = 1 (leading space) + digits + 1 (trailing space)
 		digits := gutterWidth - 2
@@ -6307,7 +6713,7 @@ func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx i
 		}
 		// Draw leading space
 		if w > 0 {
-			s.SetContent(0, y, ' ', nil, e.styleMain)
+			s.SetContent(x0, y, ' ', nil, e.styleMain)
 		}
 		// Draw number (right-aligned with leading spaces)
 		for i, r := range numStr {
@@ -6315,11 +6721,11 @@ func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx i
 			if x >= gutterWidth-1 || x >= w {
 				break
 			}
-			s.SetContent(x, y, r, nil, style)
+			s.SetContent(x0+x, y, r, nil, style)
 		}
 		// Draw trailing space
 		if gutterWidth-1 < w {
-			s.SetContent(gutterWidth-1, y, ' ', nil, e.styleMain)
+			s.SetContent(x0+gutterWidth-1, y, ' ', nil, e.styleMain)
 		}
 	}
 	if gutterWidth >= w {
@@ -6335,7 +6741,7 @@ func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx i
 	if highlightActive {
 		spans = e.highlights[lineIdx]
 	}
-	e.drawLine(s, y, w, gutterWidth, e.lines[lineIdx], e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX)
+	e.drawLine(s, y, x0+w, x0+gutterWidth, e.lines[lineIdx], e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX)
 }
 
 func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
@@ -6499,6 +6905,105 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 		}
 		for j, r := range runes {
 			s.SetContent(x0+1+xOffset+j, lineY, r, nil, style)
+		}
+	}
+}
+
+func (e *Editor) renderRefsSidebar(s tcell.Screen, sidebarWidth, viewHeight int) {
+	if !e.refsPickerActive || len(e.refsPickerItems) == 0 {
+		return
+	}
+
+	borderStyle := e.styleStatus
+	itemStyle := e.styleMain
+	selectedStyle := e.styleSelection
+
+	// Draw vertical separator on the right edge
+	for y := 0; y < viewHeight; y++ {
+		s.SetContent(sidebarWidth-1, y, '│', nil, borderStyle)
+	}
+
+	// Clear sidebar area
+	innerWidth := sidebarWidth - 1
+	for y := 0; y < viewHeight; y++ {
+		for x := 0; x < innerWidth; x++ {
+			s.SetContent(x, y, ' ', nil, itemStyle)
+		}
+	}
+
+	// Draw title bar
+	title := e.refsPickerTitle
+	counter := fmt.Sprintf(" %d/%d", e.refsPickerIndex+1, len(e.refsPickerItems))
+	titleLine := title + counter
+	titleRunes := []rune(titleLine)
+	for i, r := range titleRunes {
+		if i < innerWidth {
+			s.SetContent(i, 0, r, nil, borderStyle)
+		}
+	}
+	// Fill rest of title line
+	for x := len(titleRunes); x < innerWidth; x++ {
+		s.SetContent(x, 0, ' ', nil, borderStyle)
+	}
+
+	// Draw list items starting from line 1
+	listHeight := viewHeight - 1
+	start := e.refsPickerIndex - listHeight/2
+	maxStart := len(e.refsPickerItems) - listHeight
+	if maxStart < 0 {
+		maxStart = 0
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > maxStart {
+		start = maxStart
+	}
+
+	for i := 0; i < listHeight; i++ {
+		idx := start + i
+		lineY := 1 + i
+		if idx >= len(e.refsPickerItems) {
+			continue
+		}
+		loc := e.refsPickerItems[idx]
+
+		// Format: filename:line
+		displayPath := loc.Path
+		if cwd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(cwd, loc.Path); err == nil && !strings.HasPrefix(rel, "..") {
+				displayPath = rel
+			}
+		}
+		// Use just filename if path is too long
+		if len(displayPath) > sidebarWidth-10 {
+			displayPath = filepath.Base(loc.Path)
+		}
+		label := fmt.Sprintf("%s:%d", displayPath, loc.StartLine+1)
+		labelRunes := []rune(label)
+
+		style := itemStyle
+		if idx == e.refsPickerIndex {
+			style = selectedStyle
+		}
+
+		// Clear line
+		for x := 0; x < innerWidth; x++ {
+			s.SetContent(x, lineY, ' ', nil, style)
+		}
+
+		// Draw indicator
+		if idx == e.refsPickerIndex {
+			s.SetContent(0, lineY, '>', nil, style)
+		}
+
+		// Draw label (truncate if needed)
+		maxLen := innerWidth - 2
+		if len(labelRunes) > maxLen {
+			labelRunes = labelRunes[:maxLen]
+		}
+		for j, r := range labelRunes {
+			s.SetContent(2+j, lineY, r, nil, style)
 		}
 	}
 }
@@ -6764,99 +7269,154 @@ func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
 		return
 	}
 
-	// Build keybinding list
+	// Keybinding entry with group info
 	type keybinding struct {
 		key    string
 		action string
 		desc   string
+		group  string
 	}
-	var bindings []keybinding
 
-	// Add header
-	bindings = append(bindings, keybinding{"Key", "Action", "Description"})
-	bindings = append(bindings, keybinding{"───", "──────", "───────────"})
+	// Action to group mapping
+	actionGroups := map[string]string{
+		// Navigation
+		"move_left": "Navigation", "move_right": "Navigation", "move_up": "Navigation", "move_down": "Navigation",
+		"word_left": "Navigation", "word_right": "Navigation", "word_forward": "Navigation", "word_backward": "Navigation", "word_end": "Navigation",
+		"line_start": "Navigation", "line_end": "Navigation", "file_start": "Navigation", "file_end": "Navigation",
+		"page_up": "Navigation", "page_down": "Navigation", "scroll_up": "Navigation", "scroll_down": "Navigation",
+		// Editing
+		"delete": "Editing", "change": "Editing", "yank": "Editing", "paste": "Editing", "paste_before": "Editing",
+		"open_below": "Editing", "open_above": "Editing", "append": "Editing", "append_line_end": "Editing",
+		"insert_line_start": "Editing", "join_lines": "Editing", "replace_char": "Editing", "delete_line": "Editing",
+		"indent": "Editing", "unindent": "Editing", "insert_line_above": "Editing",
+		// Selection
+		"toggle_select": "Selection", "extend_line": "Selection", "collapse_selection": "Selection", "select_all": "Selection",
+		// Search
+		"search_forward": "Search", "search_backward": "Search", "search_next": "Search", "search_prev": "Search",
+		"find_char": "Search", "find_char_backward": "Search", "till_char": "Search", "till_char_backward": "Search",
+		// Modes
+		"enter_insert": "Modes", "enter_command": "Modes", "goto_mode": "Modes", "match_mode": "Modes",
+		"view_mode": "Modes", "space_mode": "Modes",
+		// History
+		"undo": "History", "redo": "History",
+		// Other
+		"quit": "Other", "branch_picker": "Other", "toggle_line_numbers": "Other",
+	}
 
-	// Add normal mode bindings
+	// Action descriptions
 	bindingDescs := map[string]string{
-		"move_left":          "Move cursor left",
-		"move_right":         "Move cursor right",
-		"move_up":            "Move cursor up",
-		"move_down":          "Move cursor down",
-		"word_left":          "Move to previous word",
-		"word_right":         "Move to next word",
-		"line_start":         "Move to line start",
-		"line_end":           "Move to line end",
-		"file_start":         "Move to file start",
-		"file_end":           "Move to file end",
-		"page_up":            "Page up",
-		"page_down":          "Page down",
-		"enter_insert":       "Enter insert mode",
-		"enter_command":      "Enter command mode",
-		"quit":               "Quit editor",
-		"undo":               "Undo last change",
-		"redo":               "Redo last change",
-		"delete":             "Delete selection/char",
-		"change":             "Delete and enter insert",
-		"yank":               "Yank (copy) selection",
-		"paste":              "Paste after cursor",
-		"paste_before":       "Paste before cursor",
-		"open_below":         "Open line below",
-		"open_above":         "Open line above",
-		"append":             "Append after cursor",
-		"append_line_end":    "Append at line end",
-		"insert_line_start":  "Insert at line start",
-		"join_lines":         "Join lines",
-		"toggle_select":      "Toggle select mode",
-		"extend_line":        "Extend to full line",
-		"collapse_selection": "Collapse selection",
-		"select_all":         "Select all",
-		"indent":             "Indent line(s)",
-		"unindent":           "Unindent line(s)",
-		"word_forward":       "Move to next word",
-		"word_backward":      "Move to previous word",
-		"word_end":           "Move to word end",
-		"goto_mode":          "Enter goto mode",
-		"match_mode":         "Enter match mode",
-		"view_mode":          "Enter view mode",
-		"space_mode":         "Open space menu",
-		"find_char":          "Find char forward",
-		"find_char_backward": "Find char backward",
-		"till_char":          "Till char forward",
-		"till_char_backward": "Till char backward",
-		"search_forward":     "Search forward",
-		"search_backward":    "Search backward",
-		"search_next":        "Next search match",
-		"search_prev":        "Previous search match",
-		"replace_char":       "Replace char under cursor",
-		"delete_line":        "Delete current line",
-		"scroll_up":          "Scroll up",
-		"scroll_down":        "Scroll down",
-		"branch_picker":      "Open branch picker",
-		"insert_line_above":  "Insert line at cursor",
-		"toggle_line_numbers":"Toggle line numbers",
+		"move_left": "Move cursor left", "move_right": "Move cursor right",
+		"move_up": "Move cursor up", "move_down": "Move cursor down",
+		"word_left": "Move to previous word", "word_right": "Move to next word",
+		"word_forward": "Move to next word", "word_backward": "Move to previous word", "word_end": "Move to word end",
+		"line_start": "Move to line start", "line_end": "Move to line end",
+		"file_start": "Move to file start", "file_end": "Move to file end",
+		"page_up": "Page up", "page_down": "Page down",
+		"scroll_up": "Scroll up", "scroll_down": "Scroll down",
+		"enter_insert": "Enter insert mode", "enter_command": "Enter command mode",
+		"quit": "Quit editor", "undo": "Undo", "redo": "Redo",
+		"delete": "Delete selection", "change": "Change (delete + insert)",
+		"yank": "Yank (copy)", "paste": "Paste after", "paste_before": "Paste before",
+		"open_below": "Open line below", "open_above": "Open line above",
+		"append": "Append after cursor", "append_line_end": "Append at line end",
+		"insert_line_start": "Insert at line start", "join_lines": "Join lines",
+		"toggle_select": "Toggle select mode", "extend_line": "Extend to full line",
+		"collapse_selection": "Collapse selection", "select_all": "Select all",
+		"indent": "Indent", "unindent": "Unindent",
+		"goto_mode": "Goto mode (g)", "match_mode": "Match mode (m)", "view_mode": "View mode (z)", "space_mode": "Space menu",
+		"find_char": "Find char (f)", "find_char_backward": "Find char back (F)",
+		"till_char": "Till char (t)", "till_char_backward": "Till char back (T)",
+		"search_forward": "Search /", "search_backward": "Search ?",
+		"search_next": "Next match (n)", "search_prev": "Prev match (N)",
+		"replace_char": "Replace char (r)", "delete_line": "Delete line",
+		"branch_picker": "Branch picker", "insert_line_above": "Insert line above",
+		"toggle_line_numbers": "Toggle line numbers",
 	}
 
+	// Build bindings list grouped
+	var allBindings []keybinding
 	for key, action := range e.keymap.normal {
 		desc := bindingDescs[action]
 		if desc == "" {
 			desc = action
 		}
-		bindings = append(bindings, keybinding{key, action, desc})
+		group := actionGroups[action]
+		if group == "" {
+			group = "Other"
+		}
+		allBindings = append(allBindings, keybinding{key, action, desc, group})
 	}
 
-	// Box dimensions
+	// Sort by group, then action, then key (stable order)
+	sort.Slice(allBindings, func(i, j int) bool {
+		if allBindings[i].group != allBindings[j].group {
+			return allBindings[i].group < allBindings[j].group
+		}
+		if allBindings[i].action != allBindings[j].action {
+			return allBindings[i].action < allBindings[j].action
+		}
+		return allBindings[i].key < allBindings[j].key
+	})
+
+	// Apply filters (fuzzy match per column)
+	filterKey := strings.ToLower(string(e.keybindingsHelpFilterKey))
+	filterAct := strings.ToLower(string(e.keybindingsHelpFilterAct))
+	filterDesc := strings.ToLower(string(e.keybindingsHelpFilterDesc))
+	var filteredBindings []keybinding
+	for _, b := range allBindings {
+		matchKey := filterKey == "" || fuzzyMatch(filterKey, strings.ToLower(b.key))
+		matchAct := filterAct == "" || fuzzyMatch(filterAct, strings.ToLower(b.action))
+		matchDesc := filterDesc == "" || fuzzyMatch(filterDesc, strings.ToLower(b.desc))
+		if matchKey && matchAct && matchDesc {
+			filteredBindings = append(filteredBindings, b)
+		}
+	}
+
+	// Build display list with group headers
+	type displayRow struct {
+		text      string
+		isHeader  bool
+		isGroupHdr bool
+	}
+	var rows []displayRow
+
+	lastGroup := ""
+	for _, b := range filteredBindings {
+		if b.group != lastGroup {
+			if lastGroup != "" {
+				rows = append(rows, displayRow{"", false, false}) // blank line between groups
+			}
+			rows = append(rows, displayRow{b.group, false, true})
+			lastGroup = b.group
+		}
+		keyCol := fmt.Sprintf("%-18s", b.key)
+		actionCol := fmt.Sprintf("%-21s", b.action)
+		rows = append(rows, displayRow{" " + keyCol + actionCol + b.desc, false, false})
+	}
+
+	// Box dimensions - wider
 	boxWidth := w - 4
-	if boxWidth > 80 {
-		boxWidth = 80
+	if boxWidth > 100 {
+		boxWidth = 100
 	}
 	boxHeight := viewHeight - 2
-	if boxHeight > len(bindings)+2 {
-		boxHeight = len(bindings) + 2
-	}
 	innerWidth := boxWidth - 2
-	listHeight := boxHeight - 2
+	// Header/filter row (1) + separator (1) = 2 fixed rows + borders (2) = 4
+	listHeight := boxHeight - 4
 
-	// Center the popup
+	// Clamp scroll
+	maxScroll := len(rows) - listHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if e.keybindingsHelpScroll > maxScroll {
+		e.keybindingsHelpScroll = maxScroll
+	}
+	if e.keybindingsHelpScroll < 0 {
+		e.keybindingsHelpScroll = 0
+	}
+
+	// Center popup
 	x0 := (w - boxWidth) / 2
 	y0 := (viewHeight - boxHeight) / 2
 
@@ -6882,12 +7442,19 @@ func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
 		s.SetContent(x0+x, y0+boxHeight-1, ch, nil, borderStyle)
 	}
 
-	// Title
-	title := "Keybindings (j/k to scroll, q/Esc to close)"
+	// Title centered
+	title := "Keybindings"
 	titleRunes := []rune(title)
+	titleStart := (boxWidth - len(titleRunes)) / 2
 	for i, r := range titleRunes {
+		s.SetContent(x0+titleStart+i, y0, r, nil, borderStyle)
+	}
+
+	// Hints at bottom left
+	hints := "Up,Down,Home,End,Tab,Esc"
+	for i, r := range hints {
 		if i+1 < boxWidth-1 {
-			s.SetContent(x0+1+i, y0, r, nil, borderStyle)
+			s.SetContent(x0+1+i, y0+boxHeight-1, r, nil, borderStyle)
 		}
 	}
 
@@ -6900,45 +7467,154 @@ func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
 		}
 	}
 
-	// Draw bindings
+	// Row 1: Column headers with filter inputs
+	filterActiveStyle := contentStyle.Foreground(tcell.ColorWhite)
+	filterInactiveStyle := contentStyle.Foreground(tcell.ColorGray)
+
+	// Draw column headers with filters
+	col := 1
+	// Key column
+	keyLabel := " Key "
+	for _, r := range keyLabel {
+		s.SetContent(x0+col, y0+1, r, nil, headerStyle)
+		col++
+	}
+	// Key filter box [11 chars]
+	keyFilter := string(e.keybindingsHelpFilterKey)
+	keyFilterStyle := filterInactiveStyle
+	if e.keybindingsHelpFilterFocus == 0 {
+		keyFilterStyle = filterActiveStyle
+		keyFilter += "_"
+	}
+	for i := 0; i < 11; i++ {
+		ch := ' '
+		if i < len(keyFilter) {
+			ch = rune(keyFilter[i])
+		}
+		s.SetContent(x0+col+i, y0+1, ch, nil, keyFilterStyle)
+	}
+	col += 13
+
+	// Action column
+	actLabel := " Action "
+	for _, r := range actLabel {
+		s.SetContent(x0+col, y0+1, r, nil, headerStyle)
+		col++
+	}
+	// Action filter box [10 chars]
+	actFilter := string(e.keybindingsHelpFilterAct)
+	actFilterStyle := filterInactiveStyle
+	if e.keybindingsHelpFilterFocus == 1 {
+		actFilterStyle = filterActiveStyle
+		actFilter += "_"
+	}
+	for i := 0; i < 10; i++ {
+		ch := ' '
+		if i < len(actFilter) {
+			ch = rune(actFilter[i])
+		}
+		s.SetContent(x0+col+i, y0+1, ch, nil, actFilterStyle)
+	}
+	col += 13
+
+	// Description column
+	descLabel := " Description "
+	for _, r := range descLabel {
+		s.SetContent(x0+col, y0+1, r, nil, headerStyle)
+		col++
+	}
+	// Description filter box
+	descFilter := string(e.keybindingsHelpFilterDesc)
+	descFilterStyle := filterInactiveStyle
+	if e.keybindingsHelpFilterFocus == 2 {
+		descFilterStyle = filterActiveStyle
+		descFilter += "_"
+	}
+	remainingWidth := innerWidth - col
+	if remainingWidth < 0 {
+		remainingWidth = 0
+	}
+	if remainingWidth > 15 {
+		remainingWidth = 15
+	}
+	for i := 0; i < remainingWidth; i++ {
+		ch := ' '
+		if i < len(descFilter) {
+			ch = rune(descFilter[i])
+		}
+		s.SetContent(x0+col+i, y0+1, ch, nil, descFilterStyle)
+	}
+
+	// Row 2: Separator
+	for x := 1; x < boxWidth-1; x++ {
+		s.SetContent(x0+x, y0+2, '─', nil, borderStyle)
+	}
+
+	// Draw scrollable content starting at row 3
 	for i := 0; i < listHeight; i++ {
 		idx := i + e.keybindingsHelpScroll
-		if idx >= len(bindings) {
+		if idx >= len(rows) {
 			break
 		}
-		b := bindings[idx]
-		lineY := y0 + 1 + i
+		row := rows[idx]
+		lineY := y0 + 3 + i
 
-		style := contentStyle
-		if idx < 2 {
-			style = headerStyle
-		}
-
-		// Format columns
-		keyCol := fmt.Sprintf("%-12s", b.key)
-		actionCol := fmt.Sprintf("%-20s", b.action)
-		descCol := b.desc
-
-		line := " " + keyCol + " " + actionCol + " " + descCol
-		runes := []rune(line)
-		if len(runes) > innerWidth {
-			runes = runes[:innerWidth]
-		}
-
-		for j, r := range runes {
-			s.SetContent(x0+1+j, lineY, r, nil, style)
+		if row.isGroupHdr {
+			// Draw group name centered with full row background
+			groupRunes := []rune(row.text)
+			groupLen := len(groupRunes)
+			leftPad := (innerWidth - groupLen) / 2
+			if leftPad < 0 {
+				leftPad = 0
+			}
+			for j := 0; j < innerWidth; j++ {
+				ch := ' '
+				if j >= leftPad && j < leftPad+groupLen {
+					ch = groupRunes[j-leftPad]
+				}
+				s.SetContent(x0+1+j, lineY, ch, nil, contentStyle)
+			}
+		} else {
+			runes := []rune(row.text)
+			if len(runes) > innerWidth {
+				runes = runes[:innerWidth]
+			}
+			for j := 0; j < innerWidth; j++ {
+				ch := ' '
+				if j < len(runes) {
+					ch = runes[j]
+				}
+				s.SetContent(x0+1+j, lineY, ch, nil, contentStyle)
+			}
 		}
 	}
 
 	// Scroll indicator
-	if len(bindings) > listHeight {
-		scrollInfo := fmt.Sprintf(" %d/%d ", e.keybindingsHelpScroll+1, len(bindings)-listHeight+1)
+	if len(rows) > listHeight {
+		scrollInfo := fmt.Sprintf(" %d/%d ", e.keybindingsHelpScroll+1, max(1, len(rows)-listHeight+1))
 		infoRunes := []rune(scrollInfo)
 		startX := x0 + boxWidth - len(infoRunes) - 1
 		for i, r := range infoRunes {
 			s.SetContent(startX+i, y0+boxHeight-1, r, nil, borderStyle)
 		}
 	}
+}
+
+// fuzzyMatch checks if pattern matches text (simple substring for now)
+func fuzzyMatch(pattern, text string) bool {
+	if pattern == "" {
+		return true
+	}
+	pi := 0
+	for _, c := range text {
+		if c == rune(pattern[pi]) {
+			pi++
+			if pi == len(pattern) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func keyString(ev *tcell.EventKey) string {
