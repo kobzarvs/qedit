@@ -279,21 +279,6 @@ func (s *server) handleResponse(id int) {
 	}
 }
 
-func (s *server) sendRequest(method string, params interface{}) (int, error) {
-	s.mu.Lock()
-	s.nextID++
-	id := s.nextID
-	s.mu.Unlock()
-
-	msg := rpcRequest{
-		JSONRPC: "2.0",
-		ID:      id,
-		Method:  method,
-		Params:  params,
-	}
-	return id, s.send(msg)
-}
-
 func (s *server) sendNotification(method string, params interface{}) error {
 	msg := rpcNotification{
 		JSONRPC: "2.0",
