@@ -61,6 +61,7 @@ const (
 	actionDeleteLine        = "delete_line"
 	actionDeleteChar        = "delete_char"
 	actionDeleteWordLeft    = "delete_word_left"
+	actionDeleteWordRight   = "delete_word_right"
 	actionInsertLineBelow   = "insert_line_below"
 	actionUndoLine          = "undo_line"
 	actionScrollUp          = "scroll_up"
@@ -2970,6 +2971,8 @@ func (e *Editor) execAction(action string) bool {
 		e.deleteChar()
 	case actionDeleteWordLeft:
 		e.deleteWordLeft()
+	case actionDeleteWordRight:
+		e.deleteWordRight()
 	case actionInsertLineBelow:
 		e.insertLineBelow()
 	case actionUndoLine:
@@ -4225,6 +4228,99 @@ func (e *Editor) deleteWordLeft() {
 	e.lines[e.cursor.Row] = newLine
 
 	e.cursor.Col = startCol
+}
+
+func (e *Editor) deleteWordRight() {
+	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+		return
+	}
+
+	line := e.lines[e.cursor.Row]
+	lineLen := len(line)
+
+	if e.cursor.Col >= lineLen {
+		// At end of line - join with next line
+		if e.cursor.Row < len(e.lines)-1 {
+			// Calculate byte offset BEFORE change
+			startByte, startColBytes := e.byteOffset(e.cursor)
+			oldEndByte := startByte + 1 // +1 for newline
+
+			e.lastEdit = TextEdit{
+				Valid:          true,
+				StartByte:      startByte,
+				OldEndByte:     oldEndByte,
+				NewEndByte:     startByte,
+				StartRow:       e.cursor.Row,
+				StartColBytes:  startColBytes,
+				OldEndRow:      e.cursor.Row + 1,
+				OldEndColBytes: 0,
+				NewEndRow:      e.cursor.Row,
+				NewEndColBytes: startColBytes,
+			}
+
+			if e.joinLineAt(e.cursor) {
+				e.recordUndo(action{kind: actionSplitLine, pos: e.cursor})
+			}
+		}
+		return
+	}
+
+	startCol := e.cursor.Col
+	idx := startCol
+
+	// Skip word characters first
+	if idx < lineLen && isWordRune(line[idx]) {
+		for idx < lineLen && isWordRune(line[idx]) {
+			idx++
+		}
+	} else if idx < lineLen && !isSpaceRune(line[idx]) {
+		// Skip non-word/non-space characters
+		for idx < lineLen && !isSpaceRune(line[idx]) && !isWordRune(line[idx]) {
+			idx++
+		}
+	}
+
+	// Then skip trailing spaces
+	for idx < lineLen && isSpaceRune(line[idx]) {
+		idx++
+	}
+
+	endCol := idx
+	if endCol <= startCol {
+		return
+	}
+
+	// Calculate byte offsets BEFORE making changes
+	startByte, startColBytes := e.byteOffset(Cursor{Row: e.cursor.Row, Col: startCol})
+	oldEndByte, oldEndColBytes := e.byteOffset(Cursor{Row: e.cursor.Row, Col: endCol})
+
+	// Record text edit for tree-sitter
+	e.lastEdit = TextEdit{
+		Valid:          true,
+		StartByte:      startByte,
+		OldEndByte:     oldEndByte,
+		NewEndByte:     startByte,
+		StartRow:       e.cursor.Row,
+		StartColBytes:  startColBytes,
+		OldEndRow:      e.cursor.Row,
+		OldEndColBytes: oldEndColBytes,
+		NewEndRow:      e.cursor.Row,
+		NewEndColBytes: startColBytes,
+	}
+
+	// Record undo for each character (backwards) as a group
+	e.startUndoGroup()
+	for col := endCol - 1; col >= startCol; col-- {
+		if col >= 0 && col < len(line) {
+			e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: e.cursor.Row, Col: col}, r: line[col]})
+		}
+	}
+	e.finishUndoGroup()
+
+	// Actually delete the range
+	newLine := append([]rune(nil), line[:startCol]...)
+	newLine = append(newLine, line[endCol:]...)
+	e.lines[e.cursor.Row] = newLine
 }
 
 func (e *Editor) insertLineBelow() {
@@ -7669,6 +7765,8 @@ func keyString(ev *tcell.EventKey) string {
 		switch ev.Key() {
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
 			return "cmd+backspace"
+		case tcell.KeyDelete:
+			return "cmd+del"
 		case tcell.KeyEnter:
 			return "cmd+enter"
 		case tcell.KeyLeft:
