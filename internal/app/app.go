@@ -75,6 +75,7 @@ func (a *App) Run() error {
 
 	const maxHighlightBytes = 8 << 20
 	ed := editor.New(cfg)
+	defer ed.Shutdown()
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()
 	gitPath := ""
@@ -109,6 +110,30 @@ func (a *App) Run() error {
 	lastLayoutRaw := keyboard.CurrentLayoutRaw()
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
 	ed.SetGitBranch(gitinfo.Branch(gitPath))
+
+	// Determine main branch (from session cache or git)
+	gitRoot := gitinfo.Root(gitPath)
+	if gitRoot != "" {
+		sm := ed.GetSessionManager()
+		var mainBranch string
+		// Try session cache first
+		if sm != nil {
+			if repoInfo, ok := sm.GetRepoInfo(gitRoot); ok && repoInfo.MainBranch != "" {
+				mainBranch = repoInfo.MainBranch
+			}
+		}
+		// If not cached, detect synchronously (fast for local repos)
+		if mainBranch == "" {
+			mainBranch = gitinfo.MainBranch(gitPath)
+			// Save to cache for next time
+			if mainBranch != "" && sm != nil {
+				sm.SetRepoMainBranch(gitRoot, mainBranch)
+			}
+		}
+		if mainBranch != "" {
+			ed.SetGitMainBranch(mainBranch)
+		}
+	}
 
 	// Wire up tree-sitter node stack callback for expand/shrink selection
 	ed.SetNodeStackFunc(func(path string, row, col int) []editor.NodeRange {

@@ -212,17 +212,27 @@ func TestExecCommandUnknown(t *testing.T) {
 
 func TestHandleInsertUndoRedo(t *testing.T) {
 	e := newTestEditor("")
-	e.mode = ModeInsert
-	ev := tcell.NewEventKey(tcell.KeyRune, 'a', 0)
-	e.handleInsert(ev)
+	if quit := e.HandleKey(keyRune('i')); quit {
+		t.Fatalf("enter insert returned quit")
+	}
+	if quit := e.HandleKey(keyRune('a')); quit {
+		t.Fatalf("insert rune returned quit")
+	}
 	if got := e.Content(); got != "a" {
 		t.Fatalf("content = %q, want %q", got, "a")
 	}
-	e.Undo()
+	if quit := e.HandleKey(keyEsc()); quit {
+		t.Fatalf("esc returned quit")
+	}
+	if quit := e.HandleKey(keyRune('u')); quit {
+		t.Fatalf("undo returned quit")
+	}
 	if got := e.Content(); got != "" {
 		t.Fatalf("undo content = %q, want %q", got, "")
 	}
-	e.Redo()
+	if quit := e.HandleKey(keyRune('U')); quit {
+		t.Fatalf("redo returned quit")
+	}
 	if got := e.Content(); got != "a" {
 		t.Fatalf("redo content = %q, want %q", got, "a")
 	}
@@ -230,14 +240,27 @@ func TestHandleInsertUndoRedo(t *testing.T) {
 
 func TestHandleInsertBackspaceUndo(t *testing.T) {
 	e := newTestEditor("ab")
-	e.mode = ModeInsert
-	e.cursor = Cursor{Row: 0, Col: 2}
-	ev := tcell.NewEventKey(tcell.KeyBackspace, 0, 0)
-	e.handleInsert(ev)
+	if quit := e.HandleKey(keyRune('l')); quit {
+		t.Fatalf("move right returned quit")
+	}
+	if quit := e.HandleKey(keyRune('l')); quit {
+		t.Fatalf("move right returned quit")
+	}
+	if quit := e.HandleKey(keyRune('i')); quit {
+		t.Fatalf("enter insert returned quit")
+	}
+	if quit := e.HandleKey(tcell.NewEventKey(tcell.KeyBackspace, 0, 0)); quit {
+		t.Fatalf("backspace returned quit")
+	}
 	if got := e.Content(); got != "a" {
 		t.Fatalf("content = %q, want %q", got, "a")
 	}
-	e.Undo()
+	if quit := e.HandleKey(keyEsc()); quit {
+		t.Fatalf("esc returned quit")
+	}
+	if quit := e.HandleKey(keyRune('u')); quit {
+		t.Fatalf("undo returned quit")
+	}
 	if got := e.Content(); got != "ab" {
 		t.Fatalf("undo content = %q, want %q", got, "ab")
 	}
@@ -245,14 +268,24 @@ func TestHandleInsertBackspaceUndo(t *testing.T) {
 
 func TestHandleInsertNewlineUndo(t *testing.T) {
 	e := newTestEditor("ab")
-	e.mode = ModeInsert
-	e.cursor = Cursor{Row: 0, Col: 1}
-	ev := tcell.NewEventKey(tcell.KeyEnter, 0, 0)
-	e.handleInsert(ev)
+	if quit := e.HandleKey(keyRune('l')); quit {
+		t.Fatalf("move right returned quit")
+	}
+	if quit := e.HandleKey(keyRune('i')); quit {
+		t.Fatalf("enter insert returned quit")
+	}
+	if quit := e.HandleKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)); quit {
+		t.Fatalf("enter returned quit")
+	}
 	if len(e.lines) != 2 || string(e.lines[0]) != "a" || string(e.lines[1]) != "b" {
 		t.Fatalf("lines = %q, want [\"a\" \"b\"]", e.Content())
 	}
-	e.Undo()
+	if quit := e.HandleKey(keyEsc()); quit {
+		t.Fatalf("esc returned quit")
+	}
+	if quit := e.HandleKey(keyRune('u')); quit {
+		t.Fatalf("undo returned quit")
+	}
 	if got := e.Content(); got != "ab" {
 		t.Fatalf("undo content = %q, want %q", got, "ab")
 	}
@@ -358,6 +391,10 @@ func TestBranchPickerCancel(t *testing.T) {
 
 func keyRune(r rune) *tcell.EventKey {
 	return tcell.NewEventKey(tcell.KeyRune, r, 0)
+}
+
+func keyEsc() *tcell.EventKey {
+	return tcell.NewEventKey(tcell.KeyEscape, 0, 0)
 }
 
 // ============================================================================
@@ -716,5 +753,89 @@ func TestRealWorkflowInsertModeShiftSelectThenTab(t *testing.T) {
 	}
 	if string(e.lines[3]) != "\t\t\"path/filepath\"" {
 		t.Fatalf("line3 = %q, want %q", string(e.lines[3]), "\t\t\"path/filepath\"")
+	}
+}
+
+func TestUserFlowShiftSelectThenTab(t *testing.T) {
+	e := newTestEditor("aa", "bb", "cc")
+
+	// Move into line to avoid selection end.Col == 0
+	if quit := e.HandleKey(keyRune('l')); quit {
+		t.Fatalf("move right returned quit")
+	}
+	e.HandleKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift))
+	e.HandleKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift))
+
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+
+	// Indent via real key event
+	e.HandleKey(keyTab())
+
+	if string(e.lines[0]) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	}
+	if string(e.lines[1]) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	}
+	if string(e.lines[2]) != "\tcc" {
+		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "\tcc")
+	}
+}
+
+func TestMouseClickMovesCursorClearsSelection(t *testing.T) {
+	e := newTestEditor("a\tb", "second")
+	e.lineNumberMode = LineNumberOff
+
+	// Create a selection via shift+right
+	e.HandleKey(tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModShift))
+	if !e.selectionActive {
+		t.Fatalf("selectionActive = false, want true")
+	}
+
+	// Click inside the tab expansion (visual col 3)
+	e.HandleMouse(tcell.NewEventMouse(3, 0, tcell.Button1, 0))
+	if e.cursor.Row != 0 {
+		t.Fatalf("cursor row = %d, want 0", e.cursor.Row)
+	}
+	if e.cursor.Col != 1 {
+		t.Fatalf("cursor col = %d, want 1 (tab position)", e.cursor.Col)
+	}
+	if e.selectionActive {
+		t.Fatalf("selectionActive = true, want false")
+	}
+	if e.freeScroll {
+		t.Fatalf("freeScroll = true, want false")
+	}
+}
+
+func TestMouseWheelScrollChangesScroll(t *testing.T) {
+	lines := make([]string, 12)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	e := newTestEditor(lines...)
+	e.lineNumberMode = LineNumberOff
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(20, 5)
+	e.Render(s)
+
+	e.HandleMouse(tcell.NewEventMouse(0, 0, tcell.WheelDown, 0))
+	if e.scroll != 2 {
+		t.Fatalf("scroll = %d, want 2", e.scroll)
+	}
+	if !e.freeScroll {
+		t.Fatalf("freeScroll = false, want true")
+	}
+
+	e.HandleMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, 0))
+	if e.scroll != 0 {
+		t.Fatalf("scroll = %d, want 0", e.scroll)
 	}
 }

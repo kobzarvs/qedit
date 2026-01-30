@@ -66,6 +66,42 @@ func Checkout(path, branch string) error {
 	return nil
 }
 
+// MainBranch detects the main branch of the repository (main, master, etc.)
+func MainBranch(path string) string {
+	root := Root(path)
+	if root == "" {
+		return ""
+	}
+
+	// Try to get the default branch from remote origin
+	out, err := exec.Command("git", "-C", root, "symbolic-ref", "refs/remotes/origin/HEAD").CombinedOutput()
+	if err == nil {
+		// Output is like "refs/remotes/origin/main"
+		ref := strings.TrimSpace(string(out))
+		if idx := strings.LastIndex(ref, "/"); idx >= 0 {
+			return ref[idx+1:]
+		}
+	}
+
+	// Fallback: check if main or master exists
+	branches, _, err := ListBranches(path)
+	if err != nil {
+		return ""
+	}
+	for _, b := range branches {
+		if b == "main" {
+			return "main"
+		}
+	}
+	for _, b := range branches {
+		if b == "master" {
+			return "master"
+		}
+	}
+
+	return ""
+}
+
 func findGitDir(path string) (string, error) {
 	start := path
 	info, err := os.Stat(start)

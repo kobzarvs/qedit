@@ -17,8 +17,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
-
 	"github.com/kobzarvs/qedit/internal/config"
+	"github.com/kobzarvs/qedit/internal/session"
 )
 
 type Mode int
@@ -74,6 +74,7 @@ const (
 	actionWordEnd           = "word_end"            // e - move to word end
 	actionGotoMode          = "goto_mode"           // g - enter goto mode
 	actionGotoLine          = "goto_line"           // G - go to last line (or specific line)
+	actionGotoLinePrompt    = "goto_line_prompt"    // cmd+g - prompt for line number
 	actionGotoFirstLine     = "goto_first_line"     // gg - go to first line
 	actionGotoFileEnd       = "goto_file_end"       // ge - go to end of file
 	actionFindChar          = "find_char"           // f - find char forward
@@ -312,6 +313,7 @@ type Editor struct {
 	lines                  [][]rune
 	cursor                 Cursor
 	scroll                 int
+	scrollX                int // horizontal scroll offset (visual columns)
 	mode                   Mode
 	filename               string
 	dirty                  bool
@@ -327,6 +329,7 @@ type Editor struct {
 	savePoint              int
 	tabWidth               int
 	viewHeight             int
+	viewWidth              int
 	styleMain              tcell.Style
 	styleStatus            tcell.Style
 	styleCommand           tcell.Style
@@ -348,9 +351,12 @@ type Editor struct {
 	styleSyntaxUnknown     tcell.Style
 	styleSyntaxVariable    tcell.Style
 	styleSyntaxParameter   tcell.Style
+	styleBranch            tcell.Style
+	styleMainBranch        tcell.Style
 	lineNumberMode         LineNumberMode
 	layoutName             string
 	gitBranch              string
+	gitMainBranch          string // detected main branch (main/master)
 	gitBranchSymbol        string
 	selectionActive        bool
 	selectionStart         Cursor
@@ -413,6 +419,12 @@ type Editor struct {
 	nodeStackFunc          NodeStackFunc          // callback to get syntax node stack
 	selectionScopeStack    []NodeRange            // stack of selection scopes for shrinking
 	selectionScopeIndex    int                    // current index in scope stack
+
+	// Session persistence
+	sessionManager         *session.Manager
+
+	// Test hook for keymap coverage.
+	actionHook             func(action string)
 }
 
 // SearchMatch represents a match location
@@ -445,82 +457,91 @@ func New(cfg config.Config) *Editor {
 	if tabWidth < 1 {
 		tabWidth = 1
 	}
-	mainFg := parseColor(cfg.Theme.Foreground, tcell.ColorWhite)
-	mainBg := parseColor(cfg.Theme.Background, tcell.ColorBlack)
-	statusFg := parseColor(cfg.Theme.StatuslineForeground, tcell.ColorBlack)
-	statusBg := parseColor(cfg.Theme.StatuslineBackground, tcell.ColorGray)
-	commandFg := parseColor(cfg.Theme.CommandlineForeground, statusFg)
-	commandBg := parseColor(cfg.Theme.CommandlineBackground, statusBg)
-	lineNumberFg := parseColor(cfg.Theme.LineNumberForeground, tcell.ColorGray)
-	lineNumberActiveFg := parseColor(cfg.Theme.LineNumberActiveForeground, mainFg)
-	selectionFg := parseColor(cfg.Theme.SelectionForeground, mainFg)
-	selectionBg := parseColor(cfg.Theme.SelectionBackground, mainBg)
-	searchMatchFg := parseColor(cfg.Theme.SearchMatchForeground, tcell.ColorBlack)
-	searchMatchBg := parseColor(cfg.Theme.SearchMatchBackground, tcell.ColorYellow)
-	syntaxKeyword := parseColor(cfg.Theme.SyntaxKeyword, mainFg)
-	syntaxString := parseColor(cfg.Theme.SyntaxString, mainFg)
-	syntaxComment := parseColor(cfg.Theme.SyntaxComment, mainFg)
-	syntaxType := parseColor(cfg.Theme.SyntaxType, mainFg)
-	syntaxFunction := parseColor(cfg.Theme.SyntaxFunction, mainFg)
-	syntaxNumber := parseColor(cfg.Theme.SyntaxNumber, mainFg)
-	syntaxConstant := parseColor(cfg.Theme.SyntaxConstant, mainFg)
-	syntaxOperator := parseColor(cfg.Theme.SyntaxOperator, mainFg)
-	syntaxPunctuation := parseColor(cfg.Theme.SyntaxPunctuation, mainFg)
-	syntaxField := parseColor(cfg.Theme.SyntaxField, mainFg)
-	syntaxBuiltin := parseColor(cfg.Theme.SyntaxBuiltin, mainFg)
-	syntaxUnknown := parseColor(cfg.Theme.SyntaxUnknown, tcell.ColorRed)
-	syntaxVariable := parseColor(cfg.Theme.SyntaxVariable, mainFg)
-	syntaxParameter := parseColor(cfg.Theme.SyntaxParameter, mainFg)
-	lineNumber := tcell.StyleDefault.Foreground(lineNumberFg).Background(mainBg)
-	lineNumberActive := tcell.StyleDefault.Foreground(lineNumberActiveFg).Background(mainBg)
-	selection := tcell.StyleDefault.Foreground(selectionFg).Background(selectionBg)
-	searchMatch := tcell.StyleDefault.Foreground(searchMatchFg).Background(searchMatchBg)
-	syntaxKeywordStyle := tcell.StyleDefault.Foreground(syntaxKeyword).Background(mainBg)
-	syntaxStringStyle := tcell.StyleDefault.Foreground(syntaxString).Background(mainBg)
-	syntaxCommentStyle := tcell.StyleDefault.Foreground(syntaxComment).Background(mainBg)
-	syntaxTypeStyle := tcell.StyleDefault.Foreground(syntaxType).Background(mainBg)
-	syntaxFunctionStyle := tcell.StyleDefault.Foreground(syntaxFunction).Background(mainBg)
-	syntaxNumberStyle := tcell.StyleDefault.Foreground(syntaxNumber).Background(mainBg)
-	syntaxConstantStyle := tcell.StyleDefault.Foreground(syntaxConstant).Background(mainBg)
-	syntaxOperatorStyle := tcell.StyleDefault.Foreground(syntaxOperator).Background(mainBg)
-	syntaxPunctuationStyle := tcell.StyleDefault.Foreground(syntaxPunctuation).Background(mainBg)
-	syntaxFieldStyle := tcell.StyleDefault.Foreground(syntaxField).Background(mainBg)
-	syntaxBuiltinStyle := tcell.StyleDefault.Foreground(syntaxBuiltin).Background(mainBg)
-	syntaxUnknownStyle := tcell.StyleDefault.Foreground(syntaxUnknown).Background(mainBg)
-	syntaxVariableStyle := tcell.StyleDefault.Foreground(syntaxVariable).Background(mainBg)
-	syntaxParameterStyle := tcell.StyleDefault.Foreground(syntaxParameter).Background(mainBg)
+
+	// Build color palette for reference resolution
+	colors := make(map[string]tcell.Color)
+	resolve := func(value string, fallback tcell.Color) tcell.Color {
+		if value == "" {
+			return fallback
+		}
+		if c, ok := colors[value]; ok {
+			return c
+		}
+		return parseColor(value, fallback)
+	}
+
+	colors["foreground"] = parseColor(cfg.Theme.Foreground, tcell.ColorWhite)
+	colors["background"] = parseColor(cfg.Theme.Background, tcell.ColorBlack)
+	colors["statusline-foreground"] = resolve(cfg.Theme.StatuslineForeground, tcell.ColorBlack)
+	colors["statusline-background"] = resolve(cfg.Theme.StatuslineBackground, tcell.ColorGray)
+	colors["commandline-foreground"] = resolve(cfg.Theme.CommandlineForeground, colors["statusline-foreground"])
+	colors["commandline-background"] = resolve(cfg.Theme.CommandlineBackground, colors["statusline-background"])
+	colors["line-number-foreground"] = resolve(cfg.Theme.LineNumberForeground, tcell.ColorGray)
+	colors["line-number-active-foreground"] = resolve(cfg.Theme.LineNumberActiveForeground, colors["foreground"])
+	colors["selection-foreground"] = resolve(cfg.Theme.SelectionForeground, colors["foreground"])
+	colors["selection-background"] = resolve(cfg.Theme.SelectionBackground, colors["background"])
+	colors["search-foreground"] = resolve(cfg.Theme.SearchMatchForeground, tcell.ColorBlack)
+	colors["search-background"] = resolve(cfg.Theme.SearchMatchBackground, tcell.ColorYellow)
+	colors["syntax-keyword"] = resolve(cfg.Theme.SyntaxKeyword, colors["foreground"])
+	colors["syntax-string"] = resolve(cfg.Theme.SyntaxString, colors["foreground"])
+	colors["syntax-comment"] = resolve(cfg.Theme.SyntaxComment, colors["foreground"])
+	colors["syntax-type"] = resolve(cfg.Theme.SyntaxType, colors["foreground"])
+	colors["syntax-function"] = resolve(cfg.Theme.SyntaxFunction, colors["foreground"])
+	colors["syntax-number"] = resolve(cfg.Theme.SyntaxNumber, colors["foreground"])
+	colors["syntax-constant"] = resolve(cfg.Theme.SyntaxConstant, colors["foreground"])
+	colors["syntax-operator"] = resolve(cfg.Theme.SyntaxOperator, colors["foreground"])
+	colors["syntax-punctuation"] = resolve(cfg.Theme.SyntaxPunctuation, colors["foreground"])
+	colors["syntax-field"] = resolve(cfg.Theme.SyntaxField, colors["foreground"])
+	colors["syntax-builtin"] = resolve(cfg.Theme.SyntaxBuiltin, colors["foreground"])
+	colors["syntax-unknown"] = resolve(cfg.Theme.SyntaxUnknown, tcell.ColorRed)
+	colors["syntax-variable"] = resolve(cfg.Theme.SyntaxVariable, colors["foreground"])
+	colors["syntax-parameter"] = resolve(cfg.Theme.SyntaxParameter, colors["foreground"])
+	colors["branch-foreground"] = resolve(cfg.Theme.BranchForeground, colors["statusline-foreground"])
+	colors["branch-background"] = resolve(cfg.Theme.BranchBackground, colors["statusline-background"])
+	// Main branch has distinct default color (light green) to stand out
+	mainBranchDefaultFg := tcell.NewRGBColor(144, 238, 144) // #90EE90 light green
+	colors["main-branch-foreground"] = resolve(cfg.Theme.MainBranchForeground, mainBranchDefaultFg)
+	colors["main-branch-background"] = resolve(cfg.Theme.MainBranchBackground, colors["statusline-background"])
+
 	lineNumberMode := parseLineNumberMode(cfg.Editor.LineNumbers)
 	gitBranchSymbol := strings.TrimSpace(cfg.Editor.GitBranchSymbol)
+
+	// Initialize session manager (ignore error, session persistence is optional)
+	sessionMgr, _ := session.NewManager()
+
 	return &Editor{
 		lines:                  [][]rune{[]rune{}},
 		mode:                   ModeNormal,
 		keymap:                 keymapSet{normal: normal, insert: insert},
 		tabWidth:               tabWidth,
-		styleMain:              tcell.StyleDefault.Foreground(mainFg).Background(mainBg),
-		styleStatus:            tcell.StyleDefault.Foreground(statusFg).Background(statusBg),
-		styleCommand:           tcell.StyleDefault.Foreground(commandFg).Background(commandBg),
-		styleLineNumber:        lineNumber,
-		styleLineNumberActive:  lineNumberActive,
-		styleSelection:         selection,
-		styleSearchMatch:       searchMatch,
-		styleSyntaxKeyword:     syntaxKeywordStyle,
-		styleSyntaxString:      syntaxStringStyle,
-		styleSyntaxComment:     syntaxCommentStyle,
-		styleSyntaxType:        syntaxTypeStyle,
-		styleSyntaxFunction:    syntaxFunctionStyle,
-		styleSyntaxNumber:      syntaxNumberStyle,
-		styleSyntaxConstant:    syntaxConstantStyle,
-		styleSyntaxOperator:    syntaxOperatorStyle,
-		styleSyntaxPunctuation: syntaxPunctuationStyle,
-		styleSyntaxField:       syntaxFieldStyle,
-		styleSyntaxBuiltin:     syntaxBuiltinStyle,
-		styleSyntaxUnknown:     syntaxUnknownStyle,
-		styleSyntaxVariable:    syntaxVariableStyle,
-		styleSyntaxParameter:   syntaxParameterStyle,
+		styleMain:              tcell.StyleDefault.Foreground(colors["foreground"]).Background(colors["background"]),
+		styleStatus:            tcell.StyleDefault.Foreground(colors["statusline-foreground"]).Background(colors["statusline-background"]),
+		styleCommand:           tcell.StyleDefault.Foreground(colors["commandline-foreground"]).Background(colors["commandline-background"]),
+		styleLineNumber:        tcell.StyleDefault.Foreground(colors["line-number-foreground"]).Background(colors["background"]),
+		styleLineNumberActive:  tcell.StyleDefault.Foreground(colors["line-number-active-foreground"]).Background(colors["background"]),
+		styleSelection:         tcell.StyleDefault.Foreground(colors["selection-foreground"]).Background(colors["selection-background"]),
+		styleSearchMatch:       tcell.StyleDefault.Foreground(colors["search-foreground"]).Background(colors["search-background"]),
+		styleSyntaxKeyword:     tcell.StyleDefault.Foreground(colors["syntax-keyword"]).Background(colors["background"]),
+		styleSyntaxString:      tcell.StyleDefault.Foreground(colors["syntax-string"]).Background(colors["background"]),
+		styleSyntaxComment:     tcell.StyleDefault.Foreground(colors["syntax-comment"]).Background(colors["background"]),
+		styleSyntaxType:        tcell.StyleDefault.Foreground(colors["syntax-type"]).Background(colors["background"]),
+		styleSyntaxFunction:    tcell.StyleDefault.Foreground(colors["syntax-function"]).Background(colors["background"]),
+		styleSyntaxNumber:      tcell.StyleDefault.Foreground(colors["syntax-number"]).Background(colors["background"]),
+		styleSyntaxConstant:    tcell.StyleDefault.Foreground(colors["syntax-constant"]).Background(colors["background"]),
+		styleSyntaxOperator:    tcell.StyleDefault.Foreground(colors["syntax-operator"]).Background(colors["background"]),
+		styleSyntaxPunctuation: tcell.StyleDefault.Foreground(colors["syntax-punctuation"]).Background(colors["background"]),
+		styleSyntaxField:       tcell.StyleDefault.Foreground(colors["syntax-field"]).Background(colors["background"]),
+		styleSyntaxBuiltin:     tcell.StyleDefault.Foreground(colors["syntax-builtin"]).Background(colors["background"]),
+		styleSyntaxUnknown:     tcell.StyleDefault.Foreground(colors["syntax-unknown"]).Background(colors["background"]),
+		styleSyntaxVariable:    tcell.StyleDefault.Foreground(colors["syntax-variable"]).Background(colors["background"]),
+		styleSyntaxParameter:   tcell.StyleDefault.Foreground(colors["syntax-parameter"]).Background(colors["background"]),
+		styleBranch:            tcell.StyleDefault.Foreground(colors["branch-foreground"]).Background(colors["branch-background"]),
+		styleMainBranch:        tcell.StyleDefault.Foreground(colors["main-branch-foreground"]).Background(colors["main-branch-background"]),
 		lineNumberMode:         lineNumberMode,
 		gitBranchSymbol:        gitBranchSymbol,
 		highlightStart:         -1,
 		highlightEnd:           -1,
+		sessionManager:         sessionMgr,
 	}
 }
 
@@ -535,6 +556,7 @@ func (e *Editor) OpenFile(path string) error {
 	}
 	e.cursor = Cursor{}
 	e.scroll = 0
+	e.scrollX = 0
 	e.mode = ModeNormal
 	e.filename = path
 	e.cmd = e.cmd[:0]
@@ -547,9 +569,106 @@ func (e *Editor) OpenFile(path string) error {
 	e.highlights = nil
 	e.highlightStart = -1
 	e.highlightEnd = -1
+	e.selectionActive = false
 	e.updateDirty()
 	_ = e.LoadUndoHistory()
+
+	// Restore session state
+	e.restoreSessionState()
+
 	return nil
+}
+
+func (e *Editor) restoreSessionState() {
+	if e.sessionManager == nil || e.filename == "" {
+		return
+	}
+	absPath, err := filepath.Abs(e.filename)
+	if err != nil {
+		return
+	}
+	state, ok := e.sessionManager.GetFileState(absPath)
+	if !ok {
+		return
+	}
+
+	// Restore cursor (clamped to valid range)
+	e.cursor.Row = state.CursorRow
+	if e.cursor.Row >= len(e.lines) {
+		e.cursor.Row = len(e.lines) - 1
+	}
+	if e.cursor.Row < 0 {
+		e.cursor.Row = 0
+	}
+	e.cursor.Col = state.CursorCol
+	if e.cursor.Row < len(e.lines) && e.cursor.Col > len(e.lines[e.cursor.Row]) {
+		e.cursor.Col = len(e.lines[e.cursor.Row])
+	}
+	if e.cursor.Col < 0 {
+		e.cursor.Col = 0
+	}
+
+	// Restore scroll
+	e.scroll = state.ScrollY
+	if e.scroll < 0 {
+		e.scroll = 0
+	}
+	e.scrollX = state.ScrollX
+	if e.scrollX < 0 {
+		e.scrollX = 0
+	}
+
+	// Restore mode
+	switch state.Mode {
+	case "insert":
+		e.mode = ModeInsert
+	default:
+		e.mode = ModeNormal
+	}
+
+	// Restore selection
+	if state.SelectionActive {
+		e.selectionActive = true
+		e.selectionStart = Cursor{Row: state.SelectionStartRow, Col: state.SelectionStartCol}
+		e.selectionEnd = Cursor{Row: state.SelectionEndRow, Col: state.SelectionEndCol}
+	}
+}
+
+func (e *Editor) saveSessionState() {
+	if e.sessionManager == nil || e.filename == "" {
+		return
+	}
+	absPath, err := filepath.Abs(e.filename)
+	if err != nil {
+		return
+	}
+
+	mode := "normal"
+	if e.mode == ModeInsert {
+		mode = "insert"
+	}
+
+	state := session.FileState{
+		CursorRow:         e.cursor.Row,
+		CursorCol:         e.cursor.Col,
+		ScrollY:           e.scroll,
+		ScrollX:           e.scrollX,
+		Mode:              mode,
+		SelectionActive:   e.selectionActive,
+		SelectionStartRow: e.selectionStart.Row,
+		SelectionStartCol: e.selectionStart.Col,
+		SelectionEndRow:   e.selectionEnd.Row,
+		SelectionEndCol:   e.selectionEnd.Col,
+	}
+	e.sessionManager.SetFileState(absPath, state)
+}
+
+// Shutdown saves session state and stops background tasks
+func (e *Editor) Shutdown() {
+	e.saveSessionState()
+	if e.sessionManager != nil {
+		e.sessionManager.Stop()
+	}
 }
 
 func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
@@ -575,16 +694,71 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 
 func (e *Editor) HandleMouse(ev *tcell.EventMouse) {
 	if ev.Buttons() == tcell.WheelUp {
-		e.scrollUp(3)
+		e.scrollUp(2)
 		e.freeScroll = true
 		e.lastScrollTime = time.Now()
 	} else if ev.Buttons() == tcell.WheelDown {
-		e.scrollDown(3)
+		e.scrollDown(2)
 		e.freeScroll = true
 		e.lastScrollTime = time.Now()
+	} else if ev.Buttons() == tcell.WheelLeft {
+		e.scrollLeft(1)
+	} else if ev.Buttons() == tcell.WheelRight {
+		textWidth := e.viewWidth - e.gutterWidth()
+		e.scrollRight(1, textWidth)
 	} else if ev.Buttons() == tcell.Button1 {
 		e.handleMouseClick(ev)
 	}
+}
+
+func (e *Editor) scrollLeft(amount int) {
+	e.scrollX -= amount
+	if e.scrollX < 0 {
+		e.scrollX = 0
+	}
+}
+
+func (e *Editor) scrollRight(amount, textWidth int) {
+	e.scrollX += amount
+	e.clampScrollX(textWidth)
+}
+
+// clampScrollX limits horizontal scroll so text doesn't scroll past the end.
+func (e *Editor) clampScrollX(textWidth int) {
+	maxX := e.maxVisibleLineWidth() - textWidth + 10
+	if maxX < 0 {
+		maxX = 0
+	}
+	if e.scrollX > maxX {
+		e.scrollX = maxX
+	}
+	if e.scrollX < 0 {
+		e.scrollX = 0
+	}
+}
+
+// maxVisibleLineWidth returns the maximum visual width of lines in the visible
+// area plus 2 lines above and below (buffer zone).
+func (e *Editor) maxVisibleLineWidth() int {
+	if len(e.lines) == 0 {
+		return 0
+	}
+	startLine := e.scroll - 2
+	if startLine < 0 {
+		startLine = 0
+	}
+	endLine := e.scroll + e.viewHeight + 2
+	if endLine > len(e.lines) {
+		endLine = len(e.lines)
+	}
+	maxWidth := 0
+	for i := startLine; i < endLine; i++ {
+		w := visualCol(e.lines[i], len(e.lines[i]), e.tabWidth)
+		if w > maxWidth {
+			maxWidth = w
+		}
+	}
+	return maxWidth
 }
 
 func (e *Editor) handleMouseClick(ev *tcell.EventMouse) {
@@ -602,9 +776,9 @@ func (e *Editor) handleMouseClick(ev *tcell.EventMouse) {
 		return // empty file
 	}
 
-	// Convert screen X to column (accounting for gutter)
+	// Convert screen X to column (accounting for gutter and horizontal scroll)
 	gutterW := e.gutterWidth()
-	visualX := x - gutterW
+	visualX := x - gutterW + e.scrollX
 	if visualX < 0 {
 		visualX = 0
 	}
@@ -694,14 +868,16 @@ func (e *Editor) Render(s tcell.Screen) {
 		viewHeight = 0
 	}
 	e.viewHeight = viewHeight
+	e.viewWidth = w
+	gutterWidth := e.gutterWidth()
 	if !e.freeScroll {
 		e.ensureCursorVisible(viewHeight)
+		e.ensureCursorVisibleHorizontal(w, gutterWidth)
 	}
 
 	s.SetStyle(e.styleMain)
 	s.Clear()
 
-	gutterWidth := e.gutterWidth()
 	for y := 0; y < viewHeight; y++ {
 		lineIdx := e.scroll + y
 		if lineIdx >= len(e.lines) {
@@ -732,7 +908,10 @@ func (e *Editor) Render(s tcell.Screen) {
 			cursorVisible = false
 		}
 		if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
-			cx = gutterWidth + visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth)
+			cx = gutterWidth + visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth) - e.scrollX
+		}
+		if cx < gutterWidth {
+			cx = gutterWidth
 		}
 		if cx >= w {
 			cx = w - 1
@@ -2458,6 +2637,9 @@ func (e *Editor) handleBranchPicker(ev *tcell.EventKey) bool {
 }
 
 func (e *Editor) execAction(action string) bool {
+	if e.actionHook != nil {
+		e.actionHook(action)
+	}
 	switch action {
 	case actionMoveLeft:
 		e.moveLeft()
@@ -2552,6 +2734,11 @@ func (e *Editor) execAction(action string) bool {
 		return false // Don't clear selection, wait for next key
 	case actionGotoLine:
 		e.gotoLastLine()
+	case actionGotoLinePrompt:
+		e.mode = ModeCommand
+		e.cmd = []rune{}
+		e.cmdCursor = 0
+		e.setStatus("goto line:")
 	case actionGotoFirstLine:
 		e.gotoFirstLine()
 	case actionGotoFileEnd:
@@ -2755,9 +2942,29 @@ func (e *Editor) execCommand(cmd string) bool {
 		e.setStatus("formatted")
 		return false
 	default:
+		// Check if command is a line number
+		if lineNum, err := strconv.Atoi(name); err == nil && lineNum > 0 {
+			e.gotoLineNumber(lineNum)
+			return false
+		}
 		e.setStatus("unknown command: " + name)
 		return false
 	}
+}
+
+func (e *Editor) gotoLineNumber(lineNum int) {
+	if lineNum < 1 {
+		lineNum = 1
+	}
+	if lineNum > len(e.lines) {
+		lineNum = len(e.lines)
+	}
+	e.cursor.Row = lineNum - 1
+	e.cursor.Col = 0
+	e.selectionActive = false
+	e.freeScroll = false
+	e.scrollX = 0
+	e.setStatus(fmt.Sprintf("line %d", lineNum))
 }
 
 func (e *Editor) Save(path string) error {
@@ -2775,6 +2982,7 @@ func (e *Editor) Save(path string) error {
 	e.savePoint = len(e.undo)
 	e.updateDirty()
 	_ = e.SaveUndoHistory()
+	e.saveSessionState()
 	return nil
 }
 
@@ -5028,6 +5236,38 @@ func (e *Editor) ensureCursorVisible(viewHeight int) {
 	}
 }
 
+func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
+	if viewWidth <= gutterWidth {
+		return
+	}
+	textWidth := viewWidth - gutterWidth
+	margin := 10
+	if margin > textWidth/3 {
+		margin = textWidth / 3
+	}
+	if margin < 1 {
+		margin = 1
+	}
+
+	var visualCursorCol int
+	if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
+		visualCursorCol = visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth)
+	}
+
+	// Cursor position relative to scrollX
+	relativeX := visualCursorCol - e.scrollX
+
+	// If cursor is too close to right edge, scroll right
+	if relativeX > textWidth-margin {
+		e.scrollX = visualCursorCol - (textWidth - margin)
+	}
+	// If cursor is too close to left edge (or off screen left), scroll left
+	if relativeX < margin {
+		e.scrollX = visualCursorCol - margin
+	}
+	e.clampScrollX(textWidth)
+}
+
 func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
 	mode := "NORMAL"
 	if e.mode == ModeInsert {
@@ -5059,20 +5299,47 @@ func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
 	if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
 		col = visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth) + 1
 	}
-	right := fmt.Sprintf(" Ln %d, Col %d", row, col)
+
+	// Build right part, tracking branch position for styling
+	rightParts := []string{fmt.Sprintf(" Ln %d, Col %d", row, col)}
+	branchText := ""
 	if e.gitBranch != "" {
-		right += " | " + formatGitBranch(e.gitBranchSymbol, e.gitBranch)
+		branchText = formatGitBranch(e.gitBranchSymbol, e.gitBranch)
+		rightParts = append(rightParts, branchText)
 	}
 	if e.layoutName != "" {
-		right = right + " | " + e.layoutName
+		rightParts = append(rightParts, e.layoutName)
 	}
+	right := strings.Join(rightParts, " | ")
 
 	line := composeStatusLine(status, right, w)
+
+	// Find branch position in the composed line
+	branchStart := -1
+	branchEnd := -1
+	if branchText != "" {
+		idx := strings.Index(string(line), branchText)
+		if idx >= 0 {
+			branchStart = idx
+			branchEnd = idx + len(branchText)
+		}
+	}
+
+	// Choose branch style based on whether it's the main branch
+	branchStyle := e.styleBranch
+	if e.IsMainBranch() {
+		branchStyle = e.styleMainBranch
+	}
+
 	for x, r := range line {
 		if x >= w {
 			break
 		}
-		s.SetContent(x, y, r, nil, e.styleStatus)
+		style := e.styleStatus
+		if branchStart >= 0 && x >= branchStart && x < branchEnd {
+			style = branchStyle
+		}
+		s.SetContent(x, y, r, nil, style)
 	}
 }
 
@@ -5312,6 +5579,27 @@ func (e *Editor) SetKeyboardLayout(name string) {
 
 func (e *Editor) SetGitBranch(name string) {
 	e.gitBranch = strings.TrimSpace(name)
+}
+
+func (e *Editor) SetGitMainBranch(name string) {
+	e.gitMainBranch = strings.TrimSpace(name)
+}
+
+func (e *Editor) GetGitMainBranch() string {
+	return e.gitMainBranch
+}
+
+// IsMainBranch returns true if the current branch is the main branch
+func (e *Editor) IsMainBranch() bool {
+	if e.gitBranch == "" || e.gitMainBranch == "" {
+		return false
+	}
+	return e.gitBranch == e.gitMainBranch
+}
+
+// GetSessionManager returns the session manager for external use
+func (e *Editor) GetSessionManager() *session.Manager {
+	return e.sessionManager
 }
 
 func (e *Editor) SetNodeStackFunc(fn NodeStackFunc) {
@@ -5741,9 +6029,8 @@ func isSpaceRune(r rune) bool {
 	return unicode.IsSpace(r)
 }
 
-func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int) {
-	x := startX
-	col := 0
+func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int, scrollX int) {
+	col := 0 // visual column (accounting for tabs)
 	if tabWidth < 1 {
 		tabWidth = 1
 	}
@@ -5752,11 +6039,13 @@ func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidt
 		fallbackStyle = e.styleSyntaxUnknown
 	}
 
-
 	for idx, r := range line {
+		// Calculate screen x from visual column and scrollX
+		x := startX + col - scrollX
 		if x >= w {
 			break
 		}
+
 		// First determine the syntax-highlighted style
 		activeStyle := fallbackStyle
 		if kind, ok := highlightKindAt(spans, idx); ok {
@@ -5815,20 +6104,25 @@ func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidt
 		}
 		if r == '\t' {
 			spaces := tabWidth - (col % tabWidth)
-			for i := 0; i < spaces && x < w; i++ {
-				s.SetContent(x, y, ' ', nil, activeStyle)
-				x++
+			for i := 0; i < spaces; i++ {
+				tx := startX + col - scrollX
+				if tx >= startX && tx < w {
+					s.SetContent(tx, y, ' ', nil, activeStyle)
+				}
 				col++
 			}
 			continue
 		}
-		s.SetContent(x, y, r, nil, activeStyle)
-		x++
+		if x >= startX {
+			s.SetContent(x, y, r, nil, activeStyle)
+		}
 		col++
 	}
-	for x < w {
-		s.SetContent(x, y, ' ', nil, fallbackStyle)
-		x++
+	// Clear rest of line
+	for x := startX + col - scrollX; x < w; x++ {
+		if x >= startX {
+			s.SetContent(x, y, ' ', nil, fallbackStyle)
+		}
 	}
 }
 
@@ -6041,7 +6335,7 @@ func (e *Editor) drawLineWithGutter(s tcell.Screen, y, w, gutterWidth, lineIdx i
 	if highlightActive {
 		spans = e.highlights[lineIdx]
 	}
-	e.drawLine(s, y, w, gutterWidth, e.lines[lineIdx], e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex)
+	e.drawLine(s, y, w, gutterWidth, e.lines[lineIdx], e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX)
 }
 
 func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
@@ -6056,7 +6350,8 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 	titleWidth := len(titleRunes) + 2
 	maxItem := titleWidth
 	for _, name := range e.branchPickerItems {
-		if l := len([]rune(name)); l > maxItem {
+		l := len([]rune(name)) + 2 // "* " or "  " prefix for all branches
+		if l > maxItem {
 			maxItem = l
 		}
 	}
@@ -6151,25 +6446,59 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 		start = maxStart
 	}
 
+	// Style for current branch marker (light green)
+	markerStyle := tcell.StyleDefault.Foreground(tcell.NewRGBColor(144, 238, 144)).Background(tcell.ColorDefault)
+	_, markerBg, _ := itemStyle.Decompose()
+	markerStyle = markerStyle.Background(markerBg)
+
 	for i := 0; i < listHeight; i++ {
 		idx := start + i
 		if idx >= len(e.branchPickerItems) {
 			break
 		}
+		branchName := e.branchPickerItems[idx]
+		isCurrentBranch := branchName == e.gitBranch
+		isMainBranch := branchName == "main" || branchName == "master" || branchName == e.gitMainBranch
+
+		// Determine style - keep foreground, only change background when selected
 		style := itemStyle
-		if idx == e.branchPickerIndex {
-			style = selectedStyle
+		if isMainBranch {
+			style = e.styleMainBranch
 		}
+		if idx == e.branchPickerIndex {
+			fg, _, _ := style.Decompose()
+			_, selBg, _ := selectedStyle.Decompose()
+			style = style.Foreground(fg).Background(selBg)
+		}
+
 		lineY := y0 + 1 + i
+		// Clear line
 		for x := 0; x < innerWidth; x++ {
 			s.SetContent(x0+1+x, lineY, ' ', nil, style)
 		}
-		runes := []rune(e.branchPickerItems[idx])
-		if len(runes) > innerWidth {
-			runes = runes[:innerWidth]
+
+		// Draw marker for current branch (or space for alignment)
+		xOffset := 2
+		if isCurrentBranch {
+			currentMarkerStyle := markerStyle
+			if idx == e.branchPickerIndex {
+				_, selBg, _ := selectedStyle.Decompose()
+				currentMarkerStyle = currentMarkerStyle.Background(selBg)
+			}
+			s.SetContent(x0+1, lineY, '*', nil, currentMarkerStyle)
+		} else {
+			s.SetContent(x0+1, lineY, ' ', nil, style)
 		}
-		for i, r := range runes {
-			s.SetContent(x0+1+i, lineY, r, nil, style)
+		s.SetContent(x0+2, lineY, ' ', nil, style)
+
+		// Draw branch name
+		runes := []rune(branchName)
+		maxLen := innerWidth - xOffset
+		if len(runes) > maxLen {
+			runes = runes[:maxLen]
+		}
+		for j, r := range runes {
+			s.SetContent(x0+1+xOffset+j, lineY, r, nil, style)
 		}
 	}
 }
@@ -6738,6 +7067,9 @@ func keyString(ev *tcell.EventKey) string {
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		return "backspace"
 	case tcell.KeyEnter:
+		if ev.Modifiers()&tcell.ModShift != 0 {
+			return "shift+enter"
+		}
 		return "enter"
 	case tcell.KeyDelete:
 		return "del"

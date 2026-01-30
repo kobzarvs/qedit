@@ -46,6 +46,10 @@ type Theme struct {
 	SyntaxUnknown              string `toml:"syntax-unknown"`
 	SyntaxVariable             string `toml:"syntax-variable"`
 	SyntaxParameter            string `toml:"syntax-parameter"`
+	BranchForeground           string `toml:"branch-foreground"`
+	BranchBackground           string `toml:"branch-background"`
+	MainBranchForeground       string `toml:"main-branch-foreground"`
+	MainBranchBackground       string `toml:"main-branch-background"`
 }
 
 type Config struct {
@@ -121,7 +125,6 @@ func Default() Config {
 				"pgdn":           "page_down",
 				"i":              "enter_insert",
 				":":              "enter_command",
-				"q":              "quit",
 				"u":              "undo",
 				"U":              "redo",
 				"ctrl+c":         "quit",
@@ -129,6 +132,7 @@ func Default() Config {
 				"tab":            "indent",
 				"shift+tab":      "unindent",
 				"cmd+a":          "select_all",
+				"cmd+g":          "goto_line_prompt",
 
 				// Helix-style motions
 				"w":              "word_forward",
@@ -441,6 +445,18 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.SyntaxParameter != "" {
 		dst.SyntaxParameter = src.SyntaxParameter
+	}
+	if src.BranchForeground != "" {
+		dst.BranchForeground = src.BranchForeground
+	}
+	if src.BranchBackground != "" {
+		dst.BranchBackground = src.BranchBackground
+	}
+	if src.MainBranchForeground != "" {
+		dst.MainBranchForeground = src.MainBranchForeground
+	}
+	if src.MainBranchBackground != "" {
+		dst.MainBranchBackground = src.MainBranchBackground
 	}
 }
 
