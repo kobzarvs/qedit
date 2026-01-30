@@ -76,6 +76,7 @@ func (a *App) Run() error {
 	const maxHighlightBytes = 8 << 20
 	ed := editor.New(cfg)
 	ed.LoadCmdHistory()
+	ed.LoadSearchHistory()
 	gitPath := ""
 	var openPath string
 	var langName string
@@ -108,6 +109,24 @@ func (a *App) Run() error {
 	lastLayoutRaw := keyboard.CurrentLayoutRaw()
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
 	ed.SetGitBranch(gitinfo.Branch(gitPath))
+
+	// Wire up tree-sitter node stack callback for expand/shrink selection
+	ed.SetNodeStackFunc(func(path string, row, col int) []editor.NodeRange {
+		stack := ts.GetNodeStackAt(path, row, col)
+		if stack == nil {
+			return nil
+		}
+		result := make([]editor.NodeRange, len(stack))
+		for i, nr := range stack {
+			result[i] = editor.NodeRange{
+				StartRow: nr.StartRow,
+				StartCol: nr.StartCol,
+				EndRow:   nr.EndRow,
+				EndCol:   nr.EndCol,
+			}
+		}
+		return result
+	})
 	lastGitCheck := time.Now()
 	lastChangeTick := ed.ChangeTick()
 	lastHighlightStart := -1

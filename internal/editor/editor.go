@@ -1,7 +1,9 @@
 package editor
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -121,6 +123,13 @@ const (
 
 	// Terminal zoom
 	actionTerminalZoomIn    = "terminal_zoom_in"    // Cmd+= - zoom in terminal 5x
+
+	// Selection scope
+	actionExpandSelection   = "expand_selection"    // Alt+Shift+Up - expand selection to parent node
+	actionShrinkSelection   = "shrink_selection"    // Alt+Shift+Down - shrink selection to child node
+
+	// File operations
+	actionSave              = "save"                // Cmd+S - save file
 )
 
 // SpaceMenuItem represents an item in the space menu
@@ -224,15 +233,39 @@ const (
 	actionSplitLine
 	actionJoinLine
 	actionMoveLine
+	actionInsertText // Bulk insert of multiple lines
+	actionDeleteText // Bulk delete of multiple lines
 )
 
 type action struct {
-	kind    actionKind
-	pos     Cursor
-	r       rune
-	rowFrom int
-	rowTo   int
-	group   uint64
+	kind           actionKind
+	pos            Cursor
+	r              rune
+	rowFrom        int
+	rowTo          int
+	group          uint64
+	text           [][]rune // For bulk text operations
+	endPos         Cursor   // End position for bulk delete
+	selectionStart Cursor   // Selection to restore on undo
+	selectionEnd   Cursor   // Selection to restore on undo
+	hasSelection   bool     // Whether to restore selection on undo
+}
+
+// actionJSON is used for serializing actions to changelog files
+type actionJSON struct {
+	Kind           int        `json:"k"`
+	PosRow         int        `json:"pr"`
+	PosCol         int        `json:"pc"`
+	R              rune       `json:"r,omitempty"`
+	RowFrom        int        `json:"rf,omitempty"`
+	RowTo          int        `json:"rt,omitempty"`
+	Group          uint64     `json:"g"`
+	Text           []string   `json:"t,omitempty"`
+	EndPosRow      int        `json:"er,omitempty"`
+	EndPosCol      int        `json:"ec,omitempty"`
+	SelectionStart [2]int     `json:"ss,omitempty"`
+	SelectionEnd   [2]int     `json:"se,omitempty"`
+	HasSelection   bool       `json:"hs,omitempty"`
 }
 
 type Cursor struct {
@@ -263,6 +296,17 @@ type keymapSet struct {
 	normal map[string]string
 	insert map[string]string
 }
+
+// NodeRange represents a syntax node's position range
+type NodeRange struct {
+	StartRow int
+	StartCol int
+	EndRow   int
+	EndCol   int
+}
+
+// NodeStackFunc is a callback to get syntax node stack at a position
+type NodeStackFunc func(path string, row, col int) []NodeRange
 
 type Editor struct {
 	lines                  [][]rune
@@ -355,12 +399,20 @@ type Editor struct {
 	searchFuzzy            bool                   // true = fuzzy search (cmd+f), false = exact (/)
 	searchRegex            bool                   // true = regex search (cmd+e)
 	lastSearchQuery        string                 // last search query for n/N
+	searchHistory          []string               // search history (prefixed with /: F: or E:)
+	searchHistoryIndex     int                    // current position in search history (-1 = not browsing)
+	searchHistoryPrefix    string                 // prefix for filtered search history
 
 	// Terminal zoom state
 	zoomPendingRestore     bool                   // true = waiting for space to restore zoom
 
 	// Copied message state
 	copiedMessageTime      time.Time              // when "copied" was shown
+
+	// Selection scope (expand/shrink)
+	nodeStackFunc          NodeStackFunc          // callback to get syntax node stack
+	selectionScopeStack    []NodeRange            // stack of selection scopes for shrinking
+	selectionScopeIndex    int                    // current index in scope stack
 }
 
 // SearchMatch represents a match location
@@ -496,6 +548,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.highlightStart = -1
 	e.highlightEnd = -1
 	e.updateDirty()
+	_ = e.LoadUndoHistory()
 	return nil
 }
 
@@ -1678,24 +1731,193 @@ func (e *Editor) saveCmdHistory() {
 	_ = os.WriteFile(path, []byte(data), 0644)
 }
 
+// searchHistoryFilePath returns the path to the search history file
+func searchHistoryFilePath() (string, error) {
+	dir, err := config.ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "search_history"), nil
+}
+
+// LoadSearchHistory loads search history from file
+func (e *Editor) LoadSearchHistory() {
+	path, err := searchHistoryFilePath()
+	if err != nil {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // File doesn't exist yet, that's ok
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if line != "" {
+			e.searchHistory = append(e.searchHistory, line)
+		}
+	}
+}
+
+// saveSearchHistory saves search history to file
+func (e *Editor) saveSearchHistory() {
+	path, err := searchHistoryFilePath()
+	if err != nil {
+		return
+	}
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return
+	}
+	// Keep only last 1000 searches
+	history := e.searchHistory
+	if len(history) > 1000 {
+		history = history[len(history)-1000:]
+	}
+	data := strings.Join(history, "\n")
+	_ = os.WriteFile(path, []byte(data), 0644)
+}
+
+// addSearchToHistory adds a search query to history with type prefix
+// Prefix: "/:" for exact, "F:" for fuzzy, "E:" for regex
+func (e *Editor) addSearchToHistory(query string) {
+	if query == "" {
+		return
+	}
+	var prefix string
+	if e.searchRegex {
+		prefix = "E:"
+	} else if e.searchFuzzy {
+		prefix = "F:"
+	} else {
+		prefix = "/:"
+	}
+	entry := prefix + query
+	// Don't add duplicates consecutively
+	if len(e.searchHistory) > 0 && e.searchHistory[len(e.searchHistory)-1] == entry {
+		return
+	}
+	e.searchHistory = append(e.searchHistory, entry)
+	e.saveSearchHistory()
+}
+
+// currentSearchPrefix returns the prefix for current search type
+func (e *Editor) currentSearchPrefix() string {
+	if e.searchRegex {
+		return "E:"
+	} else if e.searchFuzzy {
+		return "F:"
+	}
+	return "/:"
+}
+
+// navigateSearchHistory navigates search history (direction: -1 for older, 1 for newer)
+func (e *Editor) navigateSearchHistory(direction int) {
+	if len(e.searchHistory) == 0 {
+		return
+	}
+
+	prefix := e.currentSearchPrefix()
+
+	// Save current query as prefix when starting history navigation
+	if e.searchHistoryIndex == -1 && direction < 0 {
+		e.searchHistoryPrefix = string(e.searchQuery)
+	}
+
+	// Find matching entries in history (filter by search type prefix)
+	startIdx := e.searchHistoryIndex
+	if startIdx == -1 {
+		startIdx = len(e.searchHistory)
+	}
+
+	if direction < 0 {
+		// Going back in history
+		for i := startIdx - 1; i >= 0; i-- {
+			entry := e.searchHistory[i]
+			if strings.HasPrefix(entry, prefix) {
+				query := strings.TrimPrefix(entry, prefix)
+				// If we have a prefix filter, apply it
+				if e.searchHistoryPrefix == "" || strings.HasPrefix(query, e.searchHistoryPrefix) {
+					e.searchHistoryIndex = i
+					e.searchQuery = []rune(query)
+					e.searchCursor = len(e.searchQuery)
+					e.updateSearchMatches()
+					return
+				}
+			}
+		}
+	} else {
+		// Going forward in history
+		for i := startIdx + 1; i < len(e.searchHistory); i++ {
+			entry := e.searchHistory[i]
+			if strings.HasPrefix(entry, prefix) {
+				query := strings.TrimPrefix(entry, prefix)
+				if e.searchHistoryPrefix == "" || strings.HasPrefix(query, e.searchHistoryPrefix) {
+					e.searchHistoryIndex = i
+					e.searchQuery = []rune(query)
+					e.searchCursor = len(e.searchQuery)
+					e.updateSearchMatches()
+					return
+				}
+			}
+		}
+		// No more forward - restore original prefix
+		e.searchHistoryIndex = -1
+		e.searchQuery = []rune(e.searchHistoryPrefix)
+		e.searchCursor = len(e.searchQuery)
+		e.updateSearchMatches()
+	}
+}
+
 func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
+	// Handle Cmd+Up/Down for navigating matches in file
+	if ev.Modifiers()&tcell.ModMeta != 0 {
+		switch ev.Key() {
+		case tcell.KeyUp:
+			// Navigate to previous match
+			if len(e.searchMatches) > 0 {
+				e.searchMatchIndex--
+				if e.searchMatchIndex < 0 {
+					e.searchMatchIndex = len(e.searchMatches) - 1
+				}
+				e.jumpToCurrentMatch()
+			}
+			return false
+		case tcell.KeyDown:
+			// Navigate to next match
+			if len(e.searchMatches) > 0 {
+				e.searchMatchIndex++
+				if e.searchMatchIndex >= len(e.searchMatches) {
+					e.searchMatchIndex = 0
+				}
+				e.jumpToCurrentMatch()
+			}
+			return false
+		}
+	}
+
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
 		e.searchMatches = nil
+		e.searchHistoryIndex = -1
 		return false
 	case tcell.KeyCtrlC:
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
 		e.searchMatches = nil
+		e.searchHistoryIndex = -1
 		return false
 	case tcell.KeyEnter:
 		// Confirm search and go to first/current match
+		query := string(e.searchQuery)
+		if query != "" {
+			e.addSearchToHistory(query)
+			e.lastSearchQuery = query
+		}
 		if len(e.searchMatches) > 0 {
-			e.lastSearchQuery = string(e.searchQuery)
 			match := e.searchMatches[e.searchMatchIndex]
 			e.cursor.Row = match.Row
 			e.cursor.Col = match.Col
@@ -1703,6 +1925,7 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
+		e.searchHistoryIndex = -1
 		return false
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if e.searchCursor > 0 && len(e.searchQuery) > 0 {
@@ -1734,24 +1957,12 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 		e.searchCursor = len(e.searchQuery)
 		return false
 	case tcell.KeyUp, tcell.KeyCtrlP:
-		// Previous match
-		if len(e.searchMatches) > 0 {
-			e.searchMatchIndex--
-			if e.searchMatchIndex < 0 {
-				e.searchMatchIndex = len(e.searchMatches) - 1
-			}
-			e.jumpToCurrentMatch()
-		}
+		// Navigate history (older)
+		e.navigateSearchHistory(-1)
 		return false
 	case tcell.KeyDown, tcell.KeyCtrlN:
-		// Next match
-		if len(e.searchMatches) > 0 {
-			e.searchMatchIndex++
-			if e.searchMatchIndex >= len(e.searchMatches) {
-				e.searchMatchIndex = 0
-			}
-			e.jumpToCurrentMatch()
-		}
+		// Navigate history (newer)
+		e.navigateSearchHistory(1)
 		return false
 	case tcell.KeyCtrlU:
 		e.searchQuery = e.searchQuery[:0]
@@ -2157,6 +2368,10 @@ func (e *Editor) handleSelectionMove(ev *tcell.EventKey) bool {
 	if ev.Modifiers()&tcell.ModShift == 0 {
 		return false
 	}
+	// Don't handle if Alt is pressed - let keymap handle alt+shift combinations
+	if ev.Modifiers()&tcell.ModAlt != 0 {
+		return false
+	}
 	switch ev.Key() {
 	case tcell.KeyLeft:
 		if ev.Modifiers()&tcell.ModMeta != 0 {
@@ -2296,8 +2511,10 @@ func (e *Editor) execAction(action string) bool {
 		e.insertTab()
 	case actionUndo:
 		e.Undo()
+		return false // Don't clear selection - undo may restore it
 	case actionRedo:
 		e.Redo()
+		return false // Don't clear selection
 	case actionDeleteLine:
 		e.deleteLine()
 	case actionDeleteChar:
@@ -2449,6 +2666,23 @@ func (e *Editor) execAction(action string) bool {
 		e.sendTerminalZoom(true, 20) // zoom in 20 times
 		e.zoomPendingRestore = true
 		return false
+
+	// Selection scope
+	case actionExpandSelection:
+		e.expandSelection()
+		return false
+	case actionShrinkSelection:
+		e.shrinkSelection()
+		return false
+
+	// File operations
+	case actionSave:
+		if err := e.Save(""); err != nil {
+			e.setStatus(err.Error())
+		} else {
+			e.setStatus("saved " + e.filename)
+		}
+		return false
 	}
 	if !e.selectMode {
 		e.clearSelection()
@@ -2540,6 +2774,7 @@ func (e *Editor) Save(path string) error {
 	e.filename = path
 	e.savePoint = len(e.undo)
 	e.updateDirty()
+	_ = e.SaveUndoHistory()
 	return nil
 }
 
@@ -2688,6 +2923,37 @@ func (e *Editor) applyAction(act action) (action, bool) {
 		}
 		e.clampCursorCol()
 		return action{kind: actionMoveLine, rowFrom: act.rowTo, rowTo: act.rowFrom}, true
+	case actionInsertText:
+		endPos := e.insertTextAt(act.pos, act.text)
+		// Restore selection if this action has one
+		if act.hasSelection {
+			e.selectionActive = true
+			e.selectionStart = act.selectionStart
+			e.selectionEnd = act.selectionEnd
+		}
+		// Preserve selection info for redo→undo cycle
+		return action{
+			kind:           actionDeleteText,
+			pos:            act.pos,
+			endPos:         endPos,
+			text:           act.text,
+			selectionStart: act.selectionStart,
+			selectionEnd:   act.selectionEnd,
+			hasSelection:   act.hasSelection,
+		}, true
+	case actionDeleteText:
+		deleted := e.deleteTextRange(act.pos, act.endPos)
+		// Clear selection - after delete there's no selection
+		e.selectionActive = false
+		// Preserve selection info for undo cycle
+		return action{
+			kind:           actionInsertText,
+			pos:            act.pos,
+			text:           deleted,
+			selectionStart: act.selectionStart,
+			selectionEnd:   act.selectionEnd,
+			hasSelection:   act.hasSelection,
+		}, true
 	default:
 		return action{}, false
 	}
@@ -2724,6 +2990,169 @@ func (e *Editor) finishUndoGroup() {
 
 func (e *Editor) updateDirty() {
 	e.dirty = len(e.undo) != e.savePoint
+}
+
+// changelogFilePath returns the path for the changelog file for the given file path.
+// Format: ~/.config/qedit/changelog/<encoded-path>.log
+func changelogFilePath(filePath string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Join(home, ".config", "qedit", "changelog")
+
+	// Get absolute path and encode it
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		absPath = filePath
+	}
+	// Replace path separators with underscores and other special chars
+	encoded := strings.ReplaceAll(absPath, string(filepath.Separator), "_")
+	encoded = strings.ReplaceAll(encoded, ":", "_")
+	encoded = strings.ReplaceAll(encoded, " ", "_")
+
+	return filepath.Join(dir, encoded+".log")
+}
+
+// actionToJSON converts an action to its JSON-serializable form
+func actionToJSON(a action) actionJSON {
+	var textStrings []string
+	if len(a.text) > 0 {
+		textStrings = make([]string, len(a.text))
+		for i, line := range a.text {
+			textStrings[i] = string(line)
+		}
+	}
+	return actionJSON{
+		Kind:           int(a.kind),
+		PosRow:         a.pos.Row,
+		PosCol:         a.pos.Col,
+		R:              a.r,
+		RowFrom:        a.rowFrom,
+		RowTo:          a.rowTo,
+		Group:          a.group,
+		Text:           textStrings,
+		EndPosRow:      a.endPos.Row,
+		EndPosCol:      a.endPos.Col,
+		SelectionStart: [2]int{a.selectionStart.Row, a.selectionStart.Col},
+		SelectionEnd:   [2]int{a.selectionEnd.Row, a.selectionEnd.Col},
+		HasSelection:   a.hasSelection,
+	}
+}
+
+// jsonToAction converts a JSON-serializable action back to an action
+func jsonToAction(j actionJSON) action {
+	var text [][]rune
+	if len(j.Text) > 0 {
+		text = make([][]rune, len(j.Text))
+		for i, s := range j.Text {
+			text[i] = []rune(s)
+		}
+	}
+	return action{
+		kind:           actionKind(j.Kind),
+		pos:            Cursor{Row: j.PosRow, Col: j.PosCol},
+		r:              j.R,
+		rowFrom:        j.RowFrom,
+		rowTo:          j.RowTo,
+		group:          j.Group,
+		text:           text,
+		endPos:         Cursor{Row: j.EndPosRow, Col: j.EndPosCol},
+		selectionStart: Cursor{Row: j.SelectionStart[0], Col: j.SelectionStart[1]},
+		selectionEnd:   Cursor{Row: j.SelectionEnd[0], Col: j.SelectionEnd[1]},
+		hasSelection:   j.HasSelection,
+	}
+}
+
+// SaveUndoHistory saves the undo history to the changelog file
+func (e *Editor) SaveUndoHistory() error {
+	if e.filename == "" {
+		return nil // No file path, nothing to save
+	}
+
+	logPath := changelogFilePath(e.filename)
+	if logPath == "" {
+		return nil
+	}
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(logPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	// Open file for writing
+	f, err := os.Create(logPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	writer := bufio.NewWriter(f)
+	encoder := json.NewEncoder(writer)
+
+	// Write each action as a JSON line
+	for _, a := range e.undo {
+		if err := encoder.Encode(actionToJSON(a)); err != nil {
+			return err
+		}
+	}
+
+	return writer.Flush()
+}
+
+// LoadUndoHistory loads the undo history from the changelog file
+func (e *Editor) LoadUndoHistory() error {
+	if e.filename == "" {
+		return nil
+	}
+
+	logPath := changelogFilePath(e.filename)
+	if logPath == "" {
+		return nil
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No history file, that's ok
+		}
+		return err
+	}
+	defer f.Close()
+
+	e.undo = nil
+	scanner := bufio.NewScanner(f)
+	// Increase buffer size for large actions
+	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
+
+	for scanner.Scan() {
+		var j actionJSON
+		if err := json.Unmarshal(scanner.Bytes(), &j); err != nil {
+			continue // Skip malformed lines
+		}
+		e.undo = append(e.undo, jsonToAction(j))
+	}
+
+	return scanner.Err()
+}
+
+// ClearUndoHistory removes the changelog file for the current file
+func (e *Editor) ClearUndoHistory() error {
+	if e.filename == "" {
+		return nil
+	}
+
+	logPath := changelogFilePath(e.filename)
+	if logPath == "" {
+		return nil
+	}
+
+	err := os.Remove(logPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
 func (e *Editor) setStatus(msg string) {
@@ -2783,6 +3212,141 @@ func (e *Editor) insertRuneAt(pos Cursor, r rune) bool {
 	e.lines[pos.Row] = line
 	e.cursor = Cursor{Row: pos.Row, Col: pos.Col + 1}
 	return true
+}
+
+// insertTextAt inserts multiple lines at the given position and returns the end position.
+// This is a bulk operation for efficiency with large text blocks.
+func (e *Editor) insertTextAt(pos Cursor, text [][]rune) Cursor {
+	if len(text) == 0 || pos.Row < 0 || pos.Row >= len(e.lines) {
+		return pos
+	}
+
+	if len(text) == 1 {
+		// Single line: just insert the runes into the current line
+		line := e.lines[pos.Row]
+		if pos.Col < 0 {
+			pos.Col = 0
+		}
+		if pos.Col > len(line) {
+			pos.Col = len(line)
+		}
+		newLine := make([]rune, 0, len(line)+len(text[0]))
+		newLine = append(newLine, line[:pos.Col]...)
+		newLine = append(newLine, text[0]...)
+		newLine = append(newLine, line[pos.Col:]...)
+		e.lines[pos.Row] = newLine
+		return Cursor{Row: pos.Row, Col: pos.Col + len(text[0])}
+	}
+
+	// Multi-line insertion
+	line := e.lines[pos.Row]
+	if pos.Col < 0 {
+		pos.Col = 0
+	}
+	if pos.Col > len(line) {
+		pos.Col = len(line)
+	}
+
+	// First line: prefix from original + first inserted line
+	firstLine := make([]rune, 0, pos.Col+len(text[0]))
+	firstLine = append(firstLine, line[:pos.Col]...)
+	firstLine = append(firstLine, text[0]...)
+
+	// Last line: last inserted line + suffix from original
+	suffix := line[pos.Col:]
+	lastLine := make([]rune, 0, len(text[len(text)-1])+len(suffix))
+	lastLine = append(lastLine, text[len(text)-1]...)
+	lastLine = append(lastLine, suffix...)
+
+	// Build new lines slice
+	newLines := make([][]rune, 0, len(e.lines)+len(text)-1)
+	newLines = append(newLines, e.lines[:pos.Row]...)
+	newLines = append(newLines, firstLine)
+	for i := 1; i < len(text)-1; i++ {
+		newLines = append(newLines, text[i])
+	}
+	newLines = append(newLines, lastLine)
+	newLines = append(newLines, e.lines[pos.Row+1:]...)
+	e.lines = newLines
+
+	return Cursor{Row: pos.Row + len(text) - 1, Col: len(text[len(text)-1])}
+}
+
+// deleteTextRange deletes text from start to end position and returns the deleted text.
+// This is a bulk operation for efficiency with large text blocks.
+func (e *Editor) deleteTextRange(start, end Cursor) [][]rune {
+	if start.Row < 0 || end.Row >= len(e.lines) || start.Row > end.Row {
+		return nil
+	}
+	if start.Row == end.Row && start.Col >= end.Col {
+		return nil
+	}
+
+	if start.Row == end.Row {
+		// Single line deletion
+		line := e.lines[start.Row]
+		if start.Col < 0 {
+			start.Col = 0
+		}
+		if end.Col > len(line) {
+			end.Col = len(line)
+		}
+		deleted := make([]rune, end.Col-start.Col)
+		copy(deleted, line[start.Col:end.Col])
+		newLine := make([]rune, 0, len(line)-(end.Col-start.Col))
+		newLine = append(newLine, line[:start.Col]...)
+		newLine = append(newLine, line[end.Col:]...)
+		e.lines[start.Row] = newLine
+		e.cursor = start
+		return [][]rune{deleted}
+	}
+
+	// Multi-line deletion
+	// Collect deleted text
+	deleted := make([][]rune, end.Row-start.Row+1)
+
+	// First line partial
+	firstLine := e.lines[start.Row]
+	if start.Col < 0 {
+		start.Col = 0
+	}
+	if start.Col > len(firstLine) {
+		start.Col = len(firstLine)
+	}
+	deleted[0] = make([]rune, len(firstLine)-start.Col)
+	copy(deleted[0], firstLine[start.Col:])
+
+	// Middle lines (complete)
+	for i := start.Row + 1; i < end.Row; i++ {
+		deleted[i-start.Row] = make([]rune, len(e.lines[i]))
+		copy(deleted[i-start.Row], e.lines[i])
+	}
+
+	// Last line partial
+	lastLine := e.lines[end.Row]
+	if end.Col < 0 {
+		end.Col = 0
+	}
+	if end.Col > len(lastLine) {
+		end.Col = len(lastLine)
+	}
+	deleted[len(deleted)-1] = make([]rune, end.Col)
+	copy(deleted[len(deleted)-1], lastLine[:end.Col])
+
+	// Merge first and last lines
+	mergedLine := make([]rune, 0, start.Col+len(lastLine)-end.Col)
+	mergedLine = append(mergedLine, firstLine[:start.Col]...)
+	mergedLine = append(mergedLine, lastLine[end.Col:]...)
+
+	// Build new lines slice
+	newLines := make([][]rune, 0, len(e.lines)-(end.Row-start.Row))
+	newLines = append(newLines, e.lines[:start.Row]...)
+	newLines = append(newLines, mergedLine)
+	newLines = append(newLines, e.lines[end.Row+1:]...)
+	e.lines = newLines
+
+	e.cursor = start
+	return deleted
 }
 
 func (e *Editor) insertNewline() {
@@ -2850,6 +3414,14 @@ func (e *Editor) backspace() {
 }
 
 func (e *Editor) deleteLine() {
+	// If there's a selection, delete the selected text (same as 'd' key)
+	if start, end, ok := e.selectionRange(); ok {
+		e.deleteSelection(start, end, true) // Restore selection on undo
+		e.clearSelection()
+		e.selectMode = false
+		return
+	}
+
 	if len(e.lines) == 0 {
 		return
 	}
@@ -2865,98 +3437,27 @@ func (e *Editor) deleteLine() {
 		if len(line) == 0 {
 			return
 		}
-		// Calculate byte offset BEFORE changes
-		deletedBytes := runeSliceByteLen(line)
-		e.lastEdit = TextEdit{
-			Valid:          true,
-			StartByte:      0,
-			OldEndByte:     deletedBytes,
-			NewEndByte:     0,
-			StartRow:       0,
-			StartColBytes:  0,
-			OldEndRow:      0,
-			OldEndColBytes: deletedBytes,
-			NewEndRow:      0,
-			NewEndColBytes: 0,
-		}
-		// Record undo for each character as a group
-		e.startUndoGroup()
-		for i := len(line) - 1; i >= 0; i-- {
-			e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: 0, Col: i}, r: line[i]})
-		}
-		e.finishUndoGroup()
-		e.lines[0] = []rune{}
-		e.cursor.Col = 0
+		// Use deleteSelection for consistency, no selection restore
+		e.deleteSelection(Cursor{Row: 0, Col: 0}, Cursor{Row: 0, Col: len(line)}, false)
 		return
 	}
 
-	// Calculate byte offsets BEFORE making changes
-	startByte, startColBytes := e.byteOffset(Cursor{Row: row, Col: 0})
-	lineBytes := runeSliceByteLen(line)
-
-	var oldEndByte int
-	var oldEndRow int
-	var oldEndColBytes int
-	var newEndRow int
-	var newEndColBytes int
-
+	// Delete entire line including newline using deleteSelection
+	var start, end Cursor
 	if row < len(e.lines)-1 {
-		// Not the last line: delete from start of line to start of next line
-		oldEndByte = startByte + lineBytes + 1 // +1 for newline
-		oldEndRow = row + 1
-		oldEndColBytes = 0
-		newEndRow = row
-		newEndColBytes = 0
+		// Not the last line: select from start of this line to start of next
+		start = Cursor{Row: row, Col: 0}
+		end = Cursor{Row: row + 1, Col: 0}
 	} else {
-		// Last line: delete from end of previous line (newline) to end of this line
-		prevLineBytes := runeSliceByteLen(e.lines[row-1])
-		startByte = startByte - 1 // include the newline before this line
-		startColBytes = prevLineBytes
-		oldEndByte = startByte + 1 + lineBytes // newline + line content
-		oldEndRow = row
-		oldEndColBytes = lineBytes
-		newEndRow = row - 1
-		newEndColBytes = prevLineBytes
+		// Last line: select from end of previous line to end of this line
+		start = Cursor{Row: row - 1, Col: len(e.lines[row-1])}
+		end = Cursor{Row: row, Col: len(line)}
 	}
 
-	startRow := row
-	if row >= len(e.lines)-1 && row > 0 {
-		startRow = row - 1
-	}
+	e.deleteSelection(start, end, false) // No selection restore for line delete
 
-	e.lastEdit = TextEdit{
-		Valid:          true,
-		StartByte:      startByte,
-		OldEndByte:     oldEndByte,
-		NewEndByte:     startByte, // Nothing inserted
-		StartRow:       startRow,
-		StartColBytes:  startColBytes,
-		OldEndRow:      oldEndRow,
-		OldEndColBytes: oldEndColBytes,
-		NewEndRow:      newEndRow,
-		NewEndColBytes: newEndColBytes,
-	}
-
-	// Record undo: first the line join, then the characters as a group
-	e.startUndoGroup()
-	if row < len(e.lines)-1 {
-		e.appendUndo(action{kind: actionSplitLine, pos: Cursor{Row: row, Col: 0}})
-	} else {
-		e.appendUndo(action{kind: actionSplitLine, pos: Cursor{Row: row - 1, Col: len(e.lines[row-1])}})
-	}
-	for i := len(line) - 1; i >= 0; i-- {
-		e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: i}, r: line[i]})
-	}
-	e.finishUndoGroup()
-
-	// Actually remove the line
-	newLines := make([][]rune, 0, len(e.lines)-1)
-	newLines = append(newLines, e.lines[:row]...)
-	newLines = append(newLines, e.lines[row+1:]...)
-	e.lines = newLines
-
-	// Adjust cursor
-	if row >= len(e.lines) {
+	// Adjust cursor position
+	if e.cursor.Row >= len(e.lines) {
 		e.cursor.Row = len(e.lines) - 1
 		if e.cursor.Row < 0 {
 			e.cursor.Row = 0
@@ -2964,14 +3465,12 @@ func (e *Editor) deleteLine() {
 	}
 	e.cursor.Col = 0
 	e.clampCursorCol()
-	e.changeTick++
-	e.updateDirty()
 }
 
 func (e *Editor) deleteChar() {
 	// If there's a selection, delete the selected text
 	if start, end, ok := e.selectionRange(); ok {
-		e.deleteSelection(start, end)
+		e.deleteSelection(start, end, true) // Restore selection on undo
 		return
 	}
 
@@ -2999,7 +3498,7 @@ func (e *Editor) deleteChar() {
 	}
 }
 
-func (e *Editor) deleteSelection(start, end Cursor) {
+func (e *Editor) deleteSelection(start, end Cursor, restoreSelectionOnUndo bool) {
 	if start.Row < 0 || end.Row >= len(e.lines) {
 		return
 	}
@@ -3008,31 +3507,20 @@ func (e *Editor) deleteSelection(start, end Cursor) {
 	startByte, startColBytes := e.byteOffset(start)
 	oldEndByte, oldEndColBytes := e.byteOffset(end)
 
-	// Collect deleted content for undo (from end to start) as a group
-	e.startUndoGroup()
-	// First, record line joins for multi-line selections
-	for row := end.Row; row > start.Row; row-- {
-		joinPos := Cursor{Row: row - 1, Col: len(e.lines[row-1])}
-		e.appendUndo(action{kind: actionSplitLine, pos: joinPos})
-	}
+	// Collect deleted content for undo
+	// Use bulk operation for efficiency with large selections
+	deleted := e.collectDeletedText(start, end)
 
-	// Then record character deletions
-	for row := end.Row; row >= start.Row; row-- {
-		line := e.lines[row]
-		startCol := 0
-		endCol := len(line)
-		if row == start.Row {
-			startCol = start.Col
-		}
-		if row == end.Row {
-			endCol = end.Col
-		}
-		for col := endCol - 1; col >= startCol; col-- {
-			if col >= 0 && col < len(line) {
-				e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: col}, r: line[col]})
-			}
-		}
-	}
+	e.startUndoGroup()
+	// Record as a single bulk insert action for undo
+	e.appendUndo(action{
+		kind:           actionInsertText,
+		pos:            start,
+		text:           deleted,
+		selectionStart: start,
+		selectionEnd:   end,
+		hasSelection:   restoreSelectionOnUndo,
+	})
 	e.finishUndoGroup()
 
 	// Record text edit for tree-sitter
@@ -3074,6 +3562,38 @@ func (e *Editor) deleteSelection(start, end Cursor) {
 	e.clearSelection()
 	e.changeTick++
 	e.updateDirty()
+}
+
+// collectDeletedText collects text from start to end position without modifying the buffer.
+func (e *Editor) collectDeletedText(start, end Cursor) [][]rune {
+	if start.Row == end.Row {
+		// Single line
+		line := e.lines[start.Row]
+		deleted := make([]rune, end.Col-start.Col)
+		copy(deleted, line[start.Col:end.Col])
+		return [][]rune{deleted}
+	}
+
+	// Multi-line
+	deleted := make([][]rune, end.Row-start.Row+1)
+
+	// First line partial
+	firstLine := e.lines[start.Row]
+	deleted[0] = make([]rune, len(firstLine)-start.Col)
+	copy(deleted[0], firstLine[start.Col:])
+
+	// Middle lines (complete)
+	for i := start.Row + 1; i < end.Row; i++ {
+		deleted[i-start.Row] = make([]rune, len(e.lines[i]))
+		copy(deleted[i-start.Row], e.lines[i])
+	}
+
+	// Last line partial
+	lastLine := e.lines[end.Row]
+	deleted[len(deleted)-1] = make([]rune, end.Col)
+	copy(deleted[len(deleted)-1], lastLine[:end.Col])
+
+	return deleted
 }
 
 func (e *Editor) deleteWordLeft() {
@@ -3725,15 +4245,30 @@ func (e *Editor) wordForward() {
 		return
 	}
 
+	// Remember if we started on a word (not punctuation)
+	startedOnWord := isWordRune(line[idx])
+	wordEndIdx := idx
+
 	// Skip current word or punctuation
 	if isWordRune(line[idx]) {
 		for idx < len(line) && isWordRune(line[idx]) {
 			idx++
 		}
+		wordEndIdx = idx - 1 // Last char of word
 	} else if !isSpaceRune(line[idx]) {
 		for idx < len(line) && !isSpaceRune(line[idx]) && !isWordRune(line[idx]) {
 			idx++
 		}
+	}
+
+	// Check if there's whitespace before next word
+	hasWhitespace := idx < len(line) && isSpaceRune(line[idx])
+
+	// Edge case: started on word, no whitespace, next char is punctuation
+	// In this case, behave like 'e' - stop at end of current word
+	if startedOnWord && !hasWhitespace && idx < len(line) && !isWordRune(line[idx]) {
+		e.cursor.Col = wordEndIdx
+		return
 	}
 
 	// Skip whitespace to next word
@@ -4090,7 +4625,7 @@ func (e *Editor) handlePendingChar(ch rune) bool {
 // Helix-style delete (d) - delete selection or char
 func (e *Editor) helixDelete() {
 	if start, end, ok := e.selectionRange(); ok {
-		e.deleteSelection(start, end)
+		e.deleteSelection(start, end, true) // Restore selection on undo
 		e.clearSelection()
 		e.selectMode = false
 		return
@@ -4102,7 +4637,7 @@ func (e *Editor) helixDelete() {
 // Helix-style change (c) - delete selection and enter insert mode
 func (e *Editor) helixChange() {
 	if start, end, ok := e.selectionRange(); ok {
-		e.deleteSelection(start, end)
+		e.deleteSelection(start, end, true) // Restore selection on undo
 		e.clearSelection()
 		e.selectMode = false
 	}
@@ -4779,6 +5314,10 @@ func (e *Editor) SetGitBranch(name string) {
 	e.gitBranch = strings.TrimSpace(name)
 }
 
+func (e *Editor) SetNodeStackFunc(fn NodeStackFunc) {
+	e.nodeStackFunc = fn
+}
+
 func (e *Editor) SetStatusMessage(msg string) {
 	e.setStatus(msg)
 }
@@ -4855,6 +5394,58 @@ func (e *Editor) selectAll() {
 	lastRow := len(e.lines) - 1
 	e.selectionEnd = Cursor{Row: lastRow, Col: len(e.lines[lastRow])}
 	e.selectionActive = true
+}
+
+// expandSelection expands selection to the next larger syntax node
+func (e *Editor) expandSelection() {
+	if e.nodeStackFunc == nil || e.filename == "" {
+		e.setStatus("syntax tree not available")
+		return
+	}
+
+	// Get node stack at cursor position
+	stack := e.nodeStackFunc(e.filename, e.cursor.Row, e.cursor.Col)
+	if len(stack) == 0 {
+		e.setStatus("no syntax node at cursor")
+		return
+	}
+
+	// If no selection or selection changed, rebuild scope stack
+	if !e.selectionActive || len(e.selectionScopeStack) == 0 {
+		e.selectionScopeStack = stack
+		e.selectionScopeIndex = 0
+	}
+
+	// Find next larger scope
+	if e.selectionScopeIndex < len(e.selectionScopeStack) {
+		nr := e.selectionScopeStack[e.selectionScopeIndex]
+		e.selectionStart = Cursor{Row: nr.StartRow, Col: nr.StartCol}
+		e.selectionEnd = Cursor{Row: nr.EndRow, Col: nr.EndCol}
+		e.selectionActive = true
+		e.selectMode = true
+		e.selectionScopeIndex++
+	}
+}
+
+// shrinkSelection shrinks selection to the next smaller syntax node
+func (e *Editor) shrinkSelection() {
+	if !e.selectionActive || len(e.selectionScopeStack) == 0 {
+		return
+	}
+
+	// Go back to previous scope
+	if e.selectionScopeIndex > 1 {
+		e.selectionScopeIndex--
+		nr := e.selectionScopeStack[e.selectionScopeIndex-1]
+		e.selectionStart = Cursor{Row: nr.StartRow, Col: nr.StartCol}
+		e.selectionEnd = Cursor{Row: nr.EndRow, Col: nr.EndCol}
+	} else {
+		// Can't shrink further, clear selection
+		e.clearSelection()
+		e.selectMode = false
+		e.selectionScopeStack = nil
+		e.selectionScopeIndex = 0
+	}
 }
 
 func (e *Editor) extendSelection(move func()) {
@@ -6022,6 +6613,32 @@ func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
 }
 
 func keyString(ev *tcell.EventKey) string {
+	// Handle alt+shift+arrow combinations first
+	if ev.Modifiers()&tcell.ModAlt != 0 && ev.Modifiers()&tcell.ModShift != 0 {
+		switch ev.Key() {
+		case tcell.KeyUp:
+			return "alt+shift+up"
+		case tcell.KeyDown:
+			return "alt+shift+down"
+		case tcell.KeyLeft:
+			return "alt+shift+left"
+		case tcell.KeyRight:
+			return "alt+shift+right"
+		}
+	}
+	// Handle alt+arrow combinations
+	if ev.Modifiers()&tcell.ModAlt != 0 {
+		switch ev.Key() {
+		case tcell.KeyUp:
+			return "alt+up"
+		case tcell.KeyDown:
+			return "alt+down"
+		case tcell.KeyLeft:
+			return "alt+left"
+		case tcell.KeyRight:
+			return "alt+right"
+		}
+	}
 	if ev.Modifiers()&tcell.ModCtrl != 0 {
 		switch ev.Key() {
 		case tcell.KeyHome:

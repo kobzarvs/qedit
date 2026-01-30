@@ -30,8 +30,8 @@ type Theme struct {
 	LineNumberActiveForeground string `toml:"line-number-active-foreground"`
 	SelectionForeground        string `toml:"selection-foreground"`
 	SelectionBackground        string `toml:"selection-background"`
-	SearchMatchForeground      string `toml:"search-match-foreground"`
-	SearchMatchBackground      string `toml:"search-match-background"`
+	SearchMatchForeground      string `toml:"search-foreground"`
+	SearchMatchBackground      string `toml:"search-background"`
 	SyntaxKeyword              string `toml:"syntax-keyword"`
 	SyntaxString               string `toml:"syntax-string"`
 	SyntaxComment              string `toml:"syntax-comment"`
@@ -185,6 +185,13 @@ func Default() Config {
 
 				// Terminal zoom
 				"=":              "terminal_zoom_in",
+
+				// Selection scope
+				"alt+shift+up":   "expand_selection",
+				"alt+shift+down": "shrink_selection",
+
+				// File operations
+				"cmd+s":          "save",
 			},
 			Insert: map[string]string{
 				"esc":            "enter_normal",
@@ -218,6 +225,9 @@ func Default() Config {
 				"shift+tab":      "unindent",
 				"cmd+a":          "select_all",
 				"shift+enter":    "insert_line_above",
+
+				// File operations
+				"cmd+s":          "save",
 			},
 		},
 	}

@@ -244,6 +244,58 @@ func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]Highl
 	return out
 }
 
+// NodeRange represents a syntax node's position range
+type NodeRange struct {
+	StartRow int
+	StartCol int
+	EndRow   int
+	EndCol   int
+}
+
+// GetNodeStackAt returns a stack of node ranges at the given position,
+// from innermost to outermost (root). Used for expand/shrink selection.
+func (e *Engine) GetNodeStackAt(path string, row, col int) []NodeRange {
+	e.mu.RLock()
+	tree := e.trees[path]
+	e.mu.RUnlock()
+
+	if tree == nil {
+		return nil
+	}
+
+	root := tree.RootNode()
+	if root == nil {
+		return nil
+	}
+
+	// Find the deepest node containing this position
+	point := sitter.Point{Row: uint32(row), Column: uint32(col)}
+	node := root.NamedDescendantForPointRange(point, point)
+	if node == nil {
+		return nil
+	}
+
+	// Build stack from innermost to outermost
+	var stack []NodeRange
+	for node != nil {
+		start := node.StartPoint()
+		end := node.EndPoint()
+		nr := NodeRange{
+			StartRow: int(start.Row),
+			StartCol: int(start.Column),
+			EndRow:   int(end.Row),
+			EndCol:   int(end.Column),
+		}
+		// Only add if different from previous (avoid duplicates)
+		if len(stack) == 0 || stack[len(stack)-1] != nr {
+			stack = append(stack, nr)
+		}
+		node = node.Parent()
+	}
+
+	return stack
+}
+
 const goHighlightQuery = `
 ((comment) @comment)
 ((interpreted_string_literal) @string)
