@@ -1,7 +1,9 @@
 package app
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -151,6 +153,44 @@ func (a *App) Run() error {
 			}
 		}
 		return result
+	})
+
+	// Wire up LSP goto callback for definition, references, etc.
+	ed.SetLSPGotoFunc(func(method, path string, line, col int) ([]editor.LSPLocation, error) {
+		// Ensure we use absolute path (same as LSP OpenFile)
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			absPath = path
+		}
+		var locs []lsp.Location
+		switch method {
+		case "definition":
+			locs, err = ls.GotoDefinition(absPath, line, col)
+		case "declaration":
+			locs, err = ls.GotoDeclaration(absPath, line, col)
+		case "typeDefinition":
+			locs, err = ls.GotoTypeDefinition(absPath, line, col)
+		case "references":
+			locs, err = ls.FindReferences(absPath, line, col)
+		case "implementation":
+			locs, err = ls.GotoImplementation(absPath, line, col)
+		default:
+			return nil, fmt.Errorf("unknown LSP method: %s", method)
+		}
+		if err != nil {
+			return nil, err
+		}
+		result := make([]editor.LSPLocation, len(locs))
+		for i, loc := range locs {
+			result[i] = editor.LSPLocation{
+				Path:      lsp.URIToPath(loc.URI),
+				StartLine: loc.Range.Start.Line,
+				StartCol:  loc.Range.Start.Character,
+				EndLine:   loc.Range.End.Line,
+				EndCol:    loc.Range.End.Character,
+			}
+		}
+		return result, nil
 	})
 	lastGitCheck := time.Now()
 	lastChangeTick := ed.ChangeTick()
