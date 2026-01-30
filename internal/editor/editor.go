@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -111,6 +112,7 @@ const (
 	actionSearchForward     = "search_forward"      // / - exact search forward
 	actionSearchBackward    = "search_backward"     // ? - exact search backward
 	actionSearchFuzzy       = "search_fuzzy"        // Cmd+F - fuzzy search forward
+	actionSearchRegex       = "search_regex"        // Cmd+E - regex search forward
 	actionSearchNext        = "search_next"         // n - next match
 	actionSearchPrev        = "search_prev"         // N - previous match
 
@@ -346,14 +348,19 @@ type Editor struct {
 
 	// Search state
 	searchQuery            []rune                 // current search query
+	searchCursor           int                    // cursor position within search query
 	searchMatches          []SearchMatch          // all matches in the file
 	searchMatchIndex       int                    // current match index
 	searchForward          bool                   // search direction
 	searchFuzzy            bool                   // true = fuzzy search (cmd+f), false = exact (/)
+	searchRegex            bool                   // true = regex search (cmd+e)
 	lastSearchQuery        string                 // last search query for n/N
 
 	// Terminal zoom state
 	zoomPendingRestore     bool                   // true = waiting for space to restore zoom
+
+	// Copied message state
+	copiedMessageTime      time.Time              // when "copied" was shown
 }
 
 // SearchMatch represents a match location
@@ -1676,11 +1683,13 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 	case tcell.KeyEscape:
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
+		e.searchCursor = 0
 		e.searchMatches = nil
 		return false
 	case tcell.KeyCtrlC:
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
+		e.searchCursor = 0
 		e.searchMatches = nil
 		return false
 	case tcell.KeyEnter:
@@ -1693,12 +1702,36 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 		}
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
+		e.searchCursor = 0
 		return false
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if len(e.searchQuery) > 0 {
-			e.searchQuery = e.searchQuery[:len(e.searchQuery)-1]
+		if e.searchCursor > 0 && len(e.searchQuery) > 0 {
+			e.searchQuery = append(e.searchQuery[:e.searchCursor-1], e.searchQuery[e.searchCursor:]...)
+			e.searchCursor--
 			e.updateSearchMatches()
 		}
+		return false
+	case tcell.KeyDelete:
+		if e.searchCursor < len(e.searchQuery) {
+			e.searchQuery = append(e.searchQuery[:e.searchCursor], e.searchQuery[e.searchCursor+1:]...)
+			e.updateSearchMatches()
+		}
+		return false
+	case tcell.KeyLeft, tcell.KeyCtrlB:
+		if e.searchCursor > 0 {
+			e.searchCursor--
+		}
+		return false
+	case tcell.KeyRight, tcell.KeyCtrlF:
+		if e.searchCursor < len(e.searchQuery) {
+			e.searchCursor++
+		}
+		return false
+	case tcell.KeyHome, tcell.KeyCtrlA:
+		e.searchCursor = 0
+		return false
+	case tcell.KeyEnd, tcell.KeyCtrlE:
+		e.searchCursor = len(e.searchQuery)
 		return false
 	case tcell.KeyUp, tcell.KeyCtrlP:
 		// Previous match
@@ -1720,8 +1753,28 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 			e.jumpToCurrentMatch()
 		}
 		return false
+	case tcell.KeyCtrlU:
+		e.searchQuery = e.searchQuery[:0]
+		e.searchCursor = 0
+		e.updateSearchMatches()
+		return false
+	case tcell.KeyCtrlW:
+		if e.searchCursor > 0 {
+			i := e.searchCursor - 1
+			for i > 0 && e.searchQuery[i-1] == ' ' {
+				i--
+			}
+			for i > 0 && e.searchQuery[i-1] != ' ' {
+				i--
+			}
+			e.searchQuery = append(e.searchQuery[:i], e.searchQuery[e.searchCursor:]...)
+			e.searchCursor = i
+			e.updateSearchMatches()
+		}
+		return false
 	case tcell.KeyRune:
-		e.searchQuery = append(e.searchQuery, ev.Rune())
+		e.searchQuery = append(e.searchQuery[:e.searchCursor], append([]rune{ev.Rune()}, e.searchQuery[e.searchCursor:]...)...)
+		e.searchCursor++
 		e.updateSearchMatches()
 		return false
 	}
@@ -1738,57 +1791,82 @@ func (e *Editor) updateSearchMatches() {
 		return
 	}
 
-	queryLower := strings.ToLower(query)
-
-	// Search through all lines
-	for row, line := range e.lines {
-		lineStr := string(line)
-		lineLower := strings.ToLower(lineStr)
-
-		// Find all exact substring matches in this line first
-		offset := 0
-		for {
-			col := strings.Index(lineLower[offset:], queryLower)
-			if col < 0 {
-				break
-			}
-			e.searchMatches = append(e.searchMatches, SearchMatch{
-				Row:    row,
-				Col:    offset + col,
-				Length: len(query),
-				Score:  1000, // Exact match gets high score
-			})
-			offset += col + 1
-			if offset >= len(lineLower) {
-				break
+	// Regex search mode
+	if e.searchRegex {
+		re, err := regexp.Compile("(?i)" + query) // case-insensitive
+		if err != nil {
+			// Invalid regex, show error in status
+			e.setStatus("regex error: " + err.Error())
+			return
+		}
+		for row, line := range e.lines {
+			lineStr := string(line)
+			matches := re.FindAllStringIndex(lineStr, -1)
+			for _, m := range matches {
+				// Convert byte positions to rune positions
+				col := utf8.RuneCountInString(lineStr[:m[0]])
+				length := utf8.RuneCountInString(lineStr[m[0]:m[1]])
+				e.searchMatches = append(e.searchMatches, SearchMatch{
+					Row:    row,
+					Col:    col,
+					Length: length,
+					Score:  1000,
+				})
 			}
 		}
+	} else {
+		queryLower := strings.ToLower(query)
 
-		// In fuzzy mode, find words containing all query letters
-		if e.searchFuzzy {
-			words := extractWords(line)
-			for _, w := range words {
-				// Skip if this word position is already covered by an exact match
-				alreadyMatched := false
-				for _, m := range e.searchMatches {
-					if m.Row == row && w.start >= m.Col && w.start < m.Col+m.Length {
-						alreadyMatched = true
-						break
+		// Search through all lines
+		for row, line := range e.lines {
+			lineStr := string(line)
+			lineLower := strings.ToLower(lineStr)
+
+			// Find all exact substring matches in this line first
+			offset := 0
+			for {
+				col := strings.Index(lineLower[offset:], queryLower)
+				if col < 0 {
+					break
+				}
+				e.searchMatches = append(e.searchMatches, SearchMatch{
+					Row:    row,
+					Col:    offset + col,
+					Length: len(query),
+					Score:  1000, // Exact match gets high score
+				})
+				offset += col + 1
+				if offset >= len(lineLower) {
+					break
+				}
+			}
+
+			// In fuzzy mode, find words containing all query letters
+			if e.searchFuzzy {
+				words := extractWords(line)
+				for _, w := range words {
+					// Skip if this word position is already covered by an exact match
+					alreadyMatched := false
+					for _, m := range e.searchMatches {
+						if m.Row == row && w.start >= m.Col && w.start < m.Col+m.Length {
+							alreadyMatched = true
+							break
+						}
 					}
-				}
-				if alreadyMatched {
-					continue
-				}
+					if alreadyMatched {
+						continue
+					}
 
-				// Check fuzzy match (sequential or chunk-based)
-				if matchedPositions := fuzzyMatchWord(w.word, query); matchedPositions != nil {
-					e.searchMatches = append(e.searchMatches, SearchMatch{
-						Row:         row,
-						Col:         w.start,
-						Length:      len([]rune(w.word)),
-						Score:       500, // Fuzzy match score
-						MatchedCols: matchedPositions,
-					})
+					// Check fuzzy match (sequential or chunk-based)
+					if matchedPositions := fuzzyMatchWord(w.word, query); matchedPositions != nil {
+						e.searchMatches = append(e.searchMatches, SearchMatch{
+							Row:         row,
+							Col:         w.start,
+							Length:      len([]rune(w.word)),
+							Score:       500, // Fuzzy match score
+							MatchedCols: matchedPositions,
+						})
+					}
 				}
 			}
 		}
@@ -1986,14 +2064,18 @@ func (e *Editor) jumpToCurrentMatch() {
 }
 
 // enterSearchMode enters search mode
-func (e *Editor) enterSearchMode(forward bool, fuzzy bool) {
+func (e *Editor) enterSearchMode(forward bool, fuzzy bool, regex bool) {
 	e.mode = ModeSearch
 	e.searchQuery = e.searchQuery[:0]
+	e.searchCursor = 0
 	e.searchMatches = nil
 	e.searchMatchIndex = 0
 	e.searchForward = forward
 	e.searchFuzzy = fuzzy
-	if fuzzy {
+	e.searchRegex = regex
+	if regex {
+		e.pendingKeys = "E"
+	} else if fuzzy {
 		e.pendingKeys = "F"
 	} else {
 		e.pendingKeys = "/"
@@ -2342,13 +2424,16 @@ func (e *Editor) execAction(action string) bool {
 
 	// Search
 	case actionSearchForward:
-		e.enterSearchMode(true, false) // exact search
+		e.enterSearchMode(true, false, false) // exact search
 		return false
 	case actionSearchBackward:
-		e.enterSearchMode(false, false) // exact search
+		e.enterSearchMode(false, false, false) // exact search
 		return false
 	case actionSearchFuzzy:
-		e.enterSearchMode(true, true) // fuzzy search
+		e.enterSearchMode(true, true, false) // fuzzy search
+		return false
+	case actionSearchRegex:
+		e.enterSearchMode(true, false, true) // regex search
 		return false
 	case actionSearchNext:
 		e.searchNext()
@@ -3990,11 +4075,12 @@ func (e *Editor) handlePendingChar(ch rune) bool {
 		return false
 	}
 
-	// Set selection from anchor to new cursor position
+	// Set selection from anchor to new cursor position (inclusive of cursor char)
 	if isSelectingAction && anchor != e.cursor {
 		e.selectionActive = true
 		e.selectionStart = anchor
-		e.selectionEnd = e.cursor
+		// Selection end is exclusive, so add 1 to include the character at cursor
+		e.selectionEnd = Cursor{Row: e.cursor.Row, Col: e.cursor.Col + 1}
 		e.selectMode = true
 	}
 
@@ -4024,6 +4110,23 @@ func (e *Editor) helixChange() {
 	e.saveLineState()
 }
 
+// copyToSystemClipboard copies text to macOS clipboard using pbcopy
+func (e *Editor) copyToSystemClipboard() {
+	if len(e.clipboard) == 0 {
+		return
+	}
+	// Join clipboard lines with newlines
+	var lines []string
+	for _, line := range e.clipboard {
+		lines = append(lines, string(line))
+	}
+	text := strings.Join(lines, "\n")
+
+	cmd := exec.Command("pbcopy")
+	cmd.Stdin = strings.NewReader(text)
+	_ = cmd.Run()
+}
+
 // Helix-style yank (y) - copy selection to clipboard
 func (e *Editor) yankSelection() {
 	start, end, ok := e.selectionRange()
@@ -4032,6 +4135,9 @@ func (e *Editor) yankSelection() {
 		if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
 			e.clipboard = [][]rune{append([]rune(nil), e.lines[e.cursor.Row]...)}
 		}
+		e.copyToSystemClipboard()
+		e.lastCommand = "y"
+		e.copiedMessageTime = time.Now()
 		return
 	}
 
@@ -4058,6 +4164,9 @@ func (e *Editor) yankSelection() {
 		}
 		e.clipboard = append(e.clipboard, append([]rune(nil), line[startCol:endCol]...))
 	}
+	e.copyToSystemClipboard()
+	e.lastCommand = "y"
+	e.copiedMessageTime = time.Now()
 	e.clearSelection()
 	e.selectMode = false
 }
@@ -4457,10 +4566,19 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 	}
 
 	// Prepare right side: pending keys or last command (if not in search mode)
+	// Check if "copied" message should be shown (within 2 seconds)
+	const copiedMessageDuration = 2 * time.Second
+	showCopiedMessage := time.Since(e.copiedMessageTime) < copiedMessageDuration && e.lastCommand == "y"
+	checkmarkPos := -1 // position of ✓ in rightRunes for green coloring
+
 	if rightText == "" {
 		if e.pendingKeys != "" {
 			// Show pending keys while waiting for next key (e.g., "g", "f")
 			rightText = " " + e.pendingKeys + "_ "
+		} else if showCopiedMessage {
+			// Show "copied [✓] | y"
+			rightText = " copied [✓] | y "
+			checkmarkPos = 9 // position of ✓ in " copied [✓] | y "
 		} else if e.lastCommand != "" {
 			// Show last executed command (e.g., "gg", "fw")
 			rightText = " " + e.lastCommand + " "
@@ -4475,6 +4593,10 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 	if rightStart < 0 {
 		rightStart = 0
 		rightRunes = rightRunes[:w]
+		// Adjust checkmark position if truncated
+		if checkmarkPos >= len(rightRunes) {
+			checkmarkPos = -1
+		}
 	}
 
 	// Calculate available width for command
@@ -4488,7 +4610,7 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 	if e.mode == ModeCommand {
 		cursorX = e.cmdCursor + 1 // +1 for ':' prefix
 	} else if e.mode == ModeSearch {
-		cursorX = len(e.searchQuery) + 1 // +1 for '/' or '?' prefix
+		cursorX = e.searchCursor + 1 // +1 for '/' or '?' prefix
 	} else {
 		cursorX = len(cmdRunes)
 	}
@@ -4510,12 +4632,20 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 		cursorX = cursorX - start
 	}
 
+	// Style for green checkmark
+	styleGreen := e.styleCommand.Foreground(tcell.ColorGreen)
+
 	// Draw command line content
 	for x := 0; x < w; x++ {
 		if x < len(cmdRunes) {
 			s.SetContent(x, y, cmdRunes[x], nil, e.styleCommand)
 		} else if x >= rightStart && x-rightStart < len(rightRunes) {
-			s.SetContent(x, y, rightRunes[x-rightStart], nil, e.styleCommand)
+			idx := x - rightStart
+			style := e.styleCommand
+			if idx == checkmarkPos {
+				style = styleGreen
+			}
+			s.SetContent(x, y, rightRunes[idx], nil, style)
 		} else {
 			s.SetContent(x, y, ' ', nil, e.styleCommand)
 		}

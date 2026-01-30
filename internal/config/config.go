@@ -178,6 +178,7 @@ func Default() Config {
 				"n":              "search_next",
 				"N":              "search_prev",
 				"cmd+f":          "search_fuzzy",
+				"cmd+e":          "search_regex",
 
 				// Special
 				"shift+enter":    "insert_line_above",
