@@ -75,6 +75,7 @@ func (a *App) Run() error {
 
 	const maxHighlightBytes = 8 << 20
 	ed := editor.New(cfg)
+	ed.LoadCmdHistory()
 	gitPath := ""
 	var openPath string
 	var langName string

@@ -30,6 +30,8 @@ type Theme struct {
 	LineNumberActiveForeground string `toml:"line-number-active-foreground"`
 	SelectionForeground        string `toml:"selection-foreground"`
 	SelectionBackground        string `toml:"selection-background"`
+	SearchMatchForeground      string `toml:"search-match-foreground"`
+	SearchMatchBackground      string `toml:"search-match-background"`
 	SyntaxKeyword              string `toml:"syntax-keyword"`
 	SyntaxString               string `toml:"syntax-string"`
 	SyntaxComment              string `toml:"syntax-comment"`
@@ -71,6 +73,8 @@ func Default() Config {
 			LineNumberActiveForeground: "#B3B1AD",
 			SelectionForeground:        "#B3B1AD",
 			SelectionBackground:        "#27425A",
+			SearchMatchForeground:      "#000000",
+			SearchMatchBackground:      "#FFD700",
 			SyntaxKeyword:              "#FFA759",
 			SyntaxString:               "#BAE67E",
 			SyntaxComment:              "#5C6773",
@@ -125,6 +129,61 @@ func Default() Config {
 				"tab":            "indent",
 				"shift+tab":      "unindent",
 				"cmd+a":          "select_all",
+
+				// Helix-style motions
+				"w":              "word_forward",
+				"b":              "word_backward",
+				"e":              "word_end",
+				"g":              "goto_mode",
+				"G":              "goto_line",
+				"f":              "find_char",
+				"F":              "find_char_backward",
+				"t":              "till_char",
+				"T":              "till_char_backward",
+
+				// Helix-style editing
+				"d":              "delete",
+				"c":              "change",
+				"y":              "yank",
+				"p":              "paste",
+				"P":              "paste_before",
+				"o":              "open_below",
+				"O":              "open_above",
+				"a":              "append",
+				"A":              "append_line_end",
+				"I":              "insert_line_start",
+				"r":              "replace_char",
+				"J":              "join_lines",
+
+				// Helix-style selection
+				"v":              "toggle_select",
+				"x":              "extend_line",
+				";":              "collapse_selection",
+				"%":              "select_all",
+				">":              "indent",
+				"<":              "unindent",
+
+				// Space mode
+				"space":          "space_mode",
+
+				// Match mode
+				"m":              "match_mode",
+
+				// View mode
+				"z":              "view_mode",
+
+				// Search
+				"/":              "search_forward",
+				"?":              "search_backward",
+				"n":              "search_next",
+				"N":              "search_prev",
+				"cmd+f":          "search_fuzzy",
+
+				// Special
+				"shift+enter":    "insert_line_above",
+
+				// Terminal zoom
+				"=":              "terminal_zoom_in",
 			},
 			Insert: map[string]string{
 				"esc":            "enter_normal",
@@ -157,6 +216,7 @@ func Default() Config {
 				"tab":            "indent",
 				"shift+tab":      "unindent",
 				"cmd+a":          "select_all",
+				"shift+enter":    "insert_line_above",
 			},
 		},
 	}
@@ -229,6 +289,12 @@ func Load() (Config, error) {
 	}
 	if userCfg.Theme.SelectionBackground != "" {
 		cfg.Theme.SelectionBackground = userCfg.Theme.SelectionBackground
+	}
+	if userCfg.Theme.SearchMatchForeground != "" {
+		cfg.Theme.SearchMatchForeground = userCfg.Theme.SearchMatchForeground
+	}
+	if userCfg.Theme.SearchMatchBackground != "" {
+		cfg.Theme.SearchMatchBackground = userCfg.Theme.SearchMatchBackground
 	}
 	if userCfg.Theme.SyntaxKeyword != "" {
 		cfg.Theme.SyntaxKeyword = userCfg.Theme.SyntaxKeyword
@@ -316,6 +382,12 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.SelectionBackground != "" {
 		dst.SelectionBackground = src.SelectionBackground
+	}
+	if src.SearchMatchForeground != "" {
+		dst.SearchMatchForeground = src.SearchMatchForeground
+	}
+	if src.SearchMatchBackground != "" {
+		dst.SearchMatchBackground = src.SearchMatchBackground
 	}
 	if src.SyntaxKeyword != "" {
 		dst.SyntaxKeyword = src.SyntaxKeyword
