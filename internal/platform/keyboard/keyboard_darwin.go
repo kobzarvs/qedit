@@ -3,10 +3,14 @@
 package keyboard
 
 /*
-#cgo LDFLAGS: -framework Carbon
+#cgo LDFLAGS: -framework Carbon -framework CoreFoundation
 #include <Carbon/Carbon.h>
+#include <CoreFoundation/CoreFoundation.h>
 
 const char* qedit_current_keyboard_layout(void) {
+    // Process pending input source change notifications
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, false);
+
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
     if (!source) return NULL;
     CFStringRef prop = TISGetInputSourceProperty(source, kTISPropertyInputModeID);
@@ -39,6 +43,13 @@ func CurrentLayoutRaw() string {
 	return strings.TrimSpace(C.GoString(cstr))
 }
 
+var layoutAbbreviations = map[string]string{
+	"ABC":       "US",
+	"US":        "US",
+	"Russian":   "RU",
+	"RussianPC": "RU",
+}
+
 func simplifyLayoutName(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -57,6 +68,10 @@ func simplifyLayoutName(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
+	}
+	// Convert to short abbreviation if known
+	if abbr, ok := layoutAbbreviations[raw]; ok {
+		return abbr
 	}
 	return raw
 }
