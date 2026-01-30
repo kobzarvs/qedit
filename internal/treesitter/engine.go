@@ -106,8 +106,7 @@ func (e *Engine) loop() {
 				continue
 			}
 			e.mu.Lock()
-			prev := e.trees[req.path]
-			tree := parser.Parse(prev, []byte(req.text))
+			tree := parser.Parse(nil, []byte(req.text))
 			e.trees[req.path] = tree
 			e.sources[req.path] = []byte(req.text)
 			e.mu.Unlock()
@@ -124,6 +123,14 @@ func (e *Engine) sendEvent(kind, path string) {
 }
 
 func (e *Engine) ParseSync(path, language, text string) bool {
+	return e.parseSync(path, language, text, nil)
+}
+
+func (e *Engine) ParseSyncEdit(path, language, text string, edit *sitter.EditInput) bool {
+	return e.parseSync(path, language, text, edit)
+}
+
+func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) bool {
 	lang := language
 	if lang == "" {
 		if detected := e.langs.Match(path); detected != nil {
@@ -140,10 +147,21 @@ func (e *Engine) ParseSync(path, language, text string) bool {
 	default:
 		return false
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(tsLang)
-	tree := parser.Parse(nil, []byte(text))
 	e.mu.Lock()
+	parser := e.parsers[lang]
+	if parser == nil {
+		parser = sitter.NewParser()
+		parser.SetLanguage(tsLang)
+		e.parsers[lang] = parser
+	}
+	prev := e.trees[path]
+	if edit == nil {
+		prev = nil
+	}
+	if prev != nil && edit != nil {
+		prev.Edit(*edit)
+	}
+	tree := parser.Parse(prev, []byte(text))
 	e.trees[path] = tree
 	e.sources[path] = []byte(text)
 	e.mu.Unlock()
