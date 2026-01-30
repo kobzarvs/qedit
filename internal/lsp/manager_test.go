@@ -77,7 +77,7 @@ func TestManagerOpenFileSendsDidOpen(t *testing.T) {
 	if err := m.Start(); err != nil {
 		t.Fatalf("Start error: %v", err)
 	}
-	defer m.Stop()
+	defer func() { _ = m.Stop() }()
 
 	path := filepath.Join(dir, "main.go")
 	m.OpenFile(path, "package main\n")

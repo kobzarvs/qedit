@@ -17,7 +17,7 @@ func TestEngineOpenFileParseEvent(t *testing.T) {
 	if err := e.Start(); err != nil {
 		t.Fatalf("Start error: %v", err)
 	}
-	defer e.Stop()
+	defer func() { _ = e.Stop() }()
 
 	e.OpenFile("main.go", "package main\nfunc main(){}\n")
 	select {
@@ -43,7 +43,7 @@ func TestEngineOpenFileUnknown(t *testing.T) {
 	if err := e.Start(); err != nil {
 		t.Fatalf("Start error: %v", err)
 	}
-	defer e.Stop()
+	defer func() { _ = e.Stop() }()
 
 	e.OpenFile("README.md", "hello")
 	select {

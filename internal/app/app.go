@@ -50,13 +50,13 @@ func (a *App) Run() error {
 	if err := ls.Start(); err != nil {
 		return err
 	}
-	defer ls.Stop()
+	defer func() { _ = ls.Stop() }()
 
 	ts := treesitter.New(langs)
 	if err := ts.Start(); err != nil {
 		return err
 	}
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	stopLayout := make(chan struct{})
 	defer close(stopLayout)
@@ -68,9 +68,7 @@ func (a *App) Run() error {
 			case <-stopLayout:
 				return
 			case <-ticker.C:
-				if err := s.PostEvent(tcell.NewEventInterrupt(nil)); err != nil {
-					s.PostEventWait(tcell.NewEventInterrupt(nil))
-				}
+				_ = s.PostEvent(tcell.NewEventInterrupt(nil))
 			}
 		}
 	}()
