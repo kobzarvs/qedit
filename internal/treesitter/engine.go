@@ -1,6 +1,7 @@
 package treesitter
 
 import (
+	"context"
 	"math"
 	"sync"
 
@@ -106,7 +107,7 @@ func (e *Engine) loop() {
 				continue
 			}
 			e.mu.Lock()
-			tree := parser.Parse(nil, []byte(req.text))
+			tree, _ := parser.ParseCtx(context.Background(), nil, []byte(req.text))
 			e.trees[req.path] = tree
 			e.sources[req.path] = []byte(req.text)
 			e.mu.Unlock()
@@ -161,7 +162,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	if prev != nil && edit != nil {
 		prev.Edit(*edit)
 	}
-	tree := parser.Parse(prev, []byte(text))
+	tree, _ := parser.ParseCtx(context.Background(), prev, []byte(text))
 	e.trees[path] = tree
 	e.sources[path] = []byte(text)
 	e.mu.Unlock()
