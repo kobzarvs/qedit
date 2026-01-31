@@ -1,7 +1,12 @@
 [editor]
 tab-width = 4
 line-numbers = "absolute"
-git-branch-symbol = ""
+git-branch-symbol = ""
+# Sidebar settings
+sidebar-width = "30"            # "30", "1/4", "25%"
+sidebar-min-width = 15
+sidebar-max-width = "50"
+sidebar-close-on-select = false # close sidebar when selecting item
 
 [theme]
 theme = "ayu"
@@ -25,6 +30,7 @@ end = "line_end"
 "cmd+down" = "move_line_down"
 "cmd+l" = "toggle_line_numbers"
 "cmd+b" = "branch_picker"
+"`" = "toggle_sidebar"
 "ctrl+home" = "file_start"
 "ctrl+end" = "file_end"
 "ctrl+a" = "file_start"

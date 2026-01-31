@@ -13,6 +13,7 @@ import (
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
+	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/platform/keyboard"
 	"github.com/kobzarvs/qedit/internal/treesitter"
@@ -29,10 +30,14 @@ func New(args []string) *App {
 
 func (a *App) Run() error {
 	runtime.LockOSThread()
+	logger.Debug("app.Run started")
+
 	cfg, err := config.Load()
 	if err != nil {
+		logger.Error("failed to load config", "error", err)
 		return err
 	}
+	logger.Debug("config loaded")
 	langs, err := config.LoadLanguages()
 	if err != nil {
 		return err
@@ -254,18 +259,34 @@ func (a *App) Run() error {
 			ed.UpdateScroll()
 		}
 		if ed.ConsumeBranchPickerRequest() {
+			logger.Debug("branch picker requested")
 			if gitPath == "" {
+				logger.Debug("not a git repository")
 				ed.SetStatusMessage("not a git repository")
 			} else {
 				branches, current, err := gitinfo.ListBranches(gitPath)
 				if err != nil {
+					logger.Error("failed to list branches", "error", err)
 					ed.SetStatusMessage(err.Error())
 				} else {
-					ed.ShowBranchPicker(branches, current)
+					logger.Debug("showing sidebar branches", "count", len(branches), "current", current)
+					ed.ShowSidebarBranches(branches, current)
 				}
 			}
 		}
-		if branch, ok := ed.ConsumeBranchSelection(); ok {
+		// Handle sidebar branch selection (and legacy branch picker selection)
+		if branch := ed.ConsumeSidebarBranchSelection(); branch != "" {
+			logger.Debug("sidebar branch selected", "branch", branch)
+			if gitPath == "" {
+				ed.SetStatusMessage("not a git repository")
+			} else if err := gitinfo.Checkout(gitPath, branch); err != nil {
+				logger.Error("failed to checkout branch", "branch", branch, "error", err)
+				ed.SetStatusMessage(err.Error())
+			} else {
+				ed.SetGitBranch(branch)
+				ed.SetStatusMessage("checked out " + branch)
+			}
+		} else if branch, ok := ed.ConsumeBranchSelection(); ok {
 			if gitPath == "" {
 				ed.SetStatusMessage("not a git repository")
 			} else if err := gitinfo.Checkout(gitPath, branch); err != nil {

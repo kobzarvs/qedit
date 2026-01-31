@@ -13,9 +13,13 @@ type Keymap struct {
 }
 
 type EditorOptions struct {
-	TabWidth        int    `toml:"tab-width"`
-	LineNumbers     string `toml:"line-numbers"`
-	GitBranchSymbol string `toml:"git-branch-symbol"`
+	TabWidth             int    `toml:"tab-width"`
+	LineNumbers          string `toml:"line-numbers"`
+	GitBranchSymbol      string `toml:"git-branch-symbol"`
+	SidebarWidth         string `toml:"sidebar-width"`
+	SidebarMinWidth      int    `toml:"sidebar-min-width"`
+	SidebarMaxWidth      string `toml:"sidebar-max-width"`
+	SidebarCloseOnSelect bool   `toml:"sidebar-close-on-select"`
 }
 
 type Theme struct {
@@ -50,10 +54,23 @@ type Theme struct {
 	BranchBackground           string `toml:"branch-background"`
 	MainBranchForeground       string `toml:"main-branch-foreground"`
 	MainBranchBackground       string `toml:"main-branch-background"`
-	AutocompleteBackground     string `toml:"autocomplete-background"`
-	AutocompleteHotkey         string `toml:"autocomplete-hotkey"`
-	AutocompleteDescription    string `toml:"autocomplete-description"`
-	AutocompleteGroup          string `toml:"autocomplete-group"`
+	AutocompleteBackground         string `toml:"autocomplete-background"`
+	AutocompleteHotkey             string `toml:"autocomplete-hotkey"`
+	AutocompleteDescription        string `toml:"autocomplete-description"`
+	AutocompleteGroup              string `toml:"autocomplete-group"`
+	SidebarForeground              string `toml:"sidebar-foreground"`
+	SidebarBackground              string `toml:"sidebar-background"`
+	SidebarDirForeground           string `toml:"sidebar-dir-foreground"`
+	SidebarSelectedForeground      string `toml:"sidebar-selected-foreground"`
+	SidebarSelectedBackground      string `toml:"sidebar-selected-background"`
+	SidebarHeaderForeground        string `toml:"sidebar-header-foreground"`
+	SidebarHeaderBackground        string `toml:"sidebar-header-background"`
+	SidebarBorderForeground        string `toml:"sidebar-border-foreground"`
+	SidebarHiddenForeground        string `toml:"sidebar-hidden-foreground"`
+	SidebarIgnoredForeground       string `toml:"sidebar-ignored-foreground"`
+	SidebarIndicatorForeground     string `toml:"sidebar-indicator-foreground"`
+	SidebarHotkeyForeground        string `toml:"sidebar-hotkey-foreground"`
+	SidebarUnavailableForeground   string `toml:"sidebar-unavailable-foreground"`
 }
 
 type Config struct {
@@ -65,9 +82,13 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Editor: EditorOptions{
-			TabWidth:        4,
-			LineNumbers:     "absolute",
-			GitBranchSymbol: "git:",
+			TabWidth:             4,
+			LineNumbers:          "absolute",
+			GitBranchSymbol:      "git:",
+			SidebarWidth:         "30",
+			SidebarMinWidth:      15,
+			SidebarMaxWidth:      "50",
+			SidebarCloseOnSelect: false,
 		},
 		Theme: Theme{
 			Theme:                      "",
@@ -95,8 +116,21 @@ func Default() Config {
 			SyntaxField:                "#E6B673",
 			SyntaxBuiltin:              "#73D0FF",
 			SyntaxUnknown:              "#FF0000",
-			SyntaxVariable:             "#B3B1AD",
-			SyntaxParameter:            "#B3B1AD",
+			SyntaxVariable:               "#B3B1AD",
+			SyntaxParameter:              "#B3B1AD",
+			SidebarForeground:            "#B3B1AD",
+			SidebarBackground:            "#0A0E14",
+			SidebarDirForeground:         "#59C2FF",
+			SidebarSelectedForeground:    "#0A0E14",
+			SidebarSelectedBackground:    "#E6B450",
+			SidebarHeaderForeground:      "#B3B1AD",
+			SidebarHeaderBackground:      "#0F1419",
+			SidebarBorderForeground:      "#3E4B59",
+			SidebarHiddenForeground:      "#3E4B59",
+			SidebarIgnoredForeground:     "#3E4B59",
+			SidebarIndicatorForeground:   "#E6B450",
+			SidebarHotkeyForeground:      "#59C2FF",
+			SidebarUnavailableForeground: "#3E4B59",
 		},
 		Keymap: Keymap{
 			Normal: map[string]string{
@@ -118,6 +152,7 @@ func Default() Config {
 				"cmd+down":       "move_line_down",
 				"cmd+l":          "toggle_line_numbers",
 				"cmd+b":          "branch_picker",
+				"`":              "toggle_sidebar",
 				"cmd+y":          "delete_line",
 				"del":            "delete_char",
 				"cmd+backspace":  "delete_word_left",
@@ -271,6 +306,18 @@ func Load() (Config, error) {
 	if userCfg.Editor.GitBranchSymbol != "" {
 		cfg.Editor.GitBranchSymbol = userCfg.Editor.GitBranchSymbol
 	}
+	if userCfg.Editor.SidebarWidth != "" {
+		cfg.Editor.SidebarWidth = userCfg.Editor.SidebarWidth
+	}
+	if userCfg.Editor.SidebarMinWidth > 0 {
+		cfg.Editor.SidebarMinWidth = userCfg.Editor.SidebarMinWidth
+	}
+	if userCfg.Editor.SidebarMaxWidth != "" {
+		cfg.Editor.SidebarMaxWidth = userCfg.Editor.SidebarMaxWidth
+	}
+	if userCfg.Editor.SidebarCloseOnSelect {
+		cfg.Editor.SidebarCloseOnSelect = userCfg.Editor.SidebarCloseOnSelect
+	}
 	if userCfg.Theme.Theme != "" {
 		cfg.Theme.Theme = userCfg.Theme.Theme
 	}
@@ -358,6 +405,45 @@ func Load() (Config, error) {
 	}
 	if userCfg.Theme.SyntaxParameter != "" {
 		cfg.Theme.SyntaxParameter = userCfg.Theme.SyntaxParameter
+	}
+	if userCfg.Theme.SidebarForeground != "" {
+		cfg.Theme.SidebarForeground = userCfg.Theme.SidebarForeground
+	}
+	if userCfg.Theme.SidebarBackground != "" {
+		cfg.Theme.SidebarBackground = userCfg.Theme.SidebarBackground
+	}
+	if userCfg.Theme.SidebarDirForeground != "" {
+		cfg.Theme.SidebarDirForeground = userCfg.Theme.SidebarDirForeground
+	}
+	if userCfg.Theme.SidebarSelectedForeground != "" {
+		cfg.Theme.SidebarSelectedForeground = userCfg.Theme.SidebarSelectedForeground
+	}
+	if userCfg.Theme.SidebarSelectedBackground != "" {
+		cfg.Theme.SidebarSelectedBackground = userCfg.Theme.SidebarSelectedBackground
+	}
+	if userCfg.Theme.SidebarHeaderForeground != "" {
+		cfg.Theme.SidebarHeaderForeground = userCfg.Theme.SidebarHeaderForeground
+	}
+	if userCfg.Theme.SidebarHeaderBackground != "" {
+		cfg.Theme.SidebarHeaderBackground = userCfg.Theme.SidebarHeaderBackground
+	}
+	if userCfg.Theme.SidebarBorderForeground != "" {
+		cfg.Theme.SidebarBorderForeground = userCfg.Theme.SidebarBorderForeground
+	}
+	if userCfg.Theme.SidebarHiddenForeground != "" {
+		cfg.Theme.SidebarHiddenForeground = userCfg.Theme.SidebarHiddenForeground
+	}
+	if userCfg.Theme.SidebarIgnoredForeground != "" {
+		cfg.Theme.SidebarIgnoredForeground = userCfg.Theme.SidebarIgnoredForeground
+	}
+	if userCfg.Theme.SidebarIndicatorForeground != "" {
+		cfg.Theme.SidebarIndicatorForeground = userCfg.Theme.SidebarIndicatorForeground
+	}
+	if userCfg.Theme.SidebarHotkeyForeground != "" {
+		cfg.Theme.SidebarHotkeyForeground = userCfg.Theme.SidebarHotkeyForeground
+	}
+	if userCfg.Theme.SidebarUnavailableForeground != "" {
+		cfg.Theme.SidebarUnavailableForeground = userCfg.Theme.SidebarUnavailableForeground
 	}
 	if userCfg.Keymap.Normal != nil {
 		for k, v := range userCfg.Keymap.Normal {
@@ -475,6 +561,45 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.AutocompleteGroup != "" {
 		dst.AutocompleteGroup = src.AutocompleteGroup
+	}
+	if src.SidebarForeground != "" {
+		dst.SidebarForeground = src.SidebarForeground
+	}
+	if src.SidebarBackground != "" {
+		dst.SidebarBackground = src.SidebarBackground
+	}
+	if src.SidebarDirForeground != "" {
+		dst.SidebarDirForeground = src.SidebarDirForeground
+	}
+	if src.SidebarSelectedForeground != "" {
+		dst.SidebarSelectedForeground = src.SidebarSelectedForeground
+	}
+	if src.SidebarSelectedBackground != "" {
+		dst.SidebarSelectedBackground = src.SidebarSelectedBackground
+	}
+	if src.SidebarHeaderForeground != "" {
+		dst.SidebarHeaderForeground = src.SidebarHeaderForeground
+	}
+	if src.SidebarHeaderBackground != "" {
+		dst.SidebarHeaderBackground = src.SidebarHeaderBackground
+	}
+	if src.SidebarBorderForeground != "" {
+		dst.SidebarBorderForeground = src.SidebarBorderForeground
+	}
+	if src.SidebarHiddenForeground != "" {
+		dst.SidebarHiddenForeground = src.SidebarHiddenForeground
+	}
+	if src.SidebarIgnoredForeground != "" {
+		dst.SidebarIgnoredForeground = src.SidebarIgnoredForeground
+	}
+	if src.SidebarIndicatorForeground != "" {
+		dst.SidebarIndicatorForeground = src.SidebarIndicatorForeground
+	}
+	if src.SidebarHotkeyForeground != "" {
+		dst.SidebarHotkeyForeground = src.SidebarHotkeyForeground
+	}
+	if src.SidebarUnavailableForeground != "" {
+		dst.SidebarUnavailableForeground = src.SidebarUnavailableForeground
 	}
 }
 

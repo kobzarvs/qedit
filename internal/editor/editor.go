@@ -19,6 +19,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/kobzarvs/qedit/internal/config"
+	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/session"
 )
 
@@ -49,6 +50,7 @@ const (
 	actionMoveLineDown      = "move_line_down"
 	actionToggleLineNumbers = "toggle_line_numbers"
 	actionBranchPicker      = "branch_picker"
+	actionToggleSidebar     = "toggle_sidebar"
 	actionEnterInsert       = "enter_insert"
 	actionEnterNormal       = "enter_normal"
 	actionEnterCommand      = "enter_command"
@@ -164,6 +166,9 @@ var AvailableCommands = []CommandInfo{
 	{"ln rel", "relative line numbers", CmdGroupView},
 	// Edit
 	{"fmt", "format code", CmdGroupEdit},
+	// Sidebar
+	{"sidebar", "toggle sidebar", CmdGroupView},
+	{"sidew", "set sidebar width", CmdGroupView},
 }
 
 // SpaceMenuItem represents an item in the space menu
@@ -427,6 +432,8 @@ type Editor struct {
 	branchPickerIndex            int
 	branchPickerRequested        bool
 	branchPickerSelection        string
+	sidebar                      *Sidebar
+	sidebarStyles                SidebarStyles
 	lineUndoRow                  int
 	lineUndoContent              []rune
 	lineUndoValid                bool
@@ -596,6 +603,21 @@ func New(cfg config.Config) *Editor {
 	colors["autocomplete-description"] = resolve(cfg.Theme.AutocompleteDescription, colors["commandline-foreground"])
 	colors["autocomplete-group"] = resolve(cfg.Theme.AutocompleteGroup, tcell.ColorGray)
 
+	// Sidebar colors
+	colors["sidebar-foreground"] = resolve(cfg.Theme.SidebarForeground, colors["foreground"])
+	colors["sidebar-background"] = resolve(cfg.Theme.SidebarBackground, colors["background"])
+	colors["sidebar-dir-foreground"] = resolve(cfg.Theme.SidebarDirForeground, tcell.ColorBlue)
+	colors["sidebar-selected-foreground"] = resolve(cfg.Theme.SidebarSelectedForeground, colors["background"])
+	colors["sidebar-selected-background"] = resolve(cfg.Theme.SidebarSelectedBackground, tcell.ColorYellow)
+	colors["sidebar-header-foreground"] = resolve(cfg.Theme.SidebarHeaderForeground, colors["foreground"])
+	colors["sidebar-header-background"] = resolve(cfg.Theme.SidebarHeaderBackground, colors["statusline-background"])
+	colors["sidebar-border-foreground"] = resolve(cfg.Theme.SidebarBorderForeground, colors["line-number-foreground"])
+	colors["sidebar-hidden-foreground"] = resolve(cfg.Theme.SidebarHiddenForeground, colors["line-number-foreground"])
+	colors["sidebar-ignored-foreground"] = resolve(cfg.Theme.SidebarIgnoredForeground, colors["line-number-foreground"])
+	colors["sidebar-indicator-foreground"] = resolve(cfg.Theme.SidebarIndicatorForeground, tcell.ColorYellow)
+	colors["sidebar-hotkey-foreground"] = resolve(cfg.Theme.SidebarHotkeyForeground, tcell.ColorBlue)
+	colors["sidebar-unavailable-foreground"] = resolve(cfg.Theme.SidebarUnavailableForeground, colors["line-number-foreground"])
+
 	lineNumberMode := parseLineNumberMode(cfg.Editor.LineNumbers)
 	gitBranchSymbol := strings.TrimSpace(cfg.Editor.GitBranchSymbol)
 
@@ -643,6 +665,25 @@ func New(cfg config.Config) *Editor {
 		highlightStart:               -1,
 		highlightEnd:                 -1,
 		sessionManager:               sessionMgr,
+		sidebar: NewSidebar(
+			cfg.Editor.SidebarWidth,
+			cfg.Editor.SidebarMinWidth,
+			cfg.Editor.SidebarMaxWidth,
+			cfg.Editor.SidebarCloseOnSelect,
+		),
+		sidebarStyles: SidebarStyles{
+			Base:        tcell.StyleDefault.Foreground(colors["sidebar-foreground"]).Background(colors["sidebar-background"]),
+			Dir:         tcell.StyleDefault.Foreground(colors["sidebar-dir-foreground"]).Background(colors["sidebar-background"]),
+			Selected:    tcell.StyleDefault.Foreground(colors["sidebar-selected-foreground"]).Background(colors["sidebar-selected-background"]),
+			Header:      tcell.StyleDefault.Foreground(colors["sidebar-header-foreground"]).Background(colors["sidebar-header-background"]),
+			Border:      tcell.StyleDefault.Foreground(colors["sidebar-border-foreground"]).Background(colors["sidebar-background"]),
+			Hidden:      tcell.StyleDefault.Foreground(colors["sidebar-hidden-foreground"]).Background(colors["sidebar-background"]),
+			Ignored:     tcell.StyleDefault.Foreground(colors["sidebar-ignored-foreground"]).Background(colors["sidebar-background"]),
+			Indicator:   tcell.StyleDefault.Foreground(colors["sidebar-indicator-foreground"]).Background(colors["sidebar-background"]),
+			Hotkey:      tcell.StyleDefault.Foreground(colors["sidebar-hotkey-foreground"]).Background(colors["sidebar-background"]),
+			Unavailable: tcell.StyleDefault.Foreground(colors["sidebar-unavailable-foreground"]).Background(colors["sidebar-background"]),
+			Current:     tcell.StyleDefault.Foreground(colors["sidebar-indicator-foreground"]).Background(colors["sidebar-background"]),
+		},
 	}
 }
 
@@ -794,6 +835,12 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 	}
 	// Track last key combination for display
 	e.lastKeyCombo = keyStringDisplay(ev)
+
+	// Handle sidebar if focused
+	if e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused {
+		return e.handleSidebarKey(ev)
+	}
+
 	switch e.mode {
 	case ModeInsert:
 		return e.handleInsert(ev)
@@ -998,9 +1045,11 @@ func (e *Editor) Render(s tcell.Screen) {
 	e.viewHeight = viewHeight
 	e.viewWidth = w
 
-	// Calculate sidebar width if refs picker is active
+	// Calculate sidebar width (refs picker or new sidebar, mutually exclusive)
 	sidebarWidth := 0
-	if e.refsPickerActive && len(e.refsPickerItems) > 0 {
+	if e.sidebar != nil && e.sidebar.Visible {
+		sidebarWidth = e.sidebar.CalculateWidth(w)
+	} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
 		sidebarWidth = w / 4
 		if sidebarWidth < 20 {
 			sidebarWidth = 20
@@ -1031,8 +1080,10 @@ func (e *Editor) Render(s tcell.Screen) {
 		e.drawLineWithGutterAt(s, editorX, y, editorWidth, gutterWidth, lineIdx)
 	}
 
-	// Draw refs sidebar if active
-	if e.refsPickerActive && sidebarWidth > 0 {
+	// Draw sidebar (new sidebar takes priority over refs picker)
+	if e.sidebar != nil && e.sidebar.Visible && sidebarWidth > 0 {
+		e.sidebar.Render(s, e.sidebarStyles, 0, 0, sidebarWidth, viewHeight)
+	} else if e.refsPickerActive && sidebarWidth > 0 {
 		e.renderRefsSidebar(s, sidebarWidth, viewHeight)
 	}
 
@@ -1091,7 +1142,8 @@ func (e *Editor) Render(s tcell.Screen) {
 	if e.keybindingsHelpActive {
 		e.renderKeybindingsHelp(s, w, viewHeight)
 	}
-	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || !cursorVisible {
+	sidebarFocused := e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
+	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || sidebarFocused || !cursorVisible {
 		s.HideCursor()
 		s.Show()
 		return
@@ -3217,6 +3269,206 @@ func (e *Editor) jumpToSelectedRef() {
 	}
 }
 
+// handleSidebarKey handles key events when sidebar is focused
+func (e *Editor) handleSidebarKey(ev *tcell.EventKey) bool {
+	if e.sidebar == nil || !e.sidebar.Visible {
+		logger.Debug("handleSidebarKey: sidebar nil or not visible")
+		return false
+	}
+
+	viewHeight := e.viewHeight - 1 // subtract header
+	action := e.sidebar.HandleKey(ev, viewHeight)
+	logger.Debug("handleSidebarKey", "action", action.Action, "branch", action.Branch, "mode", action.Mode)
+
+	switch action.Action {
+	case SidebarActionClose:
+		logger.Debug("sidebar action: close")
+		e.closeSidebar()
+		return false
+
+	case SidebarActionBackToMenu:
+		logger.Debug("sidebar action: back to menu")
+		if e.sidebar.MenuContent != nil {
+			e.sidebar.SetContent(e.sidebar.MenuContent)
+		}
+		return false
+
+	case SidebarActionFocusEditor:
+		logger.Debug("sidebar action: focus editor")
+		e.sidebar.Focused = false
+		return false
+
+	case SidebarActionSwitchMode:
+		logger.Debug("sidebar action: switch mode", "mode", action.Mode)
+		e.switchSidebarMode(action.Mode)
+		return false
+
+	case SidebarActionCheckoutBranch:
+		logger.Debug("sidebar action: checkout branch", "branch", action.Branch)
+		if action.Branch != "" {
+			// Signal that we want to checkout this branch
+			e.branchPickerRequested = false
+			e.branchPickerSelection = action.Branch
+			if e.sidebar.CloseOnSelect {
+				e.closeSidebar()
+			} else {
+				e.sidebar.Focused = false
+			}
+		}
+		return false
+
+	case SidebarActionOpenFile:
+		logger.Debug("sidebar action: open file", "path", action.Path)
+		if action.Path != "" {
+			// Signal that we want to open this file (future)
+			e.setStatus("FileTree: not implemented yet")
+		}
+		return false
+	}
+
+	return false // continue running, don't quit
+}
+
+// switchSidebarMode switches sidebar to the specified mode
+func (e *Editor) switchSidebarMode(mode SidebarMode) {
+	switch mode {
+	case SidebarModeMenu:
+		if e.sidebar.MenuContent != nil {
+			e.sidebar.SetContent(e.sidebar.MenuContent)
+		}
+
+	case SidebarModeBranches:
+		// Request branches from app layer via branchPickerRequested
+		e.branchPickerRequested = true
+		// App will call ShowSidebarBranches with the branches
+
+	case SidebarModeFileTree:
+		e.setStatus("FileTree: not implemented yet")
+
+	case SidebarModeRecentHistory:
+		e.setStatus("Recent History: not implemented yet")
+
+	case SidebarModeLocalChanges:
+		e.setStatus("Local Changes: not implemented yet")
+
+	case SidebarModeWorktrees:
+		e.setStatus("Worktrees: not implemented yet")
+	}
+}
+
+// openSidebar opens the sidebar with the menu
+func (e *Editor) openSidebar() {
+	logger.Debug("openSidebar called")
+	if e.sidebar == nil {
+		logger.Warn("openSidebar: sidebar is nil")
+		return
+	}
+
+	// Close refs picker if open (mutual exclusion)
+	if e.refsPickerActive {
+		logger.Debug("openSidebar: closing refs picker")
+		e.closeRefsPicker(false)
+	}
+
+	// Initialize menu content if not exists
+	if e.sidebar.MenuContent == nil {
+		logger.Debug("openSidebar: creating menu content", "gitRepo", e.isGitRepo())
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
+	} else {
+		e.sidebar.MenuContent.SetGitAvailable(e.isGitRepo())
+	}
+
+	e.sidebar.Open(e.sidebar.MenuContent)
+	logger.Debug("openSidebar: sidebar opened")
+}
+
+// openSidebarBranches opens the sidebar directly in branches mode
+func (e *Editor) openSidebarBranches() {
+	logger.Debug("openSidebarBranches called")
+	if e.sidebar == nil {
+		logger.Warn("openSidebarBranches: sidebar is nil")
+		return
+	}
+
+	// Close refs picker if open (mutual exclusion)
+	if e.refsPickerActive {
+		logger.Debug("openSidebarBranches: closing refs picker")
+		e.closeRefsPicker(false)
+	}
+
+	// Initialize menu content for later "back" navigation
+	if e.sidebar.MenuContent == nil {
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
+	}
+
+	// Request branches - app will call ShowSidebarBranches
+	e.branchPickerRequested = true
+	e.sidebar.Visible = true
+	e.sidebar.Focused = true
+	logger.Debug("openSidebarBranches: branch request set")
+}
+
+// closeSidebar closes the sidebar
+func (e *Editor) closeSidebar() {
+	logger.Debug("closeSidebar called")
+	if e.sidebar == nil {
+		return
+	}
+	e.sidebar.Close()
+}
+
+// toggleSidebar toggles the sidebar visibility
+func (e *Editor) toggleSidebar() {
+	logger.Debug("toggleSidebar called", "visible", e.sidebar != nil && e.sidebar.Visible, "focused", e.sidebar != nil && e.sidebar.Focused)
+	if e.sidebar == nil {
+		logger.Warn("toggleSidebar: sidebar is nil")
+		return
+	}
+	if e.sidebar.Visible {
+		if e.sidebar.Focused {
+			e.closeSidebar()
+		} else {
+			e.sidebar.Focused = true
+		}
+	} else {
+		e.openSidebar()
+	}
+}
+
+// ShowSidebarBranches shows branches in the sidebar
+func (e *Editor) ShowSidebarBranches(branches []string, current string) {
+	logger.Debug("ShowSidebarBranches called", "count", len(branches), "current", current)
+	if e.sidebar == nil {
+		logger.Warn("ShowSidebarBranches: sidebar is nil")
+		return
+	}
+
+	content := NewSidebarBranchesContent(branches, current)
+	e.sidebar.SetContent(content)
+	e.sidebar.Visible = true
+	e.sidebar.Focused = true
+}
+
+// isGitRepo returns true if current file is in a git repo
+func (e *Editor) isGitRepo() bool {
+	return e.gitBranch != ""
+}
+
+// IsSidebarBranchRequest returns true if sidebar requested branches
+func (e *Editor) IsSidebarBranchRequest() bool {
+	return e.sidebar != nil && e.sidebar.Visible && e.branchPickerRequested
+}
+
+// ConsumeSidebarBranchSelection consumes the branch selection from sidebar
+func (e *Editor) ConsumeSidebarBranchSelection() string {
+	if e.branchPickerSelection == "" {
+		return ""
+	}
+	selection := e.branchPickerSelection
+	e.branchPickerSelection = ""
+	return selection
+}
+
 func (e *Editor) execAction(action string) bool {
 	if e.actionHook != nil {
 		e.actionHook(action)
@@ -3253,7 +3505,9 @@ func (e *Editor) execAction(action string) bool {
 	case actionToggleLineNumbers:
 		e.toggleLineNumbers()
 	case actionBranchPicker:
-		e.branchPickerRequested = true
+		e.openSidebarBranches()
+	case actionToggleSidebar:
+		e.toggleSidebar()
 	case actionEnterInsert:
 		e.mode = ModeInsert
 		e.saveLineState()
@@ -3529,6 +3783,22 @@ func (e *Editor) execCommand(cmd string) bool {
 			return false
 		}
 		e.setStatus("formatted")
+		return false
+	case "sidebar":
+		e.toggleSidebar()
+		return false
+	case "sidew":
+		// :sidew - show current width, :sidew 30 - set width
+		if len(args) == 0 {
+			if e.sidebar != nil {
+				e.setStatus("sidebar width: " + e.sidebar.WidthConfig)
+			}
+		} else {
+			if e.sidebar != nil {
+				e.sidebar.WidthConfig = args[0]
+				e.setStatus("sidebar width set to " + args[0])
+			}
+		}
 		return false
 	default:
 		// Check if command is a line number
