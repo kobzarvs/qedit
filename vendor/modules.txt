@@ -48,7 +48,12 @@ github.com/rivo/uniseg
 # github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 ## explicit; go 1.20
 github.com/smacker/go-tree-sitter
+github.com/smacker/go-tree-sitter/bash
 github.com/smacker/go-tree-sitter/golang
+github.com/smacker/go-tree-sitter/markdown/tree-sitter-markdown
+github.com/smacker/go-tree-sitter/markdown/tree-sitter-markdown-inline
+github.com/smacker/go-tree-sitter/toml
+github.com/smacker/go-tree-sitter/yaml
 # golang.org/x/sys v0.38.0
 ## explicit; go 1.24.0
 golang.org/x/sys/plan9
