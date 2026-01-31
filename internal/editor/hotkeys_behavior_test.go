@@ -61,6 +61,7 @@ func TestSearchNextPrevHotkeys(t *testing.T) {
 
 func TestBranchPickerHotkey(t *testing.T) {
 	e := newTestEditor("one")
+	e.SetGitBranch("main")
 	e.HandleKey(eventForKeyString(t, "cmd+b"))
 	if !e.ConsumeBranchPickerRequest() {
 		t.Fatalf("expected branch picker request")

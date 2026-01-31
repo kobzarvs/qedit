@@ -3289,6 +3289,7 @@ func (e *Editor) handleSidebarKey(ev *tcell.EventKey) bool {
 	case SidebarActionBackToMenu:
 		logger.Debug("sidebar action: back to menu")
 		if e.sidebar.MenuContent != nil {
+			e.sidebar.MenuContent.SetGitAvailable(e.isGitRepo())
 			e.sidebar.SetContent(e.sidebar.MenuContent)
 		}
 		return false
@@ -3338,9 +3339,7 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 		}
 
 	case SidebarModeBranches:
-		// Request branches from app layer via branchPickerRequested
-		e.branchPickerRequested = true
-		// App will call ShowSidebarBranches with the branches
+		e.openSidebarBranches()
 
 	case SidebarModeFileTree:
 		e.setStatus("FileTree: not implemented yet")
@@ -3389,6 +3388,13 @@ func (e *Editor) openSidebarBranches() {
 		logger.Warn("openSidebarBranches: sidebar is nil")
 		return
 	}
+	if !e.isGitRepo() {
+		e.setStatus("not a git repository")
+		if e.sidebar.MenuContent != nil {
+			e.sidebar.MenuContent.SetGitAvailable(false)
+		}
+		return
+	}
 
 	// Close refs picker if open (mutual exclusion)
 	if e.refsPickerActive {
@@ -3399,12 +3405,14 @@ func (e *Editor) openSidebarBranches() {
 	// Initialize menu content for later "back" navigation
 	if e.sidebar.MenuContent == nil {
 		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
+	} else {
+		e.sidebar.MenuContent.SetGitAvailable(e.isGitRepo())
 	}
 
 	// Request branches - app will call ShowSidebarBranches
+	e.sidebar.Open(NewSidebarLoadingContent("Branches", "Loading..."))
+	e.setStatus("loading branches...")
 	e.branchPickerRequested = true
-	e.sidebar.Visible = true
-	e.sidebar.Focused = true
 	logger.Debug("openSidebarBranches: branch request set")
 }
 
@@ -3456,7 +3464,10 @@ func (e *Editor) isGitRepo() bool {
 
 // IsSidebarBranchRequest returns true if sidebar requested branches
 func (e *Editor) IsSidebarBranchRequest() bool {
-	return e.sidebar != nil && e.sidebar.Visible && e.branchPickerRequested
+	if e.sidebar == nil {
+		return false
+	}
+	return e.branchPickerRequested
 }
 
 // ConsumeSidebarBranchSelection consumes the branch selection from sidebar
@@ -3875,12 +3886,20 @@ func (e *Editor) FormatCurrent() error {
 	if isGoFile(e.filename) {
 		return e.FormatGo()
 	}
+	if e.filename == "" && looksLikeGo(e.Content()) {
+		return e.FormatGo()
+	}
 	return errors.New("format not supported")
 }
 
 func isGoFile(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	return ext == ".go"
+}
+
+func looksLikeGo(src string) bool {
+	src = strings.TrimLeftFunc(src, unicode.IsSpace)
+	return strings.HasPrefix(src, "package ")
 }
 
 func isMarkdownFile(name string) bool {
@@ -7670,6 +7689,9 @@ func (e *Editor) closeBranchPicker(selection string) {
 func (e *Editor) showRefsPicker(title string, items []LSPLocation) {
 	if len(items) == 0 {
 		return
+	}
+	if e.sidebar != nil && e.sidebar.Visible {
+		e.closeSidebar()
 	}
 	e.refsPickerActive = true
 	e.refsPickerTitle = title
