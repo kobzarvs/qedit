@@ -50,6 +50,10 @@ type Theme struct {
 	BranchBackground           string `toml:"branch-background"`
 	MainBranchForeground       string `toml:"main-branch-foreground"`
 	MainBranchBackground       string `toml:"main-branch-background"`
+	AutocompleteBackground     string `toml:"autocomplete-background"`
+	AutocompleteHotkey         string `toml:"autocomplete-hotkey"`
+	AutocompleteDescription    string `toml:"autocomplete-description"`
+	AutocompleteGroup          string `toml:"autocomplete-group"`
 }
 
 type Config struct {
@@ -459,6 +463,18 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.MainBranchBackground != "" {
 		dst.MainBranchBackground = src.MainBranchBackground
+	}
+	if src.AutocompleteBackground != "" {
+		dst.AutocompleteBackground = src.AutocompleteBackground
+	}
+	if src.AutocompleteHotkey != "" {
+		dst.AutocompleteHotkey = src.AutocompleteHotkey
+	}
+	if src.AutocompleteDescription != "" {
+		dst.AutocompleteDescription = src.AutocompleteDescription
+	}
+	if src.AutocompleteGroup != "" {
+		dst.AutocompleteGroup = src.AutocompleteGroup
 	}
 }
 

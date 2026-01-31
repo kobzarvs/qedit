@@ -839,3 +839,122 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 		t.Fatalf("scroll = %d, want 0", e.scroll)
 	}
 }
+
+// ============================================================================
+// Autocomplete layout optimization tests
+// ============================================================================
+
+func TestGroupCommands(t *testing.T) {
+	items := []CommandInfo{
+		{"w", "write file", CmdGroupFile},
+		{"q", "quit", CmdGroupFile},
+		{"ln", "line numbers", CmdGroupView},
+		{"fmt", "format", CmdGroupEdit},
+	}
+
+	groups := groupCommands(items)
+
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d", len(groups))
+	}
+
+	// File group: 2 commands + 1 header = 3
+	if groups[0].Name != CmdGroupFile || groups[0].Size != 3 {
+		t.Fatalf("group[0] = %q size=%d, want File size=3", groups[0].Name, groups[0].Size)
+	}
+
+	// View group: 1 command + 1 header = 2
+	if groups[1].Name != CmdGroupView || groups[1].Size != 2 {
+		t.Fatalf("group[1] = %q size=%d, want View size=2", groups[1].Name, groups[1].Size)
+	}
+
+	// Edit group: 1 command + 1 header = 2
+	if groups[2].Name != CmdGroupEdit || groups[2].Size != 2 {
+		t.Fatalf("group[2] = %q size=%d, want Edit size=2", groups[2].Name, groups[2].Size)
+	}
+}
+
+func TestDistributeGroups(t *testing.T) {
+	groups := []GroupInfo{
+		{Name: "File", Size: 6},  // 5 commands + header
+		{Name: "View", Size: 5},  // 4 commands + header
+		{Name: "Edit", Size: 2},  // 1 command + header
+	}
+
+	// Height 7: File alone in col1, View+Edit fit in col2
+	cols := distributeGroups(groups, 7)
+	if len(cols) != 2 {
+		t.Fatalf("height 7: expected 2 columns, got %d", len(cols))
+	}
+	if len(cols[0]) != 1 || cols[0][0].Name != "File" {
+		t.Fatalf("height 7 col0: expected [File], got %v", cols[0])
+	}
+	if len(cols[1]) != 2 || cols[1][0].Name != "View" || cols[1][1].Name != "Edit" {
+		t.Fatalf("height 7 col1: expected [View Edit], got %v", cols[1])
+	}
+
+	// Height 6: File alone, View alone, Edit alone (3 columns)
+	cols = distributeGroups(groups, 6)
+	if len(cols) != 3 {
+		t.Fatalf("height 6: expected 3 columns, got %d", len(cols))
+	}
+}
+
+func TestCalculateOptimalLayout(t *testing.T) {
+	groups := []GroupInfo{
+		{Name: "File", Size: 6},
+		{Name: "View", Size: 5},
+		{Name: "Edit", Size: 2},
+	}
+
+	// With max height 15, all groups fit in 1 column (6+5+2=13 <= 15)
+	height, cols := calculateOptimalLayout(groups, 15)
+
+	if len(cols) != 1 {
+		t.Fatalf("expected 1 column, got %d", len(cols))
+	}
+	if height != 13 {
+		t.Fatalf("expected height 13, got %d", height)
+	}
+}
+
+func TestCalculateOptimalLayoutMultiColumn(t *testing.T) {
+	groups := []GroupInfo{
+		{Name: "File", Size: 6},
+		{Name: "View", Size: 5},
+		{Name: "Edit", Size: 2},
+	}
+
+	// With max height 7, File(6) goes to col1, View+Edit(5+2=7) fit in col2
+	height, cols := calculateOptimalLayout(groups, 7)
+
+	if len(cols) != 2 {
+		t.Fatalf("expected 2 columns, got %d", len(cols))
+	}
+	if height != 7 {
+		t.Fatalf("expected height 7, got %d", height)
+	}
+}
+
+func TestCalculateOptimalLayoutSingleGroup(t *testing.T) {
+	groups := []GroupInfo{
+		{Name: "File", Size: 5},
+	}
+
+	height, cols := calculateOptimalLayout(groups, 15)
+
+	if len(cols) != 1 {
+		t.Fatalf("expected 1 column, got %d", len(cols))
+	}
+	if height != 5 {
+		t.Fatalf("expected height 5, got %d", height)
+	}
+}
+
+func TestCalculateOptimalLayoutEmptyGroups(t *testing.T) {
+	height, cols := calculateOptimalLayout(nil, 15)
+
+	if height != 0 || cols != nil {
+		t.Fatalf("expected height 0, nil cols; got height=%d, cols=%v", height, cols)
+	}
+}

@@ -135,6 +135,37 @@ const (
 	actionSave              = "save"                // Cmd+S - save file
 )
 
+// CommandInfo describes an available command with description
+type CommandInfo struct {
+	Name        string
+	Description string
+	Group       string
+}
+
+// Command groups for autocomplete
+const (
+	CmdGroupFile = "File"
+	CmdGroupEdit = "Edit"
+	CmdGroupView = "View"
+)
+
+// AvailableCommands lists all commands for autocomplete
+var AvailableCommands = []CommandInfo{
+	// File
+	{"w", "write file", CmdGroupFile},
+	{"q", "quit", CmdGroupFile},
+	{"q!", "force quit", CmdGroupFile},
+	{"wq", "write and quit", CmdGroupFile},
+	{"x", "write and quit", CmdGroupFile},
+	// View
+	{"ln", "line numbers", CmdGroupView},
+	{"ln off", "disable line numbers", CmdGroupView},
+	{"ln abs", "absolute line numbers", CmdGroupView},
+	{"ln rel", "relative line numbers", CmdGroupView},
+	// Edit
+	{"fmt", "format code", CmdGroupEdit},
+}
+
 // SpaceMenuItem represents an item in the space menu
 type SpaceMenuItem struct {
 	Key         rune
@@ -373,6 +404,10 @@ type Editor struct {
 	styleLayoutUS          tcell.Style
 	styleLayoutRU          tcell.Style
 	styleLayoutOther       tcell.Style
+	styleAutoComplete            tcell.Style
+	styleAutoCompleteHotkey      tcell.Style
+	styleAutoCompleteDescription tcell.Style
+	styleAutoCompleteGroup       tcell.Style
 	lineNumberMode         LineNumberMode
 	layoutName             string
 	gitBranch              string
@@ -462,6 +497,13 @@ type Editor struct {
 
 	// Test hook for keymap coverage.
 	actionHook             func(action string)
+
+	// Command autocomplete state
+	cmdAutoCompleteActive    bool
+	cmdAutoCompleteItems     []CommandInfo
+	cmdAutoCompleteIndex     int
+	cmdAutoCompleteCols      int           // number of columns for display (computed during render)
+	cmdAutoCompleteColGroups [][]GroupInfo // column layout (computed during render)
 }
 
 // SearchMatch represents a match location
@@ -547,6 +589,12 @@ func New(cfg config.Config) *Editor {
 	colors["layout-ru-foreground"] = layoutRUFg
 	colors["layout-other-foreground"] = colors["statusline-foreground"]
 
+	// Autocomplete colors
+	colors["autocomplete-background"] = resolve(cfg.Theme.AutocompleteBackground, colors["commandline-background"])
+	colors["autocomplete-hotkey"] = resolve(cfg.Theme.AutocompleteHotkey, tcell.ColorWhite)
+	colors["autocomplete-description"] = resolve(cfg.Theme.AutocompleteDescription, colors["commandline-foreground"])
+	colors["autocomplete-group"] = resolve(cfg.Theme.AutocompleteGroup, tcell.ColorGray)
+
 	lineNumberMode := parseLineNumberMode(cfg.Editor.LineNumbers)
 	gitBranchSymbol := strings.TrimSpace(cfg.Editor.GitBranchSymbol)
 
@@ -581,10 +629,14 @@ func New(cfg config.Config) *Editor {
 		styleSyntaxParameter:   tcell.StyleDefault.Foreground(colors["syntax-parameter"]).Background(colors["background"]),
 		styleBranch:            tcell.StyleDefault.Foreground(colors["branch-foreground"]).Background(colors["branch-background"]),
 		styleMainBranch:        tcell.StyleDefault.Foreground(colors["main-branch-foreground"]).Background(colors["main-branch-background"]),
-		styleLayoutUS:          tcell.StyleDefault.Foreground(colors["layout-us-foreground"]).Background(colors["statusline-background"]),
-		styleLayoutRU:          tcell.StyleDefault.Foreground(colors["layout-ru-foreground"]).Background(colors["statusline-background"]),
-		styleLayoutOther:       tcell.StyleDefault.Foreground(colors["layout-other-foreground"]).Background(colors["statusline-background"]),
-		lineNumberMode:         lineNumberMode,
+		styleLayoutUS:           tcell.StyleDefault.Foreground(colors["layout-us-foreground"]).Background(colors["statusline-background"]),
+		styleLayoutRU:           tcell.StyleDefault.Foreground(colors["layout-ru-foreground"]).Background(colors["statusline-background"]),
+		styleLayoutOther:        tcell.StyleDefault.Foreground(colors["layout-other-foreground"]).Background(colors["statusline-background"]),
+		styleAutoComplete:            tcell.StyleDefault.Foreground(colors["autocomplete-description"]).Background(colors["autocomplete-background"]),
+		styleAutoCompleteHotkey:      tcell.StyleDefault.Foreground(colors["autocomplete-hotkey"]).Background(colors["autocomplete-background"]),
+		styleAutoCompleteDescription: tcell.StyleDefault.Foreground(colors["autocomplete-description"]).Background(colors["autocomplete-background"]),
+		styleAutoCompleteGroup:       tcell.StyleDefault.Foreground(colors["autocomplete-group"]).Background(colors["autocomplete-background"]),
+		lineNumberMode:          lineNumberMode,
 		gitBranchSymbol:        gitBranchSymbol,
 		highlightStart:         -1,
 		highlightEnd:           -1,
@@ -979,6 +1031,9 @@ func (e *Editor) Render(s tcell.Screen) {
 		if e.mode == ModeCommand || e.mode == ModeSearch {
 			cx = cmdCursor
 			cy = cmdY
+		}
+		if e.mode == ModeCommand && e.cmdAutoCompleteActive {
+			e.renderCommandAutocomplete(s, w, statusY)
 		}
 	}
 	cursorVisible := true
@@ -1940,18 +1995,50 @@ func (e *Editor) handleInsert(ev *tcell.EventKey) bool {
 func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 	switch ev.Key() {
 	case tcell.KeyEscape:
+		e.closeAutoComplete()
 		e.mode = ModeNormal
 		e.cmd = e.cmd[:0]
 		e.cmdCursor = 0
 		e.cmdHistoryIndex = -1
 		return false
 	case tcell.KeyCtrlC:
+		e.closeAutoComplete()
 		e.mode = ModeNormal
 		e.cmd = e.cmd[:0]
 		e.cmdCursor = 0
 		e.cmdHistoryIndex = -1
 		return false
+	case tcell.KeyTab:
+		prefix := string(e.cmd)
+		if !e.cmdAutoCompleteActive {
+			e.cmdAutoCompleteItems = filterCommands(prefix)
+			if len(e.cmdAutoCompleteItems) == 0 {
+				return false
+			}
+			e.cmdAutoCompleteActive = true
+			e.cmdAutoCompleteIndex = 0
+			e.cmdAutoCompleteCols = 1 // Will be recalculated on render
+		} else {
+			// Tab moves to next item (down in column, then next column top)
+			e.cmdAutoCompleteIndex++
+			if e.cmdAutoCompleteIndex >= len(e.cmdAutoCompleteItems) {
+				e.cmdAutoCompleteIndex = 0
+			}
+		}
+		e.updateCmdFromAutocomplete()
+		return false
+	case tcell.KeyBacktab:
+		if e.cmdAutoCompleteActive {
+			// Shift+Tab moves to previous item (up in column, then prev column bottom)
+			e.cmdAutoCompleteIndex--
+			if e.cmdAutoCompleteIndex < 0 {
+				e.cmdAutoCompleteIndex = len(e.cmdAutoCompleteItems) - 1
+			}
+			e.updateCmdFromAutocomplete()
+		}
+		return false
 	case tcell.KeyEnter:
+		e.closeAutoComplete()
 		cmd := strings.TrimSpace(string(e.cmd))
 		e.mode = ModeNormal
 		// Add to history if not empty and different from last
@@ -1964,6 +2051,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		e.cmdHistoryIndex = -1
 		return e.execCommand(cmd)
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		e.closeAutoComplete()
 		if e.cmdCursor > 0 && len(e.cmd) > 0 {
 			// Delete char before cursor
 			e.cmd = append(e.cmd[:e.cmdCursor-1], e.cmd[e.cmdCursor:]...)
@@ -1972,6 +2060,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		}
 		return false
 	case tcell.KeyDelete:
+		e.closeAutoComplete()
 		if e.cmdCursor < len(e.cmd) {
 			// Delete char at cursor
 			e.cmd = append(e.cmd[:e.cmdCursor], e.cmd[e.cmdCursor+1:]...)
@@ -1979,11 +2068,21 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		}
 		return false
 	case tcell.KeyLeft, tcell.KeyCtrlB: // Ctrl+B = back (readline)
+		if e.cmdAutoCompleteActive {
+			e.cmdAutoCompleteLeft()
+			e.updateCmdFromAutocomplete()
+			return false
+		}
 		if e.cmdCursor > 0 {
 			e.cmdCursor--
 		}
 		return false
 	case tcell.KeyRight, tcell.KeyCtrlF: // Ctrl+F = forward (readline)
+		if e.cmdAutoCompleteActive {
+			e.cmdAutoCompleteRight()
+			e.updateCmdFromAutocomplete()
+			return false
+		}
 		if e.cmdCursor < len(e.cmd) {
 			e.cmdCursor++
 		}
@@ -1995,9 +2094,19 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		e.cmdCursor = len(e.cmd)
 		return false
 	case tcell.KeyUp, tcell.KeyCtrlP: // Ctrl+P = previous
+		if e.cmdAutoCompleteActive {
+			e.cmdAutoCompleteUp()
+			e.updateCmdFromAutocomplete()
+			return false
+		}
 		e.cmdHistoryUp()
 		return false
 	case tcell.KeyDown, tcell.KeyCtrlN: // Ctrl+N = next
+		if e.cmdAutoCompleteActive {
+			e.cmdAutoCompleteDown()
+			e.updateCmdFromAutocomplete()
+			return false
+		}
 		e.cmdHistoryDown()
 		return false
 	case tcell.KeyCtrlU: // Ctrl+U = clear line
@@ -2025,6 +2134,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		}
 		return false
 	case tcell.KeyRune:
+		e.closeAutoComplete()
 		// Insert char at cursor position
 		e.cmd = append(e.cmd[:e.cmdCursor], append([]rune{ev.Rune()}, e.cmd[e.cmdCursor:]...)...)
 		e.cmdCursor++
@@ -2124,6 +2234,179 @@ func (e *Editor) saveCmdHistory() {
 	}
 	data := strings.Join(history, "\n")
 	_ = os.WriteFile(path, []byte(data), 0644)
+}
+
+// filterCommands returns commands matching the given prefix
+func filterCommands(prefix string) []CommandInfo {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return AvailableCommands
+	}
+	var result []CommandInfo
+	for _, cmd := range AvailableCommands {
+		if strings.HasPrefix(cmd.Name, prefix) {
+			result = append(result, cmd)
+		}
+	}
+	return result
+}
+
+// closeAutoComplete closes the command autocomplete popup
+func (e *Editor) closeAutoComplete() {
+	e.cmdAutoCompleteActive = false
+	e.cmdAutoCompleteItems = nil
+	e.cmdAutoCompleteIndex = 0
+	e.cmdAutoCompleteCols = 0
+	e.cmdAutoCompleteColGroups = nil
+}
+
+// cmdAutoCompleteUp moves selection up (previous command)
+func (e *Editor) cmdAutoCompleteUp() {
+	n := len(e.cmdAutoCompleteItems)
+	if n == 0 {
+		return
+	}
+	e.cmdAutoCompleteIndex--
+	if e.cmdAutoCompleteIndex < 0 {
+		e.cmdAutoCompleteIndex = n - 1
+	}
+}
+
+// cmdAutoCompleteDown moves selection down (next command)
+func (e *Editor) cmdAutoCompleteDown() {
+	n := len(e.cmdAutoCompleteItems)
+	if n == 0 {
+		return
+	}
+	e.cmdAutoCompleteIndex++
+	if e.cmdAutoCompleteIndex >= n {
+		e.cmdAutoCompleteIndex = 0
+	}
+}
+
+// findCmdPosition finds the column and position within column for a command index
+func (e *Editor) findCmdPosition(cmdIdx int) (col int, posInCol int) {
+	if len(e.cmdAutoCompleteColGroups) == 0 {
+		return 0, cmdIdx
+	}
+
+	globalIdx := 0
+	for colIdx, colGrps := range e.cmdAutoCompleteColGroups {
+		for _, grp := range colGrps {
+			for range grp.Commands {
+				if globalIdx == cmdIdx {
+					return colIdx, posInCol
+				}
+				globalIdx++
+				posInCol++
+			}
+		}
+		posInCol = 0
+	}
+	return 0, 0
+}
+
+// countCmdsInCol counts commands in a column
+func (e *Editor) countCmdsInCol(colIdx int) int {
+	if colIdx < 0 || colIdx >= len(e.cmdAutoCompleteColGroups) {
+		return 0
+	}
+	count := 0
+	for _, grp := range e.cmdAutoCompleteColGroups[colIdx] {
+		count += len(grp.Commands)
+	}
+	return count
+}
+
+// firstCmdInCol returns the global command index of the first command in a column
+func (e *Editor) firstCmdInCol(colIdx int) int {
+	if colIdx < 0 || colIdx >= len(e.cmdAutoCompleteColGroups) {
+		return 0
+	}
+	idx := 0
+	for c := 0; c < colIdx; c++ {
+		idx += e.countCmdsInCol(c)
+	}
+	return idx
+}
+
+// cmdAutoCompleteLeft moves selection to the previous column (same relative position)
+func (e *Editor) cmdAutoCompleteLeft() {
+	n := len(e.cmdAutoCompleteItems)
+	if n == 0 {
+		return
+	}
+	cols := len(e.cmdAutoCompleteColGroups)
+	if cols <= 1 {
+		return
+	}
+
+	// Find current position
+	currentCol, posInCol := e.findCmdPosition(e.cmdAutoCompleteIndex)
+
+	// Move to previous column
+	targetCol := currentCol - 1
+	if targetCol < 0 {
+		targetCol = cols - 1
+	}
+
+	// Find position in target column
+	targetColCmds := e.countCmdsInCol(targetCol)
+	if targetColCmds == 0 {
+		return
+	}
+
+	// Clamp position to target column size
+	targetPos := posInCol
+	if targetPos >= targetColCmds {
+		targetPos = targetColCmds - 1
+	}
+
+	e.cmdAutoCompleteIndex = e.firstCmdInCol(targetCol) + targetPos
+}
+
+// cmdAutoCompleteRight moves selection to the next column (same relative position)
+func (e *Editor) cmdAutoCompleteRight() {
+	n := len(e.cmdAutoCompleteItems)
+	if n == 0 {
+		return
+	}
+	cols := len(e.cmdAutoCompleteColGroups)
+	if cols <= 1 {
+		return
+	}
+
+	// Find current position
+	currentCol, posInCol := e.findCmdPosition(e.cmdAutoCompleteIndex)
+
+	// Move to next column
+	targetCol := currentCol + 1
+	if targetCol >= cols {
+		targetCol = 0
+	}
+
+	// Find position in target column
+	targetColCmds := e.countCmdsInCol(targetCol)
+	if targetColCmds == 0 {
+		return
+	}
+
+	// Clamp position to target column size
+	targetPos := posInCol
+	if targetPos >= targetColCmds {
+		targetPos = targetColCmds - 1
+	}
+
+	e.cmdAutoCompleteIndex = e.firstCmdInCol(targetCol) + targetPos
+}
+
+// updateCmdFromAutocomplete updates the command line with the selected autocomplete item
+func (e *Editor) updateCmdFromAutocomplete() {
+	if len(e.cmdAutoCompleteItems) > 0 && e.cmdAutoCompleteIndex < len(e.cmdAutoCompleteItems) {
+		selected := e.cmdAutoCompleteItems[e.cmdAutoCompleteIndex]
+		e.cmd = []rune(selected.Name)
+		e.cmdCursor = len(e.cmd)
+	}
 }
 
 // searchHistoryFilePath returns the path to the search history file
@@ -5945,6 +6228,244 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 		cursorX = w - 1
 	}
 	return cursorX
+}
+
+
+// GroupInfo describes a group of commands for layout optimization
+type GroupInfo struct {
+	Name     string
+	Commands []CommandInfo
+	Size     int // len(Commands) + 1 for header
+}
+
+// groupCommands groups filtered commands by their Group field
+func groupCommands(items []CommandInfo) []GroupInfo {
+	var groups []GroupInfo
+	var current *GroupInfo
+
+	for _, cmd := range items {
+		if current == nil || current.Name != cmd.Group {
+			if current != nil {
+				current.Size = len(current.Commands) + 1
+				groups = append(groups, *current)
+			}
+			current = &GroupInfo{Name: cmd.Group}
+		}
+		current.Commands = append(current.Commands, cmd)
+	}
+	if current != nil {
+		current.Size = len(current.Commands) + 1
+		groups = append(groups, *current)
+	}
+
+	return groups
+}
+
+// distributeGroups places groups into columns without splitting them
+func distributeGroups(groups []GroupInfo, height int) [][]GroupInfo {
+	var columns [][]GroupInfo
+	var currentCol []GroupInfo
+	usedHeight := 0
+
+	for _, g := range groups {
+		if usedHeight+g.Size <= height {
+			// Group fits in current column
+			currentCol = append(currentCol, g)
+			usedHeight += g.Size
+		} else {
+			// Start new column
+			if len(currentCol) > 0 {
+				columns = append(columns, currentCol)
+			}
+			currentCol = []GroupInfo{g}
+			usedHeight = g.Size
+		}
+	}
+	if len(currentCol) > 0 {
+		columns = append(columns, currentCol)
+	}
+
+	return columns
+}
+
+// calculateOptimalLayout finds the best height and column distribution
+// Returns: optimal height, column groups distribution
+func calculateOptimalLayout(groups []GroupInfo, maxHeight int) (int, [][]GroupInfo) {
+	if len(groups) == 0 {
+		return 0, nil
+	}
+
+	// Minimum height = max group size
+	minHeight := 0
+	for _, g := range groups {
+		if g.Size > minHeight {
+			minHeight = g.Size
+		}
+	}
+	if minHeight > maxHeight {
+		minHeight = maxHeight
+	}
+
+	bestHeight := maxHeight
+	bestCols := len(groups) // worst case: each group in own column
+	var bestLayout [][]GroupInfo
+
+	// Try heights from minimum to maximum
+	for h := minHeight; h <= maxHeight; h++ {
+		layout := distributeGroups(groups, h)
+		cols := len(layout)
+
+		// Better if fewer columns, or same columns but smaller height
+		if cols < bestCols || (cols == bestCols && h < bestHeight) {
+			bestCols = cols
+			bestHeight = h
+			bestLayout = layout
+		}
+	}
+
+	return bestHeight, bestLayout
+}
+
+// renderCommandAutocomplete renders the command autocomplete popup above the command line
+// Uses group-aware layout: groups are never split across columns
+func (e *Editor) renderCommandAutocomplete(s tcell.Screen, w, statusY int) {
+	if !e.cmdAutoCompleteActive || len(e.cmdAutoCompleteItems) == 0 {
+		return
+	}
+
+	// Group commands
+	groups := groupCommands(e.cmdAutoCompleteItems)
+	if len(groups) == 0 {
+		return
+	}
+
+	// Find maximum item width (for all commands across all groups)
+	maxItemWidth := 0
+	for _, grp := range groups {
+		headerW := len(grp.Name) + 6 // "── Group ──"
+		if headerW > maxItemWidth {
+			maxItemWidth = headerW
+		}
+		for _, cmd := range grp.Commands {
+			itemW := len(cmd.Name) + 3 + len(cmd.Description) // "name - desc"
+			if itemW > maxItemWidth {
+				maxItemWidth = itemW
+			}
+		}
+	}
+
+	// Calculate optimal height and layout
+	maxH := statusY
+	if maxH > 15 {
+		maxH = 15
+	}
+	height, colGroups := calculateOptimalLayout(groups, maxH)
+	if height == 0 || len(colGroups) == 0 {
+		return
+	}
+
+	// Store layout for navigation
+	cols := len(colGroups)
+	e.cmdAutoCompleteCols = cols
+	e.cmdAutoCompleteColGroups = colGroups
+
+	// Calculate column width
+	colWidth := maxItemWidth + 2
+	if colWidth*cols > w {
+		colWidth = w / cols
+	}
+
+	y0 := statusY - height
+	if y0 < 0 {
+		y0 = 0
+		height = statusY
+	}
+
+	// Clear the popup area (only the menu width, not entire screen)
+	menuWidth := cols * colWidth
+	if menuWidth > w {
+		menuWidth = w
+	}
+	for row := 0; row < height; row++ {
+		y := y0 + row
+		for x := 0; x < menuWidth; x++ {
+			s.SetContent(x, y, ' ', nil, e.styleAutoComplete)
+		}
+	}
+
+	// Track command index for selection highlighting
+	cmdIdx := 0
+
+	// Render each column
+	for colIdx, colGrps := range colGroups {
+		x0 := colIdx * colWidth
+		row := 0
+
+		for _, grp := range colGrps {
+			// Render group header
+			y := y0 + row
+			headerStyle := e.styleAutoCompleteGroup
+			headerText := "── " + grp.Name + " "
+			x := x0 + 1
+			for _, r := range headerText {
+				if x >= x0+colWidth-1 || x >= w {
+					break
+				}
+				s.SetContent(x, y, r, nil, headerStyle)
+				x++
+			}
+			// Fill rest with dashes
+			for x < x0+colWidth-1 && x < w {
+				s.SetContent(x, y, '─', nil, headerStyle)
+				x++
+			}
+			row++
+
+			// Render commands in this group
+			for _, cmd := range grp.Commands {
+				y := y0 + row
+				isSelected := cmdIdx == e.cmdAutoCompleteIndex
+
+				style := e.styleAutoCompleteDescription
+				hotkeyStyle := e.styleAutoCompleteHotkey
+				if isSelected {
+					style = e.styleSelection
+					// Keep hotkey visible on selection - use selection bg with hotkey fg
+					_, selBg, _ := e.styleSelection.Decompose()
+					hotkeyFg, _, _ := e.styleAutoCompleteHotkey.Decompose()
+					hotkeyStyle = tcell.StyleDefault.Foreground(hotkeyFg).Background(selBg)
+				}
+
+				// Clear column area with style
+				for x := x0; x < x0+colWidth && x < w; x++ {
+					s.SetContent(x, y, ' ', nil, style)
+				}
+
+				// Render hotkey (command name) in hotkey color
+				x := x0 + 1
+				for _, r := range cmd.Name {
+					if x >= x0+colWidth-1 || x >= w {
+						break
+					}
+					s.SetContent(x, y, r, nil, hotkeyStyle)
+					x++
+				}
+
+				// Render " - description" in description style
+				descText := " - " + cmd.Description
+				for _, r := range descText {
+					if x >= x0+colWidth-1 || x >= w {
+						break
+					}
+					s.SetContent(x, y, r, nil, style)
+					x++
+				}
+
+				cmdIdx++
+				row++
+			}
+		}
+	}
 }
 
 const scrollIndicatorDuration = 1500 * time.Millisecond
