@@ -3477,13 +3477,18 @@ func (e *Editor) updateDirty() {
 }
 
 // changelogFilePath returns the path for the changelog file for the given file path.
-// Format: ~/.config/qedit/changelog/<encoded-path>.log
+// Format: $XDG_STATE_HOME/qedit/undo/<encoded-path>.log
 func changelogFilePath(filePath string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
+	// XDG state directory (same as session)
+	stateDir := os.Getenv("XDG_STATE_HOME")
+	if stateDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		stateDir = filepath.Join(home, ".local", "state")
 	}
-	dir := filepath.Join(home, ".config", "qedit", "changelog")
+	dir := filepath.Join(stateDir, "qedit", "undo")
 
 	// Get absolute path and encode it
 	absPath, err := filepath.Abs(filePath)
@@ -5724,16 +5729,29 @@ func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
 	if name == "" {
 		name = "[No Name]"
 	} else {
-		name = filepath.Base(name)
+		// Show relative path from cwd if possible
+		if cwd, err := os.Getwd(); err == nil {
+			absName := name
+			if !filepath.IsAbs(name) {
+				absName, _ = filepath.Abs(name)
+			}
+			if rel, err := filepath.Rel(cwd, absName); err == nil && !strings.HasPrefix(rel, "..") {
+				name = rel
+			} else {
+				name = filepath.Base(name)
+			}
+		} else {
+			name = filepath.Base(name)
+		}
 	}
 	dirty := ""
 	if e.dirty {
-		dirty = "*"
+		dirty = "[*]"
 	}
 
-	status := fmt.Sprintf(" %s | %s%s ", mode, name, dirty)
+	status := fmt.Sprintf(" %s | %s %s", mode, name, dirty)
 	if e.statusMessage != "" {
-		status = fmt.Sprintf(" %s | %s%s | %s ", mode, name, dirty, e.statusMessage)
+		status = fmt.Sprintf(" %s | %s %s | %s ", mode, name, dirty, e.statusMessage)
 	}
 	row := e.cursor.Row + 1
 	col := 1
