@@ -431,12 +431,18 @@ func (e *Engine) markdownHighlights(path string, startLine, endLine int) map[int
 	}
 
 	for row := startLine; row <= endLine && row < len(lines); row++ {
-		if row < 0 || skipInline[row] || !tableRows[row] {
+		if row < 0 || skipInline[row] {
 			continue
 		}
-		lineRunes := []rune(lines[row])
+		line := lines[row]
+		isTableRow := tableRows[row] || isPipeTableRowFallback(line)
+		if !isTableRow {
+			continue
+		}
+		isSeparator := isPipeTableSeparatorLine(line)
+		lineRunes := []rune(line)
 		for idx, r := range lineRunes {
-			if r == '|' {
+			if r == '|' || (isSeparator && (r == '-' || r == ':')) {
 				out[row] = append(out[row], HighlightSpan{
 					StartCol: idx,
 					EndCol:   idx + 1,
@@ -514,6 +520,39 @@ func collectMarkdownTableRows(root *sitter.Node) map[int]bool {
 		}
 	}
 	return rows
+}
+
+func isPipeTableRowFallback(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	if !strings.Contains(trimmed, "|") {
+		return false
+	}
+	if strings.Count(trimmed, "|") < 2 {
+		return false
+	}
+	return true
+}
+
+func isPipeTableSeparatorLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	if !strings.Contains(trimmed, "|") || !strings.Contains(trimmed, "-") {
+		return false
+	}
+	for _, r := range trimmed {
+		switch r {
+		case '|', '-', ':', ' ', '\t':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func buildMarkdownFenceBlock(node *sitter.Node, source []byte) (mdFenceBlock, bool) {
@@ -663,6 +702,7 @@ func (e *Engine) applyFencedBlockHighlights(out map[int][]HighlightSpan, block m
 	lang := block.lang
 	if lang == "" {
 		addFenceFallback(out, block, offsets, contentLines, startLine, endLine, "comment")
+		addAsciiTableBorders(out, block, offsets, contentLines, startLine, endLine)
 		return
 	}
 	switch lang {
@@ -735,6 +775,30 @@ func (e *Engine) applyFencedBlockHighlights(out map[int][]HighlightSpan, block m
 				EndCol:   span.EndCol + offset,
 				Kind:     span.Kind,
 			})
+		}
+	}
+}
+
+func addAsciiTableBorders(out map[int][]HighlightSpan, block mdFenceBlock, offsets []int, contentLines []string, startLine, endLine int) {
+	for idx, text := range contentLines {
+		globalRow := block.contentStartRow + idx
+		if globalRow < startLine || globalRow > endLine {
+			continue
+		}
+		if text == "" {
+			continue
+		}
+		offset := offsets[idx]
+		col := 0
+		for _, r := range []rune(text) {
+			if r == '|' || r == '+' || r == '-' || r == '=' {
+				out[globalRow] = append(out[globalRow], HighlightSpan{
+					StartCol: offset + col,
+					EndCol:   offset + col + 1,
+					Kind:     "text",
+				})
+			}
+			col++
 		}
 	}
 }

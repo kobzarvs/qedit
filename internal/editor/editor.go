@@ -399,6 +399,7 @@ type Editor struct {
 	styleSyntaxUnknown           tcell.Style
 	styleSyntaxVariable          tcell.Style
 	styleSyntaxParameter         tcell.Style
+	styleTableBorder             tcell.Style
 	styleBranch                  tcell.Style
 	styleMainBranch              tcell.Style
 	styleLayoutUS                tcell.Style
@@ -627,6 +628,7 @@ func New(cfg config.Config) *Editor {
 		styleSyntaxUnknown:           tcell.StyleDefault.Foreground(colors["syntax-unknown"]).Background(colors["background"]),
 		styleSyntaxVariable:          tcell.StyleDefault.Foreground(colors["syntax-variable"]).Background(colors["background"]),
 		styleSyntaxParameter:         tcell.StyleDefault.Foreground(colors["syntax-parameter"]).Background(colors["background"]),
+		styleTableBorder:             tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(colors["background"]),
 		styleBranch:                  tcell.StyleDefault.Foreground(colors["branch-foreground"]).Background(colors["branch-background"]),
 		styleMainBranch:              tcell.StyleDefault.Foreground(colors["main-branch-foreground"]).Background(colors["main-branch-background"]),
 		styleLayoutUS:                tcell.StyleDefault.Foreground(colors["layout-us-foreground"]).Background(colors["statusline-background"]),
@@ -3629,28 +3631,65 @@ func (e *Editor) FormatMarkdownTables() error {
 	}
 	changed := false
 	i := 0
+	inFence := false
 	for i < len(lines) {
+		if isFenceLine(lines[i]) {
+			inFence = !inFence
+			i++
+			continue
+		}
+		if inFence {
+			i++
+			continue
+		}
 		if !lineHasPipe(lines[i]) {
 			i++
 			continue
 		}
 		sepIdx := findTableSeparator(lines, i)
-		if sepIdx == -1 || sepIdx == 0 {
-			i++
+		if sepIdx != -1 && sepIdx > 0 {
+			start := sepIdx - 1
+			end := sepIdx + 1
+			for end < len(lines) && lineHasPipe(lines[end]) && strings.TrimSpace(lines[end]) != "" {
+				end++
+			}
+			if start < 0 || start >= end {
+				i++
+				continue
+			}
+			prefix := leadingWhitespace(lines[start])
+			block := lines[start:end]
+			formatted := formatMarkdownTableBlock(block, prefix)
+			if formatted == nil {
+				i = end
+				continue
+			}
+			for j := start; j < end; j++ {
+				if lines[j] != formatted[j-start] {
+					lines[j] = formatted[j-start]
+					changed = true
+				}
+			}
+			i = end
 			continue
 		}
-		start := sepIdx - 1
-		end := sepIdx + 1
+
+		start := i
+		end := i + 1
 		for end < len(lines) && lineHasPipe(lines[end]) && strings.TrimSpace(lines[end]) != "" {
 			end++
 		}
-		if start < 0 || start >= end {
+		if end-start < 2 {
+			i++
+			continue
+		}
+		block := lines[start:end]
+		if !isPipeTableBlock(block) {
 			i++
 			continue
 		}
 		prefix := leadingWhitespace(lines[start])
-		block := lines[start:end]
-		formatted := formatMarkdownTableBlock(block, prefix)
+		formatted := formatMarkdownTableBlockNoSeparator(block, prefix)
 		if formatted == nil {
 			i = end
 			continue
@@ -3668,6 +3707,11 @@ func (e *Editor) FormatMarkdownTables() error {
 	}
 	e.replaceBuffer(strings.Join(lines, "\n"), true)
 	return nil
+}
+
+func isFenceLine(line string) bool {
+	trimmed := strings.TrimLeft(line, " \t")
+	return strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")
 }
 
 func lineHasPipe(line string) bool {
@@ -3828,6 +3872,69 @@ func formatMarkdownTableBlock(lines []string, prefix string) []string {
 		out[i] = prefix + "| " + strings.Join(cells, " | ") + " |"
 	}
 	return out
+}
+
+func formatMarkdownTableBlockNoSeparator(lines []string, prefix string) []string {
+	if len(lines) < 2 {
+		return nil
+	}
+	rows := make([][]string, len(lines))
+	maxCols := 0
+	for i, line := range lines {
+		rows[i] = splitTableRow(line)
+		if len(rows[i]) > maxCols {
+			maxCols = len(rows[i])
+		}
+	}
+	if maxCols < 2 {
+		return nil
+	}
+	for i := range rows {
+		for len(rows[i]) < maxCols {
+			rows[i] = append(rows[i], "")
+		}
+	}
+	widths := make([]int, maxCols)
+	for _, row := range rows {
+		for c, cell := range row {
+			w := runeLen(cell)
+			if w > widths[c] {
+				widths[c] = w
+			}
+		}
+	}
+	out := make([]string, len(lines))
+	for i, row := range rows {
+		cells := make([]string, maxCols)
+		for c, cell := range row {
+			padding := widths[c] - runeLen(cell)
+			if padding < 0 {
+				padding = 0
+			}
+			cells[c] = cell + strings.Repeat(" ", padding)
+		}
+		out[i] = prefix + "| " + strings.Join(cells, " | ") + " |"
+	}
+	return out
+}
+
+func isPipeTableBlock(lines []string) bool {
+	if len(lines) < 2 {
+		return false
+	}
+	colCount := -1
+	for _, line := range lines {
+		row := splitTableRow(line)
+		if len(row) < 2 {
+			return false
+		}
+		if colCount == -1 {
+			colCount = len(row)
+		} else if len(row) != colCount {
+			return false
+		}
+	}
+	return true
 }
 
 func splitTableRow(line string) []string {
@@ -7169,7 +7276,7 @@ func (e *Editor) styleForHighlight(kind string) (tcell.Style, bool) {
 	case "parameter":
 		return e.styleSyntaxParameter, true
 	case "text":
-		return e.styleMain, true
+		return e.styleTableBorder, true
 	default:
 		return e.styleMain, false
 	}
