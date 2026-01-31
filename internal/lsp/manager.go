@@ -78,15 +78,47 @@ func (m *Manager) OpenFile(path, text string) {
 	srv.didOpen(path, lang.Name, text)
 }
 
-func (m *Manager) getServer(name string, cfg config.LanguageServer, root string) (*server, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if srv, ok := m.servers[name]; ok {
-		return srv, nil
+// DidChange notifies the LSP server that the document content has changed
+func (m *Manager) DidChange(path, text string) {
+	srv, err := m.getServerForFile(path)
+	if err != nil {
+		return
 	}
+	srv.didChange(path, text)
+}
+
+// DidSave notifies the LSP server that the document was saved
+func (m *Manager) DidSave(path, text string) {
+	srv, err := m.getServerForFile(path)
+	if err != nil {
+		return
+	}
+	srv.didSave(path, text)
+}
+
+// DidClose notifies the LSP server that the document was closed
+func (m *Manager) DidClose(path string) {
+	srv, err := m.getServerForFile(path)
+	if err != nil {
+		return
+	}
+	srv.didClose(path)
+}
+
+func (m *Manager) getServer(name string, cfg config.LanguageServer, root string) (*server, error) {
 	if root == "" {
 		root = "."
 	}
+	// Use name + root as cache key to support multi-root workspaces
+	cacheKey := name + ":" + root
+
+	m.mu.Lock()
+	if srv, ok := m.servers[cacheKey]; ok {
+		m.mu.Unlock()
+		return srv, nil
+	}
+	m.mu.Unlock()
+
 	cmd := exec.Command(cfg.Command, cfg.Args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -114,11 +146,17 @@ func (m *Manager) getServer(name string, cfg config.LanguageServer, root string)
 		initialized: false,
 		handlers:    make(map[int]chan json.RawMessage),
 	}
-	m.servers[name] = srv
 	go srv.readLoop()
+
+	// Initialize before adding to cache - if init fails, don't cache
 	if err := srv.initialize(); err != nil {
-		return srv, err
+		srv.stop()
+		return nil, err
 	}
+
+	m.mu.Lock()
+	m.servers[cacheKey] = srv
+	m.mu.Unlock()
 	return srv, nil
 }
 
@@ -304,6 +342,33 @@ type didOpenParams struct {
 	TextDocument textDocumentItem `json:"textDocument"`
 }
 
+type textDocumentIdentifier struct {
+	URI string `json:"uri"`
+}
+
+type versionedTextDocumentIdentifier struct {
+	URI     string `json:"uri"`
+	Version int    `json:"version"`
+}
+
+type textDocumentContentChangeEvent struct {
+	Text string `json:"text"` // Full document sync
+}
+
+type didChangeParams struct {
+	TextDocument   versionedTextDocumentIdentifier  `json:"textDocument"`
+	ContentChanges []textDocumentContentChangeEvent `json:"contentChanges"`
+}
+
+type didSaveParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Text         string                 `json:"text,omitempty"`
+}
+
+type didCloseParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
 func (s *server) initialize() error {
 	params := initializeParams{
 		ProcessID:   os.Getpid(),
@@ -347,6 +412,57 @@ func (s *server) didOpen(path, languageID, text string) {
 			Version:    1,
 			Text:       text,
 		},
+	})
+}
+
+func (s *server) didChange(path, text string) {
+	uri := fileURI(path)
+	s.mu.Lock()
+	version, ok := s.docs[uri]
+	if !ok {
+		s.mu.Unlock()
+		return
+	}
+	version++
+	s.docs[uri] = version
+	s.mu.Unlock()
+
+	_ = s.sendNotification("textDocument/didChange", didChangeParams{
+		TextDocument: versionedTextDocumentIdentifier{
+			URI:     uri,
+			Version: version,
+		},
+		ContentChanges: []textDocumentContentChangeEvent{{Text: text}},
+	})
+}
+
+func (s *server) didSave(path, text string) {
+	uri := fileURI(path)
+	s.mu.Lock()
+	if _, ok := s.docs[uri]; !ok {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+
+	_ = s.sendNotification("textDocument/didSave", didSaveParams{
+		TextDocument: textDocumentIdentifier{URI: uri},
+		Text:         text,
+	})
+}
+
+func (s *server) didClose(path string) {
+	uri := fileURI(path)
+	s.mu.Lock()
+	if _, ok := s.docs[uri]; !ok {
+		s.mu.Unlock()
+		return
+	}
+	delete(s.docs, uri)
+	s.mu.Unlock()
+
+	_ = s.sendNotification("textDocument/didClose", didCloseParams{
+		TextDocument: textDocumentIdentifier{URI: uri},
 	})
 }
 
