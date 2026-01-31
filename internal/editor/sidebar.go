@@ -3,6 +3,7 @@ package editor
 import (
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/kobzarvs/qedit/internal/logger"
@@ -12,27 +13,27 @@ import (
 type SidebarMode int
 
 const (
-	SidebarModeNone SidebarMode = iota
-	SidebarModeMenu          // main menu for mode selection
-	SidebarModeFileTree      // file tree (future)
-	SidebarModeBranches      // git branch selection (v1)
-	SidebarModeRecentHistory // line-by-line history (future)
-	SidebarModeLocalChanges  // local changes history (future)
-	SidebarModeWorktrees     // git worktrees (future)
+	SidebarModeNone          SidebarMode = iota
+	SidebarModeMenu                      // main menu for mode selection
+	SidebarModeFileTree                  // file tree (future)
+	SidebarModeBranches                  // git branch selection (v1)
+	SidebarModeRecentHistory             // line-by-line history (future)
+	SidebarModeLocalChanges              // local changes history (future)
+	SidebarModeWorktrees                 // git worktrees (future)
 )
 
 // SidebarAction represents actions returned from sidebar content
 type SidebarAction int
 
 const (
-	SidebarActionNone SidebarAction = iota
-	SidebarActionClose          // close sidebar
-	SidebarActionBackToMenu     // return to menu
-	SidebarActionOpenFile       // open file (path in Data)
-	SidebarActionCheckoutBranch // checkout git branch
-	SidebarActionRefresh        // refresh current mode
-	SidebarActionFocusEditor    // return focus to editor
-	SidebarActionSwitchMode     // switch to different mode
+	SidebarActionNone           SidebarAction = iota
+	SidebarActionClose                        // close sidebar
+	SidebarActionBackToMenu                   // return to menu
+	SidebarActionOpenFile                     // open file (path in Data)
+	SidebarActionCheckoutBranch               // checkout git branch
+	SidebarActionRefresh                      // refresh current mode
+	SidebarActionFocusEditor                  // return focus to editor
+	SidebarActionSwitchMode                   // switch to different mode
 )
 
 // SidebarActionData contains action and associated data
@@ -180,6 +181,77 @@ func parseWidthValue(value string, screenWidth int) int {
 	// Absolute: "30"
 	n, _ := strconv.Atoi(value)
 	return n
+}
+
+func runeWidth(r rune) int {
+	if r == 0 {
+		return 0
+	}
+	if r < 0x20 || (r >= 0x7f && r < 0xa0) {
+		return 0
+	}
+	if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
+		return 0
+	}
+	if isWideRune(r) {
+		return 2
+	}
+	return 1
+}
+
+func isWideRune(r rune) bool {
+	if unicode.In(r, unicode.Han, unicode.Hangul, unicode.Hiragana, unicode.Katakana) {
+		return true
+	}
+	switch {
+	case r >= 0x1100 && r <= 0x115F: // Hangul Jamo
+		return true
+	case r == 0x2329 || r == 0x232A:
+		return true
+	case r >= 0x2E80 && r <= 0xA4CF: // CJK Radicals, Symbols, Yi
+		return true
+	case r >= 0xAC00 && r <= 0xD7A3: // Hangul Syllables
+		return true
+	case r >= 0xF900 && r <= 0xFAFF: // CJK Compatibility Ideographs
+		return true
+	case r >= 0xFE10 && r <= 0xFE19: // Vertical forms
+		return true
+	case r >= 0xFE30 && r <= 0xFE6F: // CJK Compatibility Forms
+		return true
+	case r >= 0xFF00 && r <= 0xFF60: // Fullwidth Forms
+		return true
+	case r >= 0xFFE0 && r <= 0xFFE6: // Fullwidth symbol variants
+		return true
+	case r >= 0x1F300 && r <= 0x1FAFF: // Emoji ranges
+		return true
+	default:
+		return false
+	}
+}
+
+func stringWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		width += runeWidth(r)
+	}
+	return width
+}
+
+func truncateToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		w := runeWidth(r)
+		if width+w > maxWidth {
+			break
+		}
+		b.WriteRune(r)
+		width += w
+	}
+	return b.String()
 }
 
 // Navigation methods
@@ -374,17 +446,19 @@ func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h i
 
 	// Draw header
 	title := s.Content.Title()
-	if len(title) > contentWidth {
-		title = title[:contentWidth]
-	}
-	for i, r := range title {
-		if i < contentWidth {
-			screen.SetContent(x+i, y, r, nil, styles.Header)
+	title = truncateToWidth(title, contentWidth)
+	col := x
+	for _, r := range title {
+		if col >= x+contentWidth {
+			break
 		}
+		screen.SetContent(col, y, r, nil, styles.Header)
+		col += runeWidth(r)
 	}
 	// Fill rest of header line
-	for i := len(title); i < contentWidth; i++ {
-		screen.SetContent(x+i, y, ' ', nil, styles.Header)
+	for col < x+contentWidth {
+		screen.SetContent(col, y, ' ', nil, styles.Header)
+		col++
 	}
 
 	// Draw items
@@ -407,7 +481,7 @@ func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h i
 		}
 
 		item := items[itemIdx]
-		isSelected := itemIdx == currentIdx
+		isSelected := s.Focused && itemIdx == currentIdx
 
 		// Get the selected background color
 		_, selBg, _ := styles.Selected.Decompose()
@@ -451,24 +525,27 @@ func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h i
 
 		// Draw label
 		label := item.Label
-		maxLabelWidth := contentWidth - 2 // indicator + space for hotkey
-		if item.Hotkey != "" {
-			maxLabelWidth = contentWidth - 2 - len(item.Hotkey) - 1
+		hotkeyWidth := stringWidth(item.Hotkey)
+		maxLabelWidth := contentWidth - 2 // indicator + right margin
+		if hotkeyWidth > 0 {
+			maxLabelWidth = contentWidth - 2 - hotkeyWidth - 1
 		}
-		if len(label) > maxLabelWidth && maxLabelWidth > 0 {
-			label = label[:maxLabelWidth]
+		if maxLabelWidth < 0 {
+			maxLabelWidth = 0
 		}
+		label = truncateToWidth(label, maxLabelWidth)
 
 		for _, r := range label {
-			if col < x+contentWidth-1 {
-				screen.SetContent(col, row, r, nil, textStyle)
-				col++
+			if col >= x+contentWidth-1 {
+				break
 			}
+			screen.SetContent(col, row, r, nil, textStyle)
+			col += runeWidth(r)
 		}
 
 		// Draw hotkey (right-aligned)
-		if item.Hotkey != "" {
-			hotkeyX := x + contentWidth - len(item.Hotkey) - 1
+		if hotkeyWidth > 0 {
+			hotkeyX := x + contentWidth - hotkeyWidth - 1
 			if hotkeyX > col {
 				// Hotkey style: keep hotkey color but use selected background if selected
 				hotkeyStyle := styles.Hotkey
@@ -479,8 +556,13 @@ func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h i
 					fg, _, _ := hotkeyStyle.Decompose()
 					hotkeyStyle = hotkeyStyle.Foreground(fg).Background(selBg)
 				}
-				for i, r := range item.Hotkey {
-					screen.SetContent(hotkeyX+i, row, r, nil, hotkeyStyle)
+				hotkeyCol := hotkeyX
+				for _, r := range item.Hotkey {
+					if hotkeyCol >= x+contentWidth {
+						break
+					}
+					screen.SetContent(hotkeyCol, row, r, nil, hotkeyStyle)
+					hotkeyCol += runeWidth(r)
 				}
 			}
 		}
