@@ -71,68 +71,68 @@ const (
 	actionSelectAll         = "select_all"
 
 	// Helix-style motions
-	actionWordForward       = "word_forward"        // w - move to next word start
-	actionWordBackward      = "word_backward"       // b - move to previous word start
-	actionWordEnd           = "word_end"            // e - move to word end
-	actionGotoMode          = "goto_mode"           // g - enter goto mode
-	actionGotoLine          = "goto_line"           // G - go to last line (or specific line)
-	actionGotoLinePrompt    = "goto_line_prompt"    // cmd+g - prompt for line number
-	actionGotoFirstLine     = "goto_first_line"     // gg - go to first line
-	actionGotoFileEnd       = "goto_file_end"       // ge - go to end of file
-	actionFindChar          = "find_char"           // f - find char forward
-	actionFindCharBackward  = "find_char_backward"  // F - find char backward
-	actionTillChar          = "till_char"           // t - till char forward
-	actionTillCharBackward  = "till_char_backward"  // T - till char backward
+	actionWordForward      = "word_forward"       // w - move to next word start
+	actionWordBackward     = "word_backward"      // b - move to previous word start
+	actionWordEnd          = "word_end"           // e - move to word end
+	actionGotoMode         = "goto_mode"          // g - enter goto mode
+	actionGotoLine         = "goto_line"          // G - go to last line (or specific line)
+	actionGotoLinePrompt   = "goto_line_prompt"   // cmd+g - prompt for line number
+	actionGotoFirstLine    = "goto_first_line"    // gg - go to first line
+	actionGotoFileEnd      = "goto_file_end"      // ge - go to end of file
+	actionFindChar         = "find_char"          // f - find char forward
+	actionFindCharBackward = "find_char_backward" // F - find char backward
+	actionTillChar         = "till_char"          // t - till char forward
+	actionTillCharBackward = "till_char_backward" // T - till char backward
 
 	// Helix-style editing
-	actionDelete            = "delete"              // d - delete selection
-	actionChange            = "change"              // c - change (delete + insert)
-	actionYank              = "yank"                // y - yank/copy
-	actionPaste             = "paste"               // p - paste after
-	actionPasteBefore       = "paste_before"        // P - paste before
-	actionOpenBelow         = "open_below"          // o - open line below
-	actionOpenAbove         = "open_above"          // O - open line above
-	actionAppend            = "append"              // a - append (insert after cursor)
-	actionAppendLineEnd     = "append_line_end"     // A - insert at line end
-	actionInsertLineStart   = "insert_line_start"   // I - insert at first non-whitespace
-	actionReplaceChar       = "replace_char"        // r - replace with single char
-	actionJoinLines         = "join_lines"          // J - join lines
+	actionDelete          = "delete"            // d - delete selection
+	actionChange          = "change"            // c - change (delete + insert)
+	actionYank            = "yank"              // y - yank/copy
+	actionPaste           = "paste"             // p - paste after
+	actionPasteBefore     = "paste_before"      // P - paste before
+	actionOpenBelow       = "open_below"        // o - open line below
+	actionOpenAbove       = "open_above"        // O - open line above
+	actionAppend          = "append"            // a - append (insert after cursor)
+	actionAppendLineEnd   = "append_line_end"   // A - insert at line end
+	actionInsertLineStart = "insert_line_start" // I - insert at first non-whitespace
+	actionReplaceChar     = "replace_char"      // r - replace with single char
+	actionJoinLines       = "join_lines"        // J - join lines
 
 	// Helix-style selection
-	actionToggleSelect      = "toggle_select"       // v - toggle selection mode
-	actionExtendLine        = "extend_line"         // x - extend to full line
-	actionCollapseSelection = "collapse_selection"  // ; - collapse selection to cursor
-	actionFlipSelection     = "flip_selection"      // Alt+; - flip selection anchor
+	actionToggleSelect      = "toggle_select"      // v - toggle selection mode
+	actionExtendLine        = "extend_line"        // x - extend to full line
+	actionCollapseSelection = "collapse_selection" // ; - collapse selection to cursor
+	actionFlipSelection     = "flip_selection"     // Alt+; - flip selection anchor
 
 	// Space mode
-	actionSpaceMode         = "space_mode"          // Space - open space menu
+	actionSpaceMode = "space_mode" // Space - open space menu
 
 	// Match mode
-	actionMatchMode         = "match_mode"          // m - enter match mode
+	actionMatchMode = "match_mode" // m - enter match mode
 
 	// View mode
-	actionViewMode          = "view_mode"           // z - enter view mode
+	actionViewMode = "view_mode" // z - enter view mode
 
 	// Search
-	actionSearchForward     = "search_forward"      // / - exact search forward
-	actionSearchBackward    = "search_backward"     // ? - exact search backward
-	actionSearchFuzzy       = "search_fuzzy"        // Cmd+F - fuzzy search forward
-	actionSearchRegex       = "search_regex"        // Cmd+E - regex search forward
-	actionSearchNext        = "search_next"         // n - next match
-	actionSearchPrev        = "search_prev"         // N - previous match
+	actionSearchForward  = "search_forward"  // / - exact search forward
+	actionSearchBackward = "search_backward" // ? - exact search backward
+	actionSearchFuzzy    = "search_fuzzy"    // Cmd+F - fuzzy search forward
+	actionSearchRegex    = "search_regex"    // Cmd+E - regex search forward
+	actionSearchNext     = "search_next"     // n - next match
+	actionSearchPrev     = "search_prev"     // N - previous match
 
 	// Special
-	actionInsertLineAbove   = "insert_line_above"   // Shift+Enter - insert indented line above cursor
+	actionInsertLineAbove = "insert_line_above" // Shift+Enter - insert indented line above cursor
 
 	// Terminal zoom
-	actionTerminalZoomIn    = "terminal_zoom_in"    // Cmd+= - zoom in terminal 5x
+	actionTerminalZoomIn = "terminal_zoom_in" // Cmd+= - zoom in terminal 5x
 
 	// Selection scope
-	actionExpandSelection   = "expand_selection"    // Alt+Shift+Up - expand selection to parent node
-	actionShrinkSelection   = "shrink_selection"    // Alt+Shift+Down - shrink selection to child node
+	actionExpandSelection = "expand_selection" // Alt+Shift+Up - expand selection to parent node
+	actionShrinkSelection = "shrink_selection" // Alt+Shift+Down - shrink selection to child node
 
 	// File operations
-	actionSave              = "save"                // Cmd+S - save file
+	actionSave = "save" // Cmd+S - save file
 )
 
 // CommandInfo describes an available command with description
@@ -287,19 +287,19 @@ type action struct {
 
 // actionJSON is used for serializing actions to changelog files
 type actionJSON struct {
-	Kind           int        `json:"k"`
-	PosRow         int        `json:"pr"`
-	PosCol         int        `json:"pc"`
-	R              rune       `json:"r,omitempty"`
-	RowFrom        int        `json:"rf,omitempty"`
-	RowTo          int        `json:"rt,omitempty"`
-	Group          uint64     `json:"g"`
-	Text           []string   `json:"t,omitempty"`
-	EndPosRow      int        `json:"er,omitempty"`
-	EndPosCol      int        `json:"ec,omitempty"`
-	SelectionStart [2]int     `json:"ss,omitempty"`
-	SelectionEnd   [2]int     `json:"se,omitempty"`
-	HasSelection   bool       `json:"hs,omitempty"`
+	Kind           int      `json:"k"`
+	PosRow         int      `json:"pr"`
+	PosCol         int      `json:"pc"`
+	R              rune     `json:"r,omitempty"`
+	RowFrom        int      `json:"rf,omitempty"`
+	RowTo          int      `json:"rt,omitempty"`
+	Group          uint64   `json:"g"`
+	Text           []string `json:"t,omitempty"`
+	EndPosRow      int      `json:"er,omitempty"`
+	EndPosCol      int      `json:"ec,omitempty"`
+	SelectionStart [2]int   `json:"ss,omitempty"`
+	SelectionEnd   [2]int   `json:"se,omitempty"`
+	HasSelection   bool     `json:"hs,omitempty"`
 }
 
 type Cursor struct {
@@ -358,96 +358,96 @@ type LSPGotoFunc func(method, path string, line, col int) ([]LSPLocation, error)
 type HighlightRangeFunc func(path string, startLine, endLine int) map[int][]HighlightSpan
 
 type Editor struct {
-	lines                  [][]rune
-	cursor                 Cursor
-	scroll                 int
-	scrollX                int // horizontal scroll offset (visual columns)
-	mode                   Mode
-	filename               string
-	dirty                  bool
-	keymap                 keymapSet
-	cmd                    []rune
-	cmdCursor              int      // cursor position within cmd
-	cmdHistory             []string // command history
-	cmdHistoryIndex        int      // current position in history (-1 = not browsing)
-	cmdHistoryPrefix       string   // prefix for filtered history search
-	statusMessage          string
-	undo                   []action
-	redo                   []action
-	savePoint              int
-	tabWidth               int
-	viewHeight             int
-	viewWidth              int
-	styleMain              tcell.Style
-	styleStatus            tcell.Style
-	styleCommand           tcell.Style
-	styleLineNumber        tcell.Style
-	styleLineNumberActive  tcell.Style
-	styleSelection         tcell.Style
-	styleSearchMatch       tcell.Style
-	styleSyntaxKeyword     tcell.Style
-	styleSyntaxString      tcell.Style
-	styleSyntaxComment     tcell.Style
-	styleSyntaxType        tcell.Style
-	styleSyntaxFunction    tcell.Style
-	styleSyntaxNumber      tcell.Style
-	styleSyntaxConstant    tcell.Style
-	styleSyntaxOperator    tcell.Style
-	styleSyntaxPunctuation tcell.Style
-	styleSyntaxField       tcell.Style
-	styleSyntaxBuiltin     tcell.Style
-	styleSyntaxUnknown     tcell.Style
-	styleSyntaxVariable    tcell.Style
-	styleSyntaxParameter   tcell.Style
-	styleBranch            tcell.Style
-	styleMainBranch        tcell.Style
-	styleLayoutUS          tcell.Style
-	styleLayoutRU          tcell.Style
-	styleLayoutOther       tcell.Style
+	lines                        [][]rune
+	cursor                       Cursor
+	scroll                       int
+	scrollX                      int // horizontal scroll offset (visual columns)
+	mode                         Mode
+	filename                     string
+	dirty                        bool
+	keymap                       keymapSet
+	cmd                          []rune
+	cmdCursor                    int      // cursor position within cmd
+	cmdHistory                   []string // command history
+	cmdHistoryIndex              int      // current position in history (-1 = not browsing)
+	cmdHistoryPrefix             string   // prefix for filtered history search
+	statusMessage                string
+	undo                         []action
+	redo                         []action
+	savePoint                    int
+	tabWidth                     int
+	viewHeight                   int
+	viewWidth                    int
+	styleMain                    tcell.Style
+	styleStatus                  tcell.Style
+	styleCommand                 tcell.Style
+	styleLineNumber              tcell.Style
+	styleLineNumberActive        tcell.Style
+	styleSelection               tcell.Style
+	styleSearchMatch             tcell.Style
+	styleSyntaxKeyword           tcell.Style
+	styleSyntaxString            tcell.Style
+	styleSyntaxComment           tcell.Style
+	styleSyntaxType              tcell.Style
+	styleSyntaxFunction          tcell.Style
+	styleSyntaxNumber            tcell.Style
+	styleSyntaxConstant          tcell.Style
+	styleSyntaxOperator          tcell.Style
+	styleSyntaxPunctuation       tcell.Style
+	styleSyntaxField             tcell.Style
+	styleSyntaxBuiltin           tcell.Style
+	styleSyntaxUnknown           tcell.Style
+	styleSyntaxVariable          tcell.Style
+	styleSyntaxParameter         tcell.Style
+	styleBranch                  tcell.Style
+	styleMainBranch              tcell.Style
+	styleLayoutUS                tcell.Style
+	styleLayoutRU                tcell.Style
+	styleLayoutOther             tcell.Style
 	styleAutoComplete            tcell.Style
 	styleAutoCompleteHotkey      tcell.Style
 	styleAutoCompleteDescription tcell.Style
 	styleAutoCompleteGroup       tcell.Style
-	lineNumberMode         LineNumberMode
-	layoutName             string
-	gitBranch              string
-	gitMainBranch          string // detected main branch (main/master)
-	gitBranchSymbol        string
-	selectionActive        bool
-	selectionStart         Cursor
-	selectionEnd           Cursor
-	highlights             map[int][]HighlightSpan
-	highlightStart         int
-	highlightEnd           int
-	changeTick             uint64
-	lastEdit               TextEdit
-	branchPickerActive     bool
-	branchPickerItems      []string
-	branchPickerIndex      int
-	branchPickerRequested  bool
-	branchPickerSelection  string
-	lineUndoRow            int
-	lineUndoContent        []rune
-	lineUndoValid          bool
-	lastKeyCombo           string
-	freeScroll             bool
-	lastScrollTime         time.Time
-	undoGroup              uint64
+	lineNumberMode               LineNumberMode
+	layoutName                   string
+	gitBranch                    string
+	gitMainBranch                string // detected main branch (main/master)
+	gitBranchSymbol              string
+	selectionActive              bool
+	selectionStart               Cursor
+	selectionEnd                 Cursor
+	highlights                   map[int][]HighlightSpan
+	highlightStart               int
+	highlightEnd                 int
+	changeTick                   uint64
+	lastEdit                     TextEdit
+	branchPickerActive           bool
+	branchPickerItems            []string
+	branchPickerIndex            int
+	branchPickerRequested        bool
+	branchPickerSelection        string
+	lineUndoRow                  int
+	lineUndoContent              []rune
+	lineUndoValid                bool
+	lastKeyCombo                 string
+	freeScroll                   bool
+	lastScrollTime               time.Time
+	undoGroup                    uint64
 
 	// Helix-style state
-	clipboard              [][]rune               // yanked text (lines)
-	pendingAction          string                 // pending action waiting for char input (f/F/t/T/r)
-	selectMode             bool                   // whether in visual/select mode
-	lastFindChar           rune                   // last char used in f/F/t/T
-	lastFindForward        bool                   // direction of last find
-	lastFindTill           bool                   // whether last find was till (t/T)
-	gotoMode               bool                   // whether in goto mode (g prefix)
-	matchMode              bool                   // whether in match mode (m prefix)
-	viewMode               bool                   // whether in view mode (z prefix)
-	windowMode             bool                   // whether in window mode (space-w prefix)
-	pendingKeys            string                 // keys typed so far in a sequence (e.g., "g" waiting for second key)
-	lastCommand            string                 // last executed command for display (e.g., "gg", "ge", "fw")
-	spaceMenuActive        bool                   // whether space menu is open
+	clipboard                  [][]rune // yanked text (lines)
+	pendingAction              string   // pending action waiting for char input (f/F/t/T/r)
+	selectMode                 bool     // whether in visual/select mode
+	lastFindChar               rune     // last char used in f/F/t/T
+	lastFindForward            bool     // direction of last find
+	lastFindTill               bool     // whether last find was till (t/T)
+	gotoMode                   bool     // whether in goto mode (g prefix)
+	matchMode                  bool     // whether in match mode (m prefix)
+	viewMode                   bool     // whether in view mode (z prefix)
+	windowMode                 bool     // whether in window mode (space-w prefix)
+	pendingKeys                string   // keys typed so far in a sequence (e.g., "g" waiting for second key)
+	lastCommand                string   // last executed command for display (e.g., "gg", "ge", "fw")
+	spaceMenuActive            bool     // whether space menu is open
 	keybindingsHelpActive      bool     // whether keybindings help popup is open
 	keybindingsHelpScroll      int      // scroll position in keybindings help
 	keybindingsHelpFilterKey   []rune   // filter for Key column
@@ -456,17 +456,17 @@ type Editor struct {
 	keybindingsHelpFilterFocus int      // 0=Key, 1=Action, 2=Description
 
 	// Search state
-	searchQuery            []rune                 // current search query
-	searchCursor           int                    // cursor position within search query
-	searchMatches          []SearchMatch          // all matches in the file
-	searchMatchIndex       int                    // current match index
-	searchForward          bool                   // search direction
-	searchFuzzy            bool                   // true = fuzzy search (cmd+f), false = exact (/)
-	searchRegex            bool                   // true = regex search (cmd+e)
-	lastSearchQuery        string                 // last search query for n/N
-	searchHistory          []string               // search history (prefixed with /: F: or E:)
-	searchHistoryIndex     int                    // current position in search history (-1 = not browsing)
-	searchHistoryPrefix    string                 // prefix for filtered search history
+	searchQuery         []rune        // current search query
+	searchCursor        int           // cursor position within search query
+	searchMatches       []SearchMatch // all matches in the file
+	searchMatchIndex    int           // current match index
+	searchForward       bool          // search direction
+	searchFuzzy         bool          // true = fuzzy search (cmd+f), false = exact (/)
+	searchRegex         bool          // true = regex search (cmd+e)
+	lastSearchQuery     string        // last search query for n/N
+	searchHistory       []string      // search history (prefixed with /: F: or E:)
+	searchHistoryIndex  int           // current position in search history (-1 = not browsing)
+	searchHistoryPrefix string        // prefix for filtered search history
 
 	// Terminal zoom state
 	zoomPendingRestore bool // true = waiting for space to restore zoom
@@ -475,28 +475,28 @@ type Editor struct {
 	zoomSavedScrollX   int  // original scrollX before zoom
 
 	// Copied message state
-	copiedMessageTime      time.Time              // when "copied" was shown
+	copiedMessageTime time.Time // when "copied" was shown
 
 	// Selection scope (expand/shrink)
-	nodeStackFunc          NodeStackFunc          // callback to get syntax node stack
-	selectionScopeStack    []NodeRange            // stack of selection scopes for shrinking
-	selectionScopeIndex    int                    // current index in scope stack
+	nodeStackFunc       NodeStackFunc // callback to get syntax node stack
+	selectionScopeStack []NodeRange   // stack of selection scopes for shrinking
+	selectionScopeIndex int           // current index in scope stack
 
 	// LSP integration
-	lspGotoFunc            LSPGotoFunc            // callback for LSP goto operations
-	highlightRangeFunc     HighlightRangeFunc     // callback to get highlights for a range
-	refsPickerActive       bool                   // whether references picker is shown
-	refsPickerItems        []LSPLocation          // list of references
-	refsPickerIndex        int                    // selected reference index
-	refsPickerTitle        string                 // picker title (e.g., "References", "Implementations")
-	refsPickerFileCache    map[string][][]rune    // cache of file lines for preview
-	refsPickerHighlights   map[string]map[int][]HighlightSpan // cache of highlights for preview
+	lspGotoFunc          LSPGotoFunc                        // callback for LSP goto operations
+	highlightRangeFunc   HighlightRangeFunc                 // callback to get highlights for a range
+	refsPickerActive     bool                               // whether references picker is shown
+	refsPickerItems      []LSPLocation                      // list of references
+	refsPickerIndex      int                                // selected reference index
+	refsPickerTitle      string                             // picker title (e.g., "References", "Implementations")
+	refsPickerFileCache  map[string][][]rune                // cache of file lines for preview
+	refsPickerHighlights map[string]map[int][]HighlightSpan // cache of highlights for preview
 
 	// Session persistence
-	sessionManager         *session.Manager
+	sessionManager *session.Manager
 
 	// Test hook for keymap coverage.
-	actionHook             func(action string)
+	actionHook func(action string)
 
 	// Command autocomplete state
 	cmdAutoCompleteActive    bool
@@ -583,8 +583,8 @@ func New(cfg config.Config) *Editor {
 	colors["main-branch-background"] = resolve(cfg.Theme.MainBranchBackground, colors["statusline-background"])
 
 	// Keyboard layout colors
-	layoutUSFg := tcell.NewRGBColor(144, 238, 144)  // #90EE90 light green
-	layoutRUFg := tcell.NewRGBColor(135, 206, 250)  // #87CEFA light sky blue
+	layoutUSFg := tcell.NewRGBColor(144, 238, 144) // #90EE90 light green
+	layoutRUFg := tcell.NewRGBColor(135, 206, 250) // #87CEFA light sky blue
 	colors["layout-us-foreground"] = layoutUSFg
 	colors["layout-ru-foreground"] = layoutRUFg
 	colors["layout-other-foreground"] = colors["statusline-foreground"]
@@ -602,45 +602,45 @@ func New(cfg config.Config) *Editor {
 	sessionMgr, _ := session.NewManager()
 
 	return &Editor{
-		lines:                  [][]rune{[]rune{}},
-		mode:                   ModeNormal,
-		keymap:                 keymapSet{normal: normal, insert: insert},
-		tabWidth:               tabWidth,
-		styleMain:              tcell.StyleDefault.Foreground(colors["foreground"]).Background(colors["background"]),
-		styleStatus:            tcell.StyleDefault.Foreground(colors["statusline-foreground"]).Background(colors["statusline-background"]),
-		styleCommand:           tcell.StyleDefault.Foreground(colors["commandline-foreground"]).Background(colors["commandline-background"]),
-		styleLineNumber:        tcell.StyleDefault.Foreground(colors["line-number-foreground"]).Background(colors["background"]),
-		styleLineNumberActive:  tcell.StyleDefault.Foreground(colors["line-number-active-foreground"]).Background(colors["background"]),
-		styleSelection:         tcell.StyleDefault.Foreground(colors["selection-foreground"]).Background(colors["selection-background"]),
-		styleSearchMatch:       tcell.StyleDefault.Foreground(colors["search-foreground"]).Background(colors["search-background"]),
-		styleSyntaxKeyword:     tcell.StyleDefault.Foreground(colors["syntax-keyword"]).Background(colors["background"]),
-		styleSyntaxString:      tcell.StyleDefault.Foreground(colors["syntax-string"]).Background(colors["background"]),
-		styleSyntaxComment:     tcell.StyleDefault.Foreground(colors["syntax-comment"]).Background(colors["background"]),
-		styleSyntaxType:        tcell.StyleDefault.Foreground(colors["syntax-type"]).Background(colors["background"]),
-		styleSyntaxFunction:    tcell.StyleDefault.Foreground(colors["syntax-function"]).Background(colors["background"]),
-		styleSyntaxNumber:      tcell.StyleDefault.Foreground(colors["syntax-number"]).Background(colors["background"]),
-		styleSyntaxConstant:    tcell.StyleDefault.Foreground(colors["syntax-constant"]).Background(colors["background"]),
-		styleSyntaxOperator:    tcell.StyleDefault.Foreground(colors["syntax-operator"]).Background(colors["background"]),
-		styleSyntaxPunctuation: tcell.StyleDefault.Foreground(colors["syntax-punctuation"]).Background(colors["background"]),
-		styleSyntaxField:       tcell.StyleDefault.Foreground(colors["syntax-field"]).Background(colors["background"]),
-		styleSyntaxBuiltin:     tcell.StyleDefault.Foreground(colors["syntax-builtin"]).Background(colors["background"]),
-		styleSyntaxUnknown:     tcell.StyleDefault.Foreground(colors["syntax-unknown"]).Background(colors["background"]),
-		styleSyntaxVariable:    tcell.StyleDefault.Foreground(colors["syntax-variable"]).Background(colors["background"]),
-		styleSyntaxParameter:   tcell.StyleDefault.Foreground(colors["syntax-parameter"]).Background(colors["background"]),
-		styleBranch:            tcell.StyleDefault.Foreground(colors["branch-foreground"]).Background(colors["branch-background"]),
-		styleMainBranch:        tcell.StyleDefault.Foreground(colors["main-branch-foreground"]).Background(colors["main-branch-background"]),
-		styleLayoutUS:           tcell.StyleDefault.Foreground(colors["layout-us-foreground"]).Background(colors["statusline-background"]),
-		styleLayoutRU:           tcell.StyleDefault.Foreground(colors["layout-ru-foreground"]).Background(colors["statusline-background"]),
-		styleLayoutOther:        tcell.StyleDefault.Foreground(colors["layout-other-foreground"]).Background(colors["statusline-background"]),
+		lines:                        [][]rune{[]rune{}},
+		mode:                         ModeNormal,
+		keymap:                       keymapSet{normal: normal, insert: insert},
+		tabWidth:                     tabWidth,
+		styleMain:                    tcell.StyleDefault.Foreground(colors["foreground"]).Background(colors["background"]),
+		styleStatus:                  tcell.StyleDefault.Foreground(colors["statusline-foreground"]).Background(colors["statusline-background"]),
+		styleCommand:                 tcell.StyleDefault.Foreground(colors["commandline-foreground"]).Background(colors["commandline-background"]),
+		styleLineNumber:              tcell.StyleDefault.Foreground(colors["line-number-foreground"]).Background(colors["background"]),
+		styleLineNumberActive:        tcell.StyleDefault.Foreground(colors["line-number-active-foreground"]).Background(colors["background"]),
+		styleSelection:               tcell.StyleDefault.Foreground(colors["selection-foreground"]).Background(colors["selection-background"]),
+		styleSearchMatch:             tcell.StyleDefault.Foreground(colors["search-foreground"]).Background(colors["search-background"]),
+		styleSyntaxKeyword:           tcell.StyleDefault.Foreground(colors["syntax-keyword"]).Background(colors["background"]),
+		styleSyntaxString:            tcell.StyleDefault.Foreground(colors["syntax-string"]).Background(colors["background"]),
+		styleSyntaxComment:           tcell.StyleDefault.Foreground(colors["syntax-comment"]).Background(colors["background"]),
+		styleSyntaxType:              tcell.StyleDefault.Foreground(colors["syntax-type"]).Background(colors["background"]),
+		styleSyntaxFunction:          tcell.StyleDefault.Foreground(colors["syntax-function"]).Background(colors["background"]),
+		styleSyntaxNumber:            tcell.StyleDefault.Foreground(colors["syntax-number"]).Background(colors["background"]),
+		styleSyntaxConstant:          tcell.StyleDefault.Foreground(colors["syntax-constant"]).Background(colors["background"]),
+		styleSyntaxOperator:          tcell.StyleDefault.Foreground(colors["syntax-operator"]).Background(colors["background"]),
+		styleSyntaxPunctuation:       tcell.StyleDefault.Foreground(colors["syntax-punctuation"]).Background(colors["background"]),
+		styleSyntaxField:             tcell.StyleDefault.Foreground(colors["syntax-field"]).Background(colors["background"]),
+		styleSyntaxBuiltin:           tcell.StyleDefault.Foreground(colors["syntax-builtin"]).Background(colors["background"]),
+		styleSyntaxUnknown:           tcell.StyleDefault.Foreground(colors["syntax-unknown"]).Background(colors["background"]),
+		styleSyntaxVariable:          tcell.StyleDefault.Foreground(colors["syntax-variable"]).Background(colors["background"]),
+		styleSyntaxParameter:         tcell.StyleDefault.Foreground(colors["syntax-parameter"]).Background(colors["background"]),
+		styleBranch:                  tcell.StyleDefault.Foreground(colors["branch-foreground"]).Background(colors["branch-background"]),
+		styleMainBranch:              tcell.StyleDefault.Foreground(colors["main-branch-foreground"]).Background(colors["main-branch-background"]),
+		styleLayoutUS:                tcell.StyleDefault.Foreground(colors["layout-us-foreground"]).Background(colors["statusline-background"]),
+		styleLayoutRU:                tcell.StyleDefault.Foreground(colors["layout-ru-foreground"]).Background(colors["statusline-background"]),
+		styleLayoutOther:             tcell.StyleDefault.Foreground(colors["layout-other-foreground"]).Background(colors["statusline-background"]),
 		styleAutoComplete:            tcell.StyleDefault.Foreground(colors["autocomplete-description"]).Background(colors["autocomplete-background"]),
 		styleAutoCompleteHotkey:      tcell.StyleDefault.Foreground(colors["autocomplete-hotkey"]).Background(colors["autocomplete-background"]),
 		styleAutoCompleteDescription: tcell.StyleDefault.Foreground(colors["autocomplete-description"]).Background(colors["autocomplete-background"]),
 		styleAutoCompleteGroup:       tcell.StyleDefault.Foreground(colors["autocomplete-group"]).Background(colors["autocomplete-background"]),
-		lineNumberMode:          lineNumberMode,
-		gitBranchSymbol:        gitBranchSymbol,
-		highlightStart:         -1,
-		highlightEnd:           -1,
-		sessionManager:         sessionMgr,
+		lineNumberMode:               lineNumberMode,
+		gitBranchSymbol:              gitBranchSymbol,
+		highlightStart:               -1,
+		highlightEnd:                 -1,
+		sessionManager:               sessionMgr,
 	}
 }
 
@@ -725,11 +725,26 @@ func (e *Editor) restoreSessionState() {
 		e.mode = ModeNormal
 	}
 
-	// Restore selection
+	// Restore selection with bounds validation
 	if state.SelectionActive {
-		e.selectionActive = true
-		e.selectionStart = Cursor{Row: state.SelectionStartRow, Col: state.SelectionStartCol}
-		e.selectionEnd = Cursor{Row: state.SelectionEndRow, Col: state.SelectionEndCol}
+		// Validate selection is within file bounds
+		if state.SelectionStartRow >= len(e.lines) || state.SelectionEndRow >= len(e.lines) {
+			// File was shortened - reset selection
+			e.selectionActive = false
+		} else {
+			e.selectionActive = true
+			// Clamp columns to line lengths
+			startCol := state.SelectionStartCol
+			if startCol > len(e.lines[state.SelectionStartRow]) {
+				startCol = len(e.lines[state.SelectionStartRow])
+			}
+			endCol := state.SelectionEndCol
+			if endCol > len(e.lines[state.SelectionEndRow]) {
+				endCol = len(e.lines[state.SelectionEndRow])
+			}
+			e.selectionStart = Cursor{Row: state.SelectionStartRow, Col: startCol}
+			e.selectionEnd = Cursor{Row: state.SelectionEndRow, Col: endCol}
+		}
 	}
 }
 
@@ -1709,7 +1724,7 @@ func (e *Editor) scrollCursorToBottom() {
 func (e *Editor) toggleLineComment() {
 	// Detect comment prefix based on file extension
 	ext := filepath.Ext(e.filename)
-	var prefix string
+	var prefix, suffix string
 	switch ext {
 	case ".go", ".c", ".cpp", ".h", ".java", ".js", ".ts", ".rs", ".swift":
 		prefix = "//"
@@ -1721,6 +1736,7 @@ func (e *Editor) toggleLineComment() {
 		prefix = "\""
 	case ".html", ".xml":
 		prefix = "<!--"
+		suffix = " -->"
 	default:
 		prefix = "//"
 	}
@@ -1776,11 +1792,12 @@ func (e *Editor) toggleLineComment() {
 		if len(line) == 0 {
 			continue // skip empty lines
 		}
-		// Check if comment prefix exists at or after minIndent
-		rest := line
-		if minIndent < len(line) {
-			rest = line[minIndent:]
+		// Check if comment prefix exists exactly at minIndent (after any leading whitespace)
+		if minIndent > len(line) {
+			allCommented = false
+			break
 		}
+		rest := line[minIndent:]
 		trimmed := strings.TrimLeft(rest, " \t")
 		if !strings.HasPrefix(trimmed, prefix) {
 			allCommented = false
@@ -1800,15 +1817,27 @@ func (e *Editor) toggleLineComment() {
 		}
 
 		if allCommented {
-			// Remove comment - find the prefix and remove it
-			idx := strings.Index(lineStr, prefix)
-			if idx >= 0 {
+			// Remove comment - find the prefix only after minIndent position
+			searchStart := minIndent
+			if searchStart > len(lineStr) {
+				searchStart = len(lineStr)
+			}
+			rest := lineStr[searchStart:]
+			// Find prefix in the rest of the line (should be at start after whitespace)
+			trimmedRest := strings.TrimLeft(rest, " \t")
+			prefixOffset := len(rest) - len(trimmedRest)
+			if strings.HasPrefix(trimmedRest, prefix) {
+				idx := searchStart + prefixOffset
 				// Remove prefix and one space if present
 				removeLen := len(prefix)
 				if idx+removeLen < len(lineStr) && lineStr[idx+removeLen] == ' ' {
 					removeLen++
 				}
 				newLine := lineStr[:idx] + lineStr[idx+removeLen:]
+				// Also remove suffix if present (for HTML/XML)
+				if suffix != "" && strings.HasSuffix(newLine, suffix) {
+					newLine = newLine[:len(newLine)-len(suffix)]
+				}
 				e.lines[row] = []rune(newLine)
 			}
 		} else {
@@ -1817,7 +1846,7 @@ func (e *Editor) toggleLineComment() {
 			if insertAt > len(lineStr) {
 				insertAt = len(lineStr)
 			}
-			newLine := lineStr[:insertAt] + prefix + " " + lineStr[insertAt:]
+			newLine := lineStr[:insertAt] + prefix + " " + lineStr[insertAt:] + suffix
 			e.lines[row] = []rune(newLine)
 		}
 	}
@@ -1973,7 +2002,6 @@ func isHelixSelectingMotion(action string) bool {
 	}
 	return false
 }
-
 
 func (e *Editor) handleInsert(ev *tcell.EventKey) bool {
 	if e.handleSelectionMove(ev) {
@@ -3494,7 +3522,7 @@ func (e *Editor) execCommand(cmd string) bool {
 		}
 		return false
 	case "fmt":
-		if err := e.FormatGo(); err != nil {
+		if err := e.FormatCurrent(); err != nil {
 			e.setStatus(err.Error())
 			return false
 		}
@@ -3566,6 +3594,260 @@ func (e *Editor) FormatGo() error {
 	}
 	e.replaceBuffer(formatted, true)
 	return nil
+}
+
+func (e *Editor) FormatCurrent() error {
+	if isMarkdownFile(e.filename) {
+		return e.FormatMarkdownTables()
+	}
+	if isGoFile(e.filename) {
+		return e.FormatGo()
+	}
+	return errors.New("format not supported")
+}
+
+func isGoFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	return ext == ".go"
+}
+
+func isMarkdownFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".md", ".markdown", ".mdown", ".mkd":
+		return true
+	default:
+		return false
+	}
+}
+
+func (e *Editor) FormatMarkdownTables() error {
+	src := e.Content()
+	lines := strings.Split(src, "\n")
+	if len(lines) == 0 {
+		return nil
+	}
+	changed := false
+	i := 0
+	for i < len(lines) {
+		if !lineHasPipe(lines[i]) {
+			i++
+			continue
+		}
+		sepIdx := findTableSeparator(lines, i)
+		if sepIdx == -1 || sepIdx == 0 {
+			i++
+			continue
+		}
+		start := sepIdx - 1
+		end := sepIdx + 1
+		for end < len(lines) && lineHasPipe(lines[end]) && strings.TrimSpace(lines[end]) != "" {
+			end++
+		}
+		if start < 0 || start >= end {
+			i++
+			continue
+		}
+		prefix := leadingWhitespace(lines[start])
+		block := lines[start:end]
+		formatted := formatMarkdownTableBlock(block, prefix)
+		if formatted == nil {
+			i = end
+			continue
+		}
+		for j := start; j < end; j++ {
+			if lines[j] != formatted[j-start] {
+				lines[j] = formatted[j-start]
+				changed = true
+			}
+		}
+		i = end
+	}
+	if !changed {
+		return nil
+	}
+	e.replaceBuffer(strings.Join(lines, "\n"), true)
+	return nil
+}
+
+func lineHasPipe(line string) bool {
+	return strings.Contains(line, "|")
+}
+
+func findTableSeparator(lines []string, start int) int {
+	for i := start; i < len(lines); i++ {
+		if isTableSeparator(lines[i]) {
+			return i
+		}
+		if strings.TrimSpace(lines[i]) == "" && i > start {
+			return -1
+		}
+	}
+	return -1
+}
+
+func isTableSeparator(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	if !strings.Contains(trimmed, "-") || !strings.Contains(trimmed, "|") {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "|") {
+		trimmed = trimmed[1:]
+	}
+	if strings.HasSuffix(trimmed, "|") {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	parts := strings.Split(trimmed, "|")
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		cell := strings.TrimSpace(part)
+		if cell == "" {
+			continue
+		}
+		if !onlyTableSepChars(cell) {
+			return false
+		}
+		if strings.Count(cell, "-") < 3 {
+			return false
+		}
+	}
+	return true
+}
+
+func onlyTableSepChars(cell string) bool {
+	for _, r := range cell {
+		if r != '-' && r != ':' {
+			return false
+		}
+	}
+	return true
+}
+
+func leadingWhitespace(line string) string {
+	i := 0
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
+	}
+	return line[:i]
+}
+
+type tableAlign struct {
+	left  bool
+	right bool
+}
+
+func formatMarkdownTableBlock(lines []string, prefix string) []string {
+	if len(lines) < 2 {
+		return nil
+	}
+	sepIdx := -1
+	for i, line := range lines {
+		if isTableSeparator(line) {
+			sepIdx = i
+			break
+		}
+	}
+	if sepIdx <= 0 {
+		return nil
+	}
+	rows := make([][]string, len(lines))
+	maxCols := 0
+	for i, line := range lines {
+		rows[i] = splitTableRow(line)
+		if len(rows[i]) > maxCols {
+			maxCols = len(rows[i])
+		}
+	}
+	if maxCols == 0 {
+		return nil
+	}
+	for i := range rows {
+		for len(rows[i]) < maxCols {
+			rows[i] = append(rows[i], "")
+		}
+	}
+	widths := make([]int, maxCols)
+	for i, row := range rows {
+		if i == sepIdx {
+			continue
+		}
+		for c, cell := range row {
+			w := runeLen(cell)
+			if w > widths[c] {
+				widths[c] = w
+			}
+		}
+	}
+	aligns := make([]tableAlign, maxCols)
+	for c, cell := range rows[sepIdx] {
+		s := strings.TrimSpace(cell)
+		if strings.HasPrefix(s, ":") {
+			aligns[c].left = true
+		}
+		if strings.HasSuffix(s, ":") {
+			aligns[c].right = true
+		}
+	}
+	out := make([]string, len(lines))
+	for i, row := range rows {
+		cells := make([]string, maxCols)
+		if i == sepIdx {
+			for c := 0; c < maxCols; c++ {
+				width := widths[c]
+				if width < 3 {
+					width = 3
+				}
+				switch {
+				case aligns[c].left && aligns[c].right:
+					dashes := strings.Repeat("-", max(1, width-2))
+					cells[c] = ":" + dashes + ":"
+				case aligns[c].left:
+					dashes := strings.Repeat("-", max(1, width-1))
+					cells[c] = ":" + dashes
+				case aligns[c].right:
+					dashes := strings.Repeat("-", max(1, width-1))
+					cells[c] = dashes + ":"
+				default:
+					cells[c] = strings.Repeat("-", width)
+				}
+			}
+		} else {
+			for c, cell := range row {
+				padding := widths[c] - runeLen(cell)
+				if padding < 0 {
+					padding = 0
+				}
+				cells[c] = cell + strings.Repeat(" ", padding)
+			}
+		}
+		out[i] = prefix + "| " + strings.Join(cells, " | ") + " |"
+	}
+	return out
+}
+
+func splitTableRow(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "|") {
+		trimmed = trimmed[1:]
+	}
+	if strings.HasSuffix(trimmed, "|") {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	parts := strings.Split(trimmed, "|")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, strings.TrimSpace(part))
+	}
+	return out
+}
+
+func runeLen(s string) int {
+	return len([]rune(s))
 }
 
 func (e *Editor) replaceBuffer(text string, markDirty bool) {
@@ -3836,6 +4118,12 @@ func jsonToAction(j actionJSON) action {
 	}
 }
 
+// undoHistoryHeader stores metadata for undo history validation
+type undoHistoryHeader struct {
+	Version int   `json:"v"`
+	Mtime   int64 `json:"mtime"`
+}
+
 // SaveUndoHistory saves the undo history to the changelog file
 func (e *Editor) SaveUndoHistory() error {
 	if e.filename == "" {
@@ -3853,6 +4141,12 @@ func (e *Editor) SaveUndoHistory() error {
 		return err
 	}
 
+	// Get file mtime for validation
+	var mtime int64
+	if info, err := os.Stat(e.filename); err == nil {
+		mtime = info.ModTime().UnixNano()
+	}
+
 	// Open file for writing
 	f, err := os.Create(logPath)
 	if err != nil {
@@ -3862,6 +4156,12 @@ func (e *Editor) SaveUndoHistory() error {
 
 	writer := bufio.NewWriter(f)
 	encoder := json.NewEncoder(writer)
+
+	// Write header with mtime for validation
+	header := undoHistoryHeader{Version: 1, Mtime: mtime}
+	if err := encoder.Encode(header); err != nil {
+		return err
+	}
 
 	// Write each action as a JSON line
 	for _, a := range e.undo {
@@ -3893,10 +4193,36 @@ func (e *Editor) LoadUndoHistory() error {
 	}
 	defer f.Close()
 
+	// Get current file mtime for validation
+	var currentMtime int64
+	if info, err := os.Stat(e.filename); err == nil {
+		currentMtime = info.ModTime().UnixNano()
+	}
+
 	e.undo = nil
 	scanner := bufio.NewScanner(f)
 	// Increase buffer size for large actions
 	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
+
+	// Read and validate header first
+	if scanner.Scan() {
+		var header undoHistoryHeader
+		if err := json.Unmarshal(scanner.Bytes(), &header); err == nil {
+			if header.Version > 0 {
+				// New format with header - validate mtime
+				if header.Mtime != currentMtime {
+					// File was modified externally, discard history
+					return nil
+				}
+			} else {
+				// Old format without header - treat as action
+				var j actionJSON
+				if err := json.Unmarshal(scanner.Bytes(), &j); err == nil {
+					e.undo = append(e.undo, jsonToAction(j))
+				}
+			}
+		}
+	}
 
 	for scanner.Scan() {
 		var j actionJSON
@@ -6230,7 +6556,6 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 	return cursorX
 }
 
-
 // GroupInfo describes a group of commands for layout optimization
 type GroupInfo struct {
 	Name     string
@@ -6843,6 +7168,8 @@ func (e *Editor) styleForHighlight(kind string) (tcell.Style, bool) {
 		return e.styleSyntaxVariable, true
 	case "parameter":
 		return e.styleSyntaxParameter, true
+	case "text":
+		return e.styleMain, true
 	default:
 		return e.styleMain, false
 	}
@@ -6872,6 +7199,8 @@ func highlightPriority(kind string) int {
 		return 1
 	case "punctuation":
 		return 1
+	case "text":
+		return 8
 	default:
 		return 0
 	}
@@ -8025,8 +8354,8 @@ func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
 
 	// Build display list with group headers
 	type displayRow struct {
-		text      string
-		isHeader  bool
+		text       string
+		isHeader   bool
 		isGroupHdr bool
 	}
 	var rows []displayRow
