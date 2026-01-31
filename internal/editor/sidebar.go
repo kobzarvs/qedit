@@ -327,17 +327,25 @@ func (s *Sidebar) HandleKey(ev *tcell.EventKey, viewHeight int) SidebarActionDat
 	case key == tcell.KeyEnter:
 		return s.Content.OnEnter()
 
-	case key == tcell.KeyEscape:
-		// In menu mode: close; in other modes: back to menu
+	case key == tcell.KeyRight || r == 'l':
+		// Right/l only works in menu mode (to enter submenu), not on leaf items
 		if s.Content.Mode() == SidebarModeMenu {
-			return SidebarActionData{Action: SidebarActionClose}
+			return s.Content.OnEnter()
 		}
-		return SidebarActionData{Action: SidebarActionBackToMenu}
+		return SidebarActionData{Action: SidebarActionNone}
 
-	case r == 'q':
+	case key == tcell.KeyLeft || r == 'h':
+		// Left/h: back to menu (does nothing if already in menu)
+		if s.Content.Mode() != SidebarModeMenu {
+			return SidebarActionData{Action: SidebarActionBackToMenu}
+		}
+		return SidebarActionData{Action: SidebarActionNone}
+
+	case key == tcell.KeyEscape || r == 'q':
+		// Esc/q always closes sidebar
 		return SidebarActionData{Action: SidebarActionClose}
 
-	case r == '`' || key == tcell.KeyTab:
+	case r == '`':
 		return SidebarActionData{Action: SidebarActionFocusEditor}
 	}
 
