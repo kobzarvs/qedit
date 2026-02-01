@@ -3,6 +3,7 @@ package editor
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,5 +84,142 @@ func TestReloadFromDiskRequiresForceWhenDirty(t *testing.T) {
 
 	if err := e.ReloadFromDisk(false); err == nil {
 		t.Fatalf("expected error when reloading dirty buffer without force")
+	}
+}
+
+func TestMergeExternalContentConflict(t *testing.T) {
+	prev := mergeWithGitFunc
+	mergeWithGitFunc = func(base, local, remote string) (string, bool, error) {
+		merged := strings.Join([]string{
+			"alpha",
+			"<<<<<<< local",
+			"local",
+			"=======",
+			"remote",
+			">>>>>>> remote",
+			"charlie",
+			"",
+		}, "\n")
+		return merged, true, nil
+	}
+	defer func() { mergeWithGitFunc = prev }()
+
+	e := newTestEditor()
+	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
+	e.diskContent = e.Content()
+	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
+
+	conflict, err := e.MergeExternalContent("alpha\nremote\ncharlie\n")
+	if err != nil {
+		t.Fatalf("merge error: %v", err)
+	}
+	if !conflict {
+		t.Fatalf("expected conflict")
+	}
+	if got := e.Content(); got != "alpha\nlocal\nremote\ncharlie\n" {
+		t.Fatalf("content=%q", got)
+	}
+	if len(e.conflictBlocks) != 1 {
+		t.Fatalf("conflict blocks=%d, want 1", len(e.conflictBlocks))
+	}
+	block := e.conflictBlocks[0]
+	if block.localStart != 1 || block.localEnd != 1 {
+		t.Fatalf("local range=%d..%d, want 1..1", block.localStart, block.localEnd)
+	}
+	if block.remoteStart != 2 || block.remoteEnd != 2 {
+		t.Fatalf("remote range=%d..%d, want 2..2", block.remoteStart, block.remoteEnd)
+	}
+	if kind, _ := e.conflictLineInfo(1); kind != conflictLocal {
+		t.Fatalf("line1 kind=%v, want local", kind)
+	}
+	if kind, _ := e.conflictLineInfo(2); kind != conflictRemote {
+		t.Fatalf("line2 kind=%v, want remote", kind)
+	}
+}
+
+func TestMergeExternalContentNoConflict(t *testing.T) {
+	prev := mergeWithGitFunc
+	mergeWithGitFunc = func(base, local, remote string) (string, bool, error) {
+		return "alpha\nmerged\ncharlie\n", false, nil
+	}
+	defer func() { mergeWithGitFunc = prev }()
+
+	e := newTestEditor()
+	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
+	e.diskContent = e.Content()
+	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
+
+	conflict, err := e.MergeExternalContent("alpha\nremote\ncharlie\n")
+	if err != nil {
+		t.Fatalf("merge error: %v", err)
+	}
+	if conflict {
+		t.Fatalf("unexpected conflict")
+	}
+	if got := e.Content(); got != "alpha\nmerged\ncharlie\n" {
+		t.Fatalf("content=%q", got)
+	}
+	if len(e.conflictBlocks) != 0 {
+		t.Fatalf("expected no conflict blocks")
+	}
+}
+
+func TestResolveConflictAcceptLocal(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflictBlocks = blocks
+	e.conflictBlocksDirty = false
+	e.cursor = Cursor{Row: 1, Col: 0}
+
+	if !e.resolveConflictAtCursor(true) {
+		t.Fatalf("expected conflict resolution")
+	}
+	if got := e.Content(); got != "alpha\nlocal\ncharlie\n" {
+		t.Fatalf("content=%q", got)
+	}
+	if len(e.conflictBlocks) != 0 {
+		t.Fatalf("expected conflict blocks cleared")
+	}
+}
+
+func TestResolveConflictRejectLocal(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflictBlocks = blocks
+	e.conflictBlocksDirty = false
+	e.cursor = Cursor{Row: 1, Col: 0}
+
+	if !e.resolveConflictAtCursor(false) {
+		t.Fatalf("expected conflict resolution")
+	}
+	if got := e.Content(); got != "alpha\nremote\ncharlie\n" {
+		t.Fatalf("content=%q", got)
+	}
+	if len(e.conflictBlocks) != 0 {
+		t.Fatalf("expected conflict blocks cleared")
 	}
 }

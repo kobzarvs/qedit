@@ -60,7 +60,7 @@ func TestRenderCursorWithTab(t *testing.T) {
 	cfg.Editor.LineNumbers = "off"
 	e := New(optionsFromConfig(cfg))
 	applyTestStyles(e)
-	e.lines = [][]rune{[]rune("a\tb")}
+	e.text = NewTextBufferFromString("a\tb")
 	e.cursor = Cursor{Row: 0, Col: 2}
 
 	s := tcell.NewSimulationScreen("UTF-8")
@@ -75,7 +75,7 @@ func TestRenderCursorWithTab(t *testing.T) {
 	if !visible {
 		t.Fatalf("cursor not visible")
 	}
-	wantX := visualCol(e.lines[0], e.cursor.Col, e.tabWidth)
+	wantX := visualCol(e.line(0), e.cursor.Col, e.tabWidth)
 	if x != wantX {
 		t.Fatalf("cursor x = %d, want %d", x, wantX)
 	}
@@ -89,7 +89,7 @@ func TestRenderSelectionStyle(t *testing.T) {
 	cfg.Editor.LineNumbers = "off"
 	e := New(optionsFromConfig(cfg))
 	applyTestStyles(e)
-	e.lines = [][]rune{[]rune("abc")}
+	e.text = NewTextBufferFromString("abc")
 	e.selectionActive = true
 	e.selectionStart = Cursor{Row: 0, Col: 1}
 	e.selectionEnd = Cursor{Row: 0, Col: 2}
@@ -117,7 +117,7 @@ func TestRenderSyntaxHighlightStyle(t *testing.T) {
 	cfg.Editor.LineNumbers = "off"
 	e := New(optionsFromConfig(cfg))
 	applyTestStyles(e)
-	e.lines = [][]rune{[]rune("abc")}
+	e.text = NewTextBufferFromString("abc")
 	e.SetHighlights(0, 0, map[int][]HighlightSpan{
 		0: {
 			{StartCol: 0, EndCol: 1, Kind: "keyword"},

@@ -13,7 +13,7 @@ import (
 
 func (e *Editor) HandleKey(ev EventKey) bool {
 	e.freeScroll = false
-	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" {
+	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" && !e.autoReloadInProgress {
 		e.statusMessage = ""
 	}
 	// Track last key combination for display
@@ -22,6 +22,11 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 	// Handle sidebar if focused
 	if e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused {
 		return e.handleSidebarKey(ev)
+	}
+
+	// Handle AI panel if focused
+	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused {
+		return e.handleAIPanelKey(ev)
 	}
 
 	switch e.mode {
@@ -33,6 +38,8 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 		return e.handleBranchPicker(ev)
 	case ModeSearch:
 		return e.handleSearch(ev)
+	case ModeMerge:
+		return e.handleMerge(ev)
 	default:
 		return e.handleNormal(ev)
 	}
@@ -95,7 +102,8 @@ func (e *Editor) clampScrollX(textWidth int) {
 // maxVisibleLineWidth returns the maximum visual width of lines in the visible
 // area plus 2 lines above and below (buffer zone).
 func (e *Editor) maxVisibleLineWidth() int {
-	if len(e.lines) == 0 {
+	lineCount := e.LineCount()
+	if lineCount == 0 {
 		return 0
 	}
 	startLine := e.scroll - 2
@@ -103,12 +111,13 @@ func (e *Editor) maxVisibleLineWidth() int {
 		startLine = 0
 	}
 	endLine := e.scroll + e.viewHeight + 2
-	if endLine > len(e.lines) {
-		endLine = len(e.lines)
+	if endLine > lineCount {
+		endLine = lineCount
 	}
 	maxWidth := 0
 	for i := startLine; i < endLine; i++ {
-		w := visualCol(e.lines[i], len(e.lines[i]), e.tabWidth)
+		line := e.text.Line(i)
+		w := visualCol(line, len(line), e.tabWidth)
 		if w > maxWidth {
 			maxWidth = w
 		}
@@ -123,8 +132,9 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 	if row < 0 {
 		row = 0
 	}
-	if row >= len(e.lines) {
-		row = len(e.lines) - 1
+	lineCount := e.LineCount()
+	if row >= lineCount {
+		row = lineCount - 1
 	}
 	if row < 0 {
 		return // empty file
@@ -138,7 +148,7 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 	}
 
 	// Convert visual column to logical column
-	col := visualToLogicalCol(e.lines[row], visualX, e.tabWidth)
+	col := visualToLogicalCol(e.text.Line(row), visualX, e.tabWidth)
 
 	// Set cursor position
 	e.cursor.Row = row
@@ -158,7 +168,7 @@ func (e *Editor) scrollUp(lines int) {
 func (e *Editor) scrollDown(lines int) {
 	// Keep last line at least 5 lines above status line
 	viewHeight := e.viewHeightCached()
-	maxScroll := len(e.lines) - viewHeight + 5
+	maxScroll := e.LineCount() - viewHeight + 5
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
@@ -187,7 +197,7 @@ func (e *Editor) scrollViewUp() {
 func (e *Editor) scrollViewDown() {
 	// Keep last line at least 5 lines above status line
 	viewHeight := e.viewHeightCached()
-	maxScroll := len(e.lines) - viewHeight + 5
+	maxScroll := e.LineCount() - viewHeight + 5
 	if maxScroll < 0 {
 		maxScroll = 0
 	}

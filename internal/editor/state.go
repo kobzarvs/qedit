@@ -25,19 +25,20 @@ func New(opts Options) *Editor {
 
 	e := &Editor{
 		Buffer: Buffer{
-			lines:  [][]rune{[]rune{}},
+			text:   NewTextBufferFromRunes(nil),
 			cursor: Cursor{},
 		},
-		mode:              ModeNormal,
-		keymap:            keymapSet{normal: normal, insert: insert},
-		tabWidth:          tabWidth,
-		lineNumberMode:    lineNumberMode,
-		gitBranchSymbol:   gitBranchSymbol,
-		highlightStart:    -1,
-		highlightEnd:      -1,
-		cmdHistoryPath:    opts.CmdHistoryPath,
-		searchHistoryPath: opts.SearchHistoryPath,
-		sessionStore:      opts.SessionStore,
+		mode:                ModeNormal,
+		keymap:              keymapSet{normal: normal, insert: insert},
+		tabWidth:            tabWidth,
+		lineNumberMode:      lineNumberMode,
+		gitBranchSymbol:     gitBranchSymbol,
+		autoReloadOnChanges: opts.AutoReloadOnChanges,
+		highlightStart:      -1,
+		highlightEnd:        -1,
+		cmdHistoryPath:      opts.CmdHistoryPath,
+		searchHistoryPath:   opts.SearchHistoryPath,
+		sessionStore:        opts.SessionStore,
 		sidebar: NewSidebar(
 			opts.SidebarWidth,
 			opts.SidebarMinWidth,
@@ -53,11 +54,10 @@ func (e *Editor) OpenFile(path string) error {
 	if err != nil {
 		return err
 	}
-	e.lines = splitLines(data)
-	if len(e.lines) == 0 {
-		e.lines = [][]rune{[]rune{}}
-	}
+	e.text = NewTextBufferFromBytes(data)
 	e.cursor = Cursor{}
+	e.diskContent = e.Content()
+	e.resetConflictBlocks()
 	e.scroll = 0
 	e.scrollX = 0
 	e.mode = ModeNormal
@@ -98,15 +98,16 @@ func (e *Editor) restoreSessionState() {
 
 	// Restore cursor (clamped to valid range)
 	e.cursor.Row = state.CursorRow
-	if e.cursor.Row >= len(e.lines) {
-		e.cursor.Row = len(e.lines) - 1
+	lineCount := e.LineCount()
+	if e.cursor.Row >= lineCount {
+		e.cursor.Row = lineCount - 1
 	}
 	if e.cursor.Row < 0 {
 		e.cursor.Row = 0
 	}
 	e.cursor.Col = state.CursorCol
-	if e.cursor.Row < len(e.lines) && e.cursor.Col > len(e.lines[e.cursor.Row]) {
-		e.cursor.Col = len(e.lines[e.cursor.Row])
+	if e.cursor.Row < lineCount && e.cursor.Col > e.text.LineLen(e.cursor.Row) {
+		e.cursor.Col = e.text.LineLen(e.cursor.Row)
 	}
 	if e.cursor.Col < 0 {
 		e.cursor.Col = 0
@@ -133,19 +134,19 @@ func (e *Editor) restoreSessionState() {
 	// Restore selection with bounds validation
 	if state.SelectionActive {
 		// Validate selection is within file bounds
-		if state.SelectionStartRow >= len(e.lines) || state.SelectionEndRow >= len(e.lines) {
+		if state.SelectionStartRow >= lineCount || state.SelectionEndRow >= lineCount {
 			// File was shortened - reset selection
 			e.selectionActive = false
 		} else {
 			e.selectionActive = true
 			// Clamp columns to line lengths
 			startCol := state.SelectionStartCol
-			if startCol > len(e.lines[state.SelectionStartRow]) {
-				startCol = len(e.lines[state.SelectionStartRow])
+			if startCol > e.text.LineLen(state.SelectionStartRow) {
+				startCol = e.text.LineLen(state.SelectionStartRow)
 			}
 			endCol := state.SelectionEndCol
-			if endCol > len(e.lines[state.SelectionEndRow]) {
-				endCol = len(e.lines[state.SelectionEndRow])
+			if endCol > e.text.LineLen(state.SelectionEndRow) {
+				endCol = e.text.LineLen(state.SelectionEndRow)
 			}
 			e.selectionStart = Cursor{Row: state.SelectionStartRow, Col: startCol}
 			e.selectionEnd = Cursor{Row: state.SelectionEndRow, Col: endCol}
@@ -189,7 +190,10 @@ func (e *Editor) Shutdown() {
 	}
 }
 func (e *Editor) Content() string {
-	return joinLines(e.lines)
+	if e.text == nil {
+		return ""
+	}
+	return e.text.String()
 }
 func (e *Editor) SetKeyboardLayout(name string) {
 	e.layoutName = strings.TrimSpace(name)
@@ -242,10 +246,14 @@ func (e *Editor) ConsumeLastEdit() (TextEdit, bool) {
 	return edit, true
 }
 func (e *Editor) LineCount() int {
-	return len(e.lines)
+	if e.text == nil {
+		return 1
+	}
+	return e.text.LineCount()
 }
 func (e *Editor) VisibleRange() (int, int) {
-	if len(e.lines) == 0 {
+	lineCount := e.LineCount()
+	if lineCount == 0 {
 		return 0, 0
 	}
 	start := e.scroll
@@ -256,8 +264,8 @@ func (e *Editor) VisibleRange() (int, int) {
 	if end < start {
 		end = start
 	}
-	if end >= len(e.lines) {
-		end = len(e.lines) - 1
+	if end >= lineCount {
+		end = lineCount - 1
 	}
 	return start, end
 }

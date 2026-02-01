@@ -11,6 +11,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 	sitter "github.com/smacker/go-tree-sitter"
 
+	"github.com/kobzarvs/qedit/internal/ai"
+	"github.com/kobzarvs/qedit/internal/ai/providers"
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
@@ -105,6 +107,7 @@ func (a *App) Run() error {
 		SidebarMinWidth:      cfg.Editor.SidebarMinWidth,
 		SidebarMaxWidth:      cfg.Editor.SidebarMaxWidth,
 		SidebarCloseOnSelect: cfg.Editor.SidebarCloseOnSelect,
+		AutoReloadOnChanges:  cfg.Editor.AutoReloadOnChanges,
 		KeymapNormal:         cfg.Keymap.Normal,
 		KeymapInsert:         cfg.Keymap.Insert,
 		CmdHistoryPath:       cmdHistoryPath,
@@ -113,11 +116,43 @@ func (a *App) Run() error {
 	})
 	defer ed.Shutdown()
 	ed.SetStyles(ui.StylesFromConfig(cfg))
+	ed.SetAutoReloadConfigHook(func(enabled bool) error {
+		if err := config.UpdateEditorAutoReloadOnChanges(enabled); err != nil {
+			return err
+		}
+		cfg.Editor.AutoReloadOnChanges = enabled
+		return nil
+	})
 	ed.SetFormatter(integrations.GoFormatter{})
 	if runtime.GOOS == "darwin" {
 		ed.SetClipboard(integrations.MacClipboard{})
 		ed.SetTerminalZoomer(integrations.TerminalZoomer{})
 	}
+
+	// Initialize AI providers
+	aiMgr := ai.NewManager()
+
+	// Register Claude Code CLI provider (priority)
+	claudeProvider := providers.NewClaudeProvider()
+	aiMgr.Register(claudeProvider)
+
+	// Register preset API providers (Ollama, LM Studio, etc.)
+	for _, preset := range providers.GetPresets() {
+		provider := providers.NewOpenAIAPIProvider(preset)
+		aiMgr.Register(provider)
+	}
+
+	// Set default provider: Claude if available, otherwise Ollama
+	if claudeProvider.Available() {
+		_ = aiMgr.SetActive("claude")
+	} else {
+		_ = aiMgr.SetActive("ollama")
+	}
+
+	// Set AI manager on editor
+	aiAdapter := integrations.NewAIManager(aiMgr)
+	ed.SetAIManager(aiAdapter)
+
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()
 	gitPath := ""
@@ -156,6 +191,19 @@ func (a *App) Run() error {
 		autoReloadMaxBytes = int64(8 << 20)
 		filePollInterval   = time.Second
 	)
+	autoReloadStabilizeDelay := time.Duration(cfg.Editor.AutoReloadStabilizeMS) * time.Millisecond
+	if autoReloadStabilizeDelay < 0 {
+		autoReloadStabilizeDelay = 0
+	}
+	autoReloadRetries := cfg.Editor.AutoReloadMaxRetries
+	if autoReloadRetries < 1 {
+		autoReloadRetries = 1
+	}
+	type autoReloadResult struct {
+		seq  uint64
+		data []byte
+		err  error
+	}
 	var (
 		fileWatcher       *fsnotify.Watcher
 		fileEvents        chan time.Time
@@ -163,6 +211,10 @@ func (a *App) Run() error {
 		lastFileEvent     time.Time
 		lastFileCheck     time.Time
 		watchedPath       string
+		autoReloadSeq     uint64
+		autoReloadActive  bool
+		autoReloadPending bool
+		autoReloadResults chan autoReloadResult
 	)
 	if openPath != "" {
 		absPath := openPath
@@ -223,6 +275,70 @@ func (a *App) Run() error {
 	if fileWatcher != nil {
 		defer func() { _ = fileWatcher.Close() }()
 	}
+	if openPath != "" {
+		autoReloadResults = make(chan autoReloadResult, 1)
+	}
+	readFileStable := func(path string, attempts int, delay time.Duration) ([]byte, error) {
+		var lastErr error
+		for i := 0; i < attempts; i++ {
+			infoBefore, err := os.Stat(path)
+			if err != nil {
+				return nil, err
+			}
+			time.Sleep(delay)
+			infoMid, err := os.Stat(path)
+			if err != nil {
+				return nil, err
+			}
+			if !infoBefore.ModTime().Equal(infoMid.ModTime()) || infoBefore.Size() != infoMid.Size() {
+				lastErr = fmt.Errorf("file changed during read")
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				lastErr = err
+				time.Sleep(delay)
+				continue
+			}
+			infoAfter, err := os.Stat(path)
+			if err != nil {
+				return nil, err
+			}
+			if infoMid.ModTime().Equal(infoAfter.ModTime()) && infoMid.Size() == infoAfter.Size() && int64(len(data)) == infoAfter.Size() {
+				return data, nil
+			}
+			lastErr = fmt.Errorf("file changed during read")
+			time.Sleep(delay)
+		}
+		return nil, lastErr
+	}
+	startAutoReload := func() {
+		if watchedPath == "" {
+			return
+		}
+		if autoReloadActive {
+			autoReloadPending = true
+			return
+		}
+		autoReloadActive = true
+		autoReloadPending = false
+		autoReloadSeq++
+		seq := autoReloadSeq
+		ed.SetAutoReloadInProgress(true)
+		go func(path string, currentSeq uint64) {
+			data, err := readFileStable(path, autoReloadRetries, autoReloadStabilizeDelay)
+			select {
+			case autoReloadResults <- autoReloadResult{seq: currentSeq, data: data, err: err}:
+			default:
+				select {
+				case <-autoReloadResults:
+				default:
+				}
+				autoReloadResults <- autoReloadResult{seq: currentSeq, data: data, err: err}
+			}
+			_ = s.PostEvent(tcell.NewEventInterrupt(nil))
+		}(watchedPath, seq)
+	}
 	applyExternalChange := func() {
 		change, err := ed.CheckExternalChange()
 		if err != nil {
@@ -235,25 +351,33 @@ func (a *App) Run() error {
 			}
 			return
 		}
-		if change == editor.ExternalChangeModified && !ed.IsDirty() {
-			autoReload := true
+		if change == editor.ExternalChangeModified {
+			if ed.AutoReloadOnChanges() {
+				ed.ClearExternalChange()
+				startAutoReload()
+				return
+			}
+			largeFile := false
 			if name := ed.Filename(); name != "" {
 				if info, err := os.Stat(name); err == nil && info.Size() > autoReloadMaxBytes {
-					autoReload = false
+					largeFile = true
 				}
-			}
-			if autoReload {
-				if err := ed.ReloadFromDisk(false); err != nil {
-					ed.SetStatusMessage("reload failed: " + err.Error())
-				} else {
-					ed.SetStatusMessage("reloaded from disk")
-				}
-				return
 			}
 			if ed.ExternalChange() != change {
 				ed.SetExternalChange(change)
-				ed.SetStatusMessage("file changed on disk (>8MB, use :e to reload)")
+				msg := "file changed on disk (use :e to reload)"
+				if ed.HasLocalChanges() {
+					msg = "file changed on disk (use :e! to reload)"
+				}
+				if largeFile {
+					msg = "large file changed on disk (use :e to reload)"
+					if ed.HasLocalChanges() {
+						msg = "large file changed on disk (use :e! to reload)"
+					}
+				}
+				ed.SetStatusMessage(msg)
 			}
+			ed.MarkExternalDirty()
 			return
 		}
 		if ed.ExternalChange() != change {
@@ -467,7 +591,33 @@ func (a *App) Run() error {
 				pendingFileChange = false
 				applyExternalChange()
 			}
-		} else if openPath != "" && time.Since(lastFileCheck) > filePollInterval {
+		}
+		if autoReloadActive {
+			select {
+			case res := <-autoReloadResults:
+				if res.seq == autoReloadSeq {
+					autoReloadActive = false
+					ed.SetAutoReloadInProgress(false)
+					if res.err != nil {
+						ed.SetExternalChange(editor.ExternalChangeModified)
+						ed.SetStatusMessage("auto reload failed: " + res.err.Error())
+					} else if conflict, err := ed.MergeExternalContent(string(res.data)); err != nil {
+						ed.SetExternalChange(editor.ExternalChangeModified)
+						ed.SetStatusMessage("auto reload failed: " + err.Error())
+					} else if conflict {
+						ed.SetStatusMessage("auto reload merged with conflicts")
+					} else {
+						ed.SetStatusMessage("auto reload complete")
+					}
+				}
+				if autoReloadPending && ed.AutoReloadOnChanges() {
+					autoReloadPending = false
+					startAutoReload()
+				}
+			default:
+			}
+		}
+		if openPath != "" && time.Since(lastFileCheck) > filePollInterval {
 			lastFileCheck = time.Now()
 			applyExternalChange()
 		}
@@ -539,6 +689,19 @@ func (a *App) Run() error {
 		if highlightExpected && !ed.HasHighlights() {
 			continue
 		}
+
+		// Process AI events (non-blocking)
+		if aiAdapter != nil {
+			select {
+			case aiEvent, ok := <-aiAdapter.Events():
+				if ok {
+					ed.ProcessAIEvent(aiEvent)
+				}
+			default:
+				// No event available, continue
+			}
+		}
+
 		ed.Render(screen)
 	}
 }

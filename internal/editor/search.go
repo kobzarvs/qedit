@@ -279,7 +279,8 @@ func (e *Editor) updateSearchMatches() {
 			e.setStatus("regex error: " + err.Error())
 			return
 		}
-		for row, line := range e.lines {
+		for row := 0; row < e.LineCount(); row++ {
+			line := e.line(row)
 			lineStr := string(line)
 			matches := re.FindAllStringIndex(lineStr, -1)
 			for _, m := range matches {
@@ -298,7 +299,8 @@ func (e *Editor) updateSearchMatches() {
 		queryLower := strings.ToLower(query)
 
 		// Search through all lines
-		for row, line := range e.lines {
+		for row := 0; row < e.LineCount(); row++ {
+			line := e.line(row)
 			lineStr := string(line)
 			lineLower := strings.ToLower(lineStr)
 

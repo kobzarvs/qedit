@@ -19,10 +19,7 @@ func newTestEditor(lines ...string) *Editor {
 	cfg := config.Default()
 	e := New(optionsFromConfig(cfg))
 	applyTestStyles(e)
-	e.lines = make([][]rune, len(lines))
-	for i, line := range lines {
-		e.lines[i] = []rune(line)
-	}
+	e.text = NewTextBufferFromString(strings.Join(lines, "\n"))
 	return e
 }
 
@@ -56,7 +53,7 @@ func TestVisualColWithTabs(t *testing.T) {
 
 func TestMoveWordLeftRight(t *testing.T) {
 	e := newTestEditor("foo  bar_baz;qux")
-	e.cursor = Cursor{Row: 0, Col: len(e.lines[0])}
+	e.cursor = Cursor{Row: 0, Col: e.lineLen(0)}
 	e.moveWordLeft()
 	if e.cursor.Col != 13 {
 		t.Fatalf("word left col = %d, want 13", e.cursor.Col)
@@ -81,18 +78,18 @@ func TestMoveLineUpDownUndo(t *testing.T) {
 	e := newTestEditor("one", "two", "three")
 	e.cursor = Cursor{Row: 1, Col: 0}
 	e.moveLineUp()
-	if got := string(e.lines[0]); got != "two" {
+	if got := string(e.line(0)); got != "two" {
 		t.Fatalf("line0 = %q, want %q", got, "two")
 	}
 	if e.cursor.Row != 0 {
 		t.Fatalf("cursor row = %d, want 0", e.cursor.Row)
 	}
 	e.Undo()
-	if got := string(e.lines[0]); got != "one" {
+	if got := string(e.line(0)); got != "one" {
 		t.Fatalf("undo line0 = %q, want %q", got, "one")
 	}
 	e.Redo()
-	if got := string(e.lines[0]); got != "two" {
+	if got := string(e.line(0)); got != "two" {
 		t.Fatalf("redo line0 = %q, want %q", got, "two")
 	}
 }
@@ -119,7 +116,7 @@ func TestSelectionRangeForLine(t *testing.T) {
 
 func TestSelectionMoveWithShiftMeta(t *testing.T) {
 	e := newTestEditor("foo  bar")
-	e.cursor = Cursor{Row: 0, Col: len(e.lines[0])}
+	e.cursor = Cursor{Row: 0, Col: e.lineLen(0)}
 	ev := wrapKey(tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModMeta|tcell.ModShift))
 	if !e.handleSelectionMove(ev) {
 		t.Fatalf("handleSelectionMove returned false")
@@ -293,7 +290,7 @@ func TestHandleInsertNewlineUndo(t *testing.T) {
 	if quit := e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0))); quit {
 		t.Fatalf("enter returned quit")
 	}
-	if len(e.lines) != 2 || string(e.lines[0]) != "a" || string(e.lines[1]) != "b" {
+	if e.LineCount() != 2 || string(e.line(0)) != "a" || string(e.line(1)) != "b" {
 		t.Fatalf("lines = %q, want [\"a\" \"b\"]", e.Content())
 	}
 	if quit := e.HandleKey(keyEsc()); quit {
@@ -469,14 +466,14 @@ func TestInsertModeWithSelectionTabViaHandleKey(t *testing.T) {
 	// Send TAB key event
 	e.HandleKey(keyTab())
 
-	if string(e.lines[0]) != "\taa" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	if string(e.line(0)) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "\taa")
 	}
-	if string(e.lines[1]) != "\tbb" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	if string(e.line(1)) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "\tbb")
 	}
-	if string(e.lines[2]) != "cc" {
-		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	if string(e.line(2)) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.line(2)), "cc")
 	}
 	if !e.selectionActive {
 		t.Fatalf("selectionActive = false, want true")
@@ -495,14 +492,14 @@ func TestInsertModeWithSelectionShiftTabViaHandleKey(t *testing.T) {
 	// Send Shift+TAB key event
 	e.HandleKey(keyShiftTab())
 
-	if string(e.lines[0]) != "aa" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "aa")
+	if string(e.line(0)) != "aa" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "aa")
 	}
-	if string(e.lines[1]) != "bb" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "bb")
+	if string(e.line(1)) != "bb" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "bb")
 	}
-	if string(e.lines[2]) != "cc" {
-		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	if string(e.line(2)) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.line(2)), "cc")
 	}
 	if !e.selectionActive {
 		t.Fatalf("selectionActive = false, want true")
@@ -519,8 +516,8 @@ func TestInsertModeNoSelectionTabViaHandleKey(t *testing.T) {
 	// Send TAB key event
 	e.HandleKey(keyTab())
 
-	if string(e.lines[0]) != "a\tb" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "a\tb")
+	if string(e.line(0)) != "a\tb" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "a\tb")
 	}
 	if e.cursor.Col != 2 {
 		t.Fatalf("cursor.Col = %d, want 2", e.cursor.Col)
@@ -537,8 +534,8 @@ func TestInsertModeNoSelectionShiftTabViaHandleKey(t *testing.T) {
 	// Send Shift+TAB key event
 	e.HandleKey(keyShiftTab())
 
-	if string(e.lines[0]) != "ab" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "ab")
+	if string(e.line(0)) != "ab" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "ab")
 	}
 }
 
@@ -554,14 +551,14 @@ func TestNormalModeWithSelectionTabViaHandleKey(t *testing.T) {
 	// Send TAB key event
 	e.HandleKey(keyTab())
 
-	if string(e.lines[0]) != "\taa" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	if string(e.line(0)) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "\taa")
 	}
-	if string(e.lines[1]) != "\tbb" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	if string(e.line(1)) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "\tbb")
 	}
-	if string(e.lines[2]) != "cc" {
-		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	if string(e.line(2)) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.line(2)), "cc")
 	}
 	if !e.selectionActive {
 		t.Fatalf("selectionActive = false, want true")
@@ -580,14 +577,14 @@ func TestNormalModeWithSelectionShiftTabViaHandleKey(t *testing.T) {
 	// Send Shift+TAB key event
 	e.HandleKey(keyShiftTab())
 
-	if string(e.lines[0]) != "aa" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "aa")
+	if string(e.line(0)) != "aa" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "aa")
 	}
-	if string(e.lines[1]) != "bb" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "bb")
+	if string(e.line(1)) != "bb" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "bb")
 	}
-	if string(e.lines[2]) != "cc" {
-		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "cc")
+	if string(e.line(2)) != "cc" {
+		t.Fatalf("line2 = %q, want %q", string(e.line(2)), "cc")
 	}
 	if !e.selectionActive {
 		t.Fatalf("selectionActive = false, want true")
@@ -605,8 +602,8 @@ func TestNormalModeNoSelectionTabViaHandleKey(t *testing.T) {
 	e.HandleKey(keyTab())
 
 	// Tab should go at LINE START, not cursor position!
-	if string(e.lines[0]) != "\tab" {
-		t.Fatalf("line0 = %q, want %q (tab at LINE START)", string(e.lines[0]), "\tab")
+	if string(e.line(0)) != "\tab" {
+		t.Fatalf("line0 = %q, want %q (tab at LINE START)", string(e.line(0)), "\tab")
 	}
 }
 
@@ -620,8 +617,8 @@ func TestNormalModeNoSelectionShiftTabViaHandleKey(t *testing.T) {
 	// Send Shift+TAB key event
 	e.HandleKey(keyShiftTab())
 
-	if string(e.lines[0]) != "ab" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "ab")
+	if string(e.line(0)) != "ab" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "ab")
 	}
 }
 
@@ -637,18 +634,18 @@ func TestSelectionWithEndColZeroExcludesLastLineViaHandleKey(t *testing.T) {
 	// Send TAB key event
 	e.HandleKey(keyTab())
 
-	if string(e.lines[0]) != "\taa" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	if string(e.line(0)) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "\taa")
 	}
-	if string(e.lines[1]) != "\tbb" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	if string(e.line(1)) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "\tbb")
 	}
-	if string(e.lines[2]) != "\tcc" {
-		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "\tcc")
+	if string(e.line(2)) != "\tcc" {
+		t.Fatalf("line2 = %q, want %q", string(e.line(2)), "\tcc")
 	}
 	// Line 3 should NOT be indented because selectionEnd.Col == 0
-	if string(e.lines[3]) != "dd" {
-		t.Fatalf("line3 = %q, want %q (should NOT be indented)", string(e.lines[3]), "dd")
+	if string(e.line(3)) != "dd" {
+		t.Fatalf("line3 = %q, want %q (should NOT be indented)", string(e.line(3)), "dd")
 	}
 }
 
@@ -664,18 +661,18 @@ func TestUndoAfterIndentViaHandleKey(t *testing.T) {
 	// Send TAB key event
 	e.HandleKey(keyTab())
 
-	if string(e.lines[0]) != "\taa" || string(e.lines[1]) != "\tbb" {
-		t.Fatalf("after indent: lines = %q, %q", string(e.lines[0]), string(e.lines[1]))
+	if string(e.line(0)) != "\taa" || string(e.line(1)) != "\tbb" {
+		t.Fatalf("after indent: lines = %q, %q", string(e.line(0)), string(e.line(1)))
 	}
 
 	// Send 'u' for undo
 	e.HandleKey(keyUndo())
 
-	if string(e.lines[0]) != "aa" {
-		t.Fatalf("after undo line0 = %q, want %q", string(e.lines[0]), "aa")
+	if string(e.line(0)) != "aa" {
+		t.Fatalf("after undo line0 = %q, want %q", string(e.line(0)), "aa")
 	}
-	if string(e.lines[1]) != "bb" {
-		t.Fatalf("after undo line1 = %q, want %q", string(e.lines[1]), "bb")
+	if string(e.line(1)) != "bb" {
+		t.Fatalf("after undo line1 = %q, want %q", string(e.line(1)), "bb")
 	}
 }
 
@@ -755,20 +752,21 @@ func TestRealWorkflowInsertModeShiftSelectThenTab(t *testing.T) {
 	e.HandleKey(keyTab())
 
 	t.Logf("AFTER TAB:")
-	for i, line := range e.lines {
+	for i := 0; i < e.LineCount(); i++ {
+		line := e.line(i)
 		t.Logf("  line[%d] = %q", i, string(line))
 	}
 	t.Logf("  cursor=%+v, selectionActive=%v", e.cursor, e.selectionActive)
 
 	// Строки 1,2,3 должны получить indent (строка 4 - зависит от Col)
-	if string(e.lines[1]) != "\t\t\"os\"" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\t\t\"os\"")
+	if string(e.line(1)) != "\t\t\"os\"" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "\t\t\"os\"")
 	}
-	if string(e.lines[2]) != "\t\t\"os/exec\"" {
-		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "\t\t\"os/exec\"")
+	if string(e.line(2)) != "\t\t\"os/exec\"" {
+		t.Fatalf("line2 = %q, want %q", string(e.line(2)), "\t\t\"os/exec\"")
 	}
-	if string(e.lines[3]) != "\t\t\"path/filepath\"" {
-		t.Fatalf("line3 = %q, want %q", string(e.lines[3]), "\t\t\"path/filepath\"")
+	if string(e.line(3)) != "\t\t\"path/filepath\"" {
+		t.Fatalf("line3 = %q, want %q", string(e.line(3)), "\t\t\"path/filepath\"")
 	}
 }
 
@@ -789,14 +787,14 @@ func TestUserFlowShiftSelectThenTab(t *testing.T) {
 	// Indent via real key event
 	e.HandleKey(keyTab())
 
-	if string(e.lines[0]) != "\taa" {
-		t.Fatalf("line0 = %q, want %q", string(e.lines[0]), "\taa")
+	if string(e.line(0)) != "\taa" {
+		t.Fatalf("line0 = %q, want %q", string(e.line(0)), "\taa")
 	}
-	if string(e.lines[1]) != "\tbb" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "\tbb")
+	if string(e.line(1)) != "\tbb" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "\tbb")
 	}
-	if string(e.lines[2]) != "\tcc" {
-		t.Fatalf("line2 = %q, want %q", string(e.lines[2]), "\tcc")
+	if string(e.line(2)) != "\tcc" {
+		t.Fatalf("line2 = %q, want %q", string(e.line(2)), "\tcc")
 	}
 }
 

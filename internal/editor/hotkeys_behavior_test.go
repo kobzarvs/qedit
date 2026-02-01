@@ -90,11 +90,11 @@ func TestDeleteLineHotkey(t *testing.T) {
 	e := newTestEditor("one", "two", "three")
 	e.cursor = Cursor{Row: 1, Col: 0}
 	e.HandleKey(eventForKeyString(t, "cmd+y"))
-	if len(e.lines) != 2 {
-		t.Fatalf("lines len = %d, want 2", len(e.lines))
+	if e.LineCount() != 2 {
+		t.Fatalf("lines len = %d, want 2", e.LineCount())
 	}
-	if string(e.lines[1]) != "three" {
-		t.Fatalf("line1 = %q, want %q", string(e.lines[1]), "three")
+	if string(e.line(1)) != "three" {
+		t.Fatalf("line1 = %q, want %q", string(e.line(1)), "three")
 	}
 }
 
@@ -109,7 +109,7 @@ func TestDeleteCharHotkey(t *testing.T) {
 
 func TestDeleteWordLeftHotkey(t *testing.T) {
 	e := newTestEditor("foo bar")
-	e.cursor = Cursor{Row: 0, Col: len(e.lines[0])}
+	e.cursor = Cursor{Row: 0, Col: e.lineLen(0)}
 	e.HandleKey(eventForKeyString(t, "cmd+backspace"))
 	if e.Content() != "foo " {
 		t.Fatalf("content = %q, want %q", e.Content(), "foo ")
@@ -197,7 +197,7 @@ func TestDeleteWordRightUndo(t *testing.T) {
 func TestDeleteWordLeftUndo(t *testing.T) {
 	t.Run("undo single word delete", func(t *testing.T) {
 		e := newTestEditor("foo bar")
-		e.cursor = Cursor{Row: 0, Col: len(e.lines[0])}
+		e.cursor = Cursor{Row: 0, Col: e.lineLen(0)}
 		e.HandleKey(eventForKeyString(t, "cmd+backspace"))
 		if e.Content() != "foo " {
 			t.Fatalf("after delete: content = %q, want %q", e.Content(), "foo ")
@@ -216,7 +216,7 @@ func TestOpenBelowAboveHotkeys(t *testing.T) {
 		if e.mode != ModeInsert {
 			t.Fatalf("mode = %v, want insert", e.mode)
 		}
-		if len(e.lines) != 2 || string(e.lines[1]) != "" {
+		if e.LineCount() != 2 || string(e.line(1)) != "" {
 			t.Fatalf("lines = %q, want [\"one\" \"\"]", e.Content())
 		}
 		if e.cursor.Row != 1 {
@@ -229,7 +229,7 @@ func TestOpenBelowAboveHotkeys(t *testing.T) {
 		if e.mode != ModeInsert {
 			t.Fatalf("mode = %v, want insert", e.mode)
 		}
-		if len(e.lines) != 2 || string(e.lines[0]) != "" {
+		if e.LineCount() != 2 || string(e.line(0)) != "" {
 			t.Fatalf("lines = %q, want [\"\" \"one\"]", e.Content())
 		}
 		if e.cursor.Row != 0 {
@@ -261,8 +261,8 @@ func TestAppendAndInsertHotkeys(t *testing.T) {
 func TestJoinLinesHotkey(t *testing.T) {
 	e := newTestEditor("hello", "world")
 	e.HandleKey(keyRune('J'))
-	if len(e.lines) != 1 {
-		t.Fatalf("lines len = %d, want 1", len(e.lines))
+	if e.LineCount() != 1 {
+		t.Fatalf("lines len = %d, want 1", e.LineCount())
 	}
 	if e.Content() != "hello world" {
 		t.Fatalf("content = %q, want %q", e.Content(), "hello world")
@@ -305,7 +305,7 @@ func TestInsertLineBelowHotkeyInsertMode(t *testing.T) {
 	e := newTestEditor("one")
 	e.mode = ModeInsert
 	e.HandleKey(eventForKeyString(t, "cmd+enter"))
-	if len(e.lines) != 2 || string(e.lines[1]) != "" {
+	if e.LineCount() != 2 || string(e.line(1)) != "" {
 		t.Fatalf("lines = %q, want [\"one\" \"\"]", e.Content())
 	}
 	if e.cursor.Row != 1 || e.mode != ModeInsert {
@@ -316,7 +316,7 @@ func TestInsertLineBelowHotkeyInsertMode(t *testing.T) {
 func TestShiftEnterInsertLineAboveHotkey(t *testing.T) {
 	e := newTestEditor("one")
 	e.HandleKey(eventForKeyString(t, "shift+enter"))
-	if len(e.lines) != 2 || string(e.lines[0]) != "" {
+	if e.LineCount() != 2 || string(e.line(0)) != "" {
 		t.Fatalf("lines = %q, want [\"\" \"one\"]", e.Content())
 	}
 	if e.cursor.Row != 0 {

@@ -9,6 +9,7 @@ type Options struct {
 	SidebarMinWidth      int
 	SidebarMaxWidth      string
 	SidebarCloseOnSelect bool
+	AutoReloadOnChanges  bool
 
 	KeymapNormal map[string]string
 	KeymapInsert map[string]string

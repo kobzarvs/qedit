@@ -5,6 +5,14 @@ background = "#0A0E14"
 # statusline
 statusline-foreground = "#B3B1AD"
 statusline-background = "#292929"
+statusline-warning-foreground = "#FFD700"
+statusline-warning-background = "statusline-background"
+
+# merge
+merge-local-background = "#3A1E1E"
+merge-remote-background = "#1E3A24"
+merge-header-foreground = "#FFD700"
+merge-header-background = "statusline-background"
 
 # commandline
 commandline-foreground = "#B3B1AD"

@@ -377,8 +377,8 @@ func TestSpaceMenuHotkeys(t *testing.T) {
 				}
 			}
 			if item.Action == "toggle_comment" {
-				if string(e.lines[0]) != "// line" {
-					t.Fatalf("comment line = %q, want %q", string(e.lines[0]), "// line")
+				if string(e.line(0)) != "// line" {
+					t.Fatalf("comment line = %q, want %q", string(e.line(0)), "// line")
 				}
 			}
 		})
@@ -498,8 +498,8 @@ func TestReplaceCharHotkeyChain(t *testing.T) {
 	e := newTestEditor("abc")
 	e.HandleKey(keyRune('r'))
 	e.HandleKey(keyRune('z'))
-	if string(e.lines[0]) != "zbc" {
-		t.Fatalf("line = %q, want %q", string(e.lines[0]), "zbc")
+	if string(e.line(0)) != "zbc" {
+		t.Fatalf("line = %q, want %q", string(e.line(0)), "zbc")
 	}
 }
 

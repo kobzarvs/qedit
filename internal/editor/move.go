@@ -2,10 +2,11 @@ package editor
 
 // goToMatchingBracket jumps to the matching bracket or quote
 func (e *Editor) goToMatchingBracket() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	lineCount := e.LineCount()
+	if e.cursor.Row < 0 || e.cursor.Row >= lineCount {
 		return
 	}
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	if e.cursor.Col < 0 || e.cursor.Col >= len(line) {
 		return
 	}
@@ -49,8 +50,8 @@ func (e *Editor) goToMatchingBracket() {
 
 	if forward {
 		col++
-		for row < len(e.lines) {
-			line := e.lines[row]
+		for row < lineCount {
+			line := e.line(row)
 			for col < len(line) {
 				if line[col] == ch {
 					depth++
@@ -70,11 +71,11 @@ func (e *Editor) goToMatchingBracket() {
 	} else {
 		col--
 		for row >= 0 {
-			line := e.lines[row]
+			line := e.line(row)
 			if col < 0 {
 				row--
 				if row >= 0 {
-					col = len(e.lines[row]) - 1
+					col = e.lineLen(row) - 1
 				}
 				continue
 			}
@@ -93,7 +94,7 @@ func (e *Editor) goToMatchingBracket() {
 			}
 			row--
 			if row >= 0 {
-				col = len(e.lines[row]) - 1
+				col = e.lineLen(row) - 1
 			}
 		}
 	}
@@ -110,7 +111,7 @@ func (e *Editor) goToMatchingQuote(quoteChar rune) {
 	// Odd count = closing quote (search backward)
 	count := 0
 	for r := 0; r <= row; r++ {
-		line := e.lines[r]
+		line := e.line(r)
 		endCol := len(line)
 		if r == row {
 			endCol = col
@@ -139,8 +140,8 @@ func (e *Editor) goToMatchingQuote(quoteChar rune) {
 func (e *Editor) findMatchingQuoteForward(quoteChar rune) {
 	row, col := e.cursor.Row, e.cursor.Col+1
 
-	for row < len(e.lines) {
-		line := e.lines[row]
+	for row < e.LineCount() {
+		line := e.line(row)
 		for col < len(line) {
 			if line[col] == quoteChar {
 				// Check if escaped
@@ -175,11 +176,11 @@ func (e *Editor) findMatchingQuoteBackward(quoteChar rune) {
 		if col < 0 {
 			row--
 			if row >= 0 {
-				col = len(e.lines[row]) - 1
+				col = e.lineLen(row) - 1
 			}
 			continue
 		}
-		line := e.lines[row]
+		line := e.line(row)
 		for col >= 0 {
 			if line[col] == quoteChar {
 				// Check if escaped
@@ -202,7 +203,7 @@ func (e *Editor) findMatchingQuoteBackward(quoteChar rune) {
 		}
 		row--
 		if row >= 0 {
-			col = len(e.lines[row]) - 1
+			col = e.lineLen(row) - 1
 		}
 	}
 	e.setStatus("no matching quote found")
@@ -239,15 +240,15 @@ func (e *Editor) moveLeft() {
 		return
 	}
 	e.cursor.Row--
-	e.cursor.Col = len(e.lines[e.cursor.Row])
+	e.cursor.Col = e.lineLen(e.cursor.Row)
 }
 func (e *Editor) moveRight() {
-	lineLen := len(e.lines[e.cursor.Row])
+	lineLen := e.lineLen(e.cursor.Row)
 	if e.cursor.Col < lineLen {
 		e.cursor.Col++
 		return
 	}
-	if e.cursor.Row >= len(e.lines)-1 {
+	if e.cursor.Row >= e.LineCount()-1 {
 		return
 	}
 	e.cursor.Row++
@@ -264,7 +265,7 @@ func (e *Editor) moveUp() {
 	}
 }
 func (e *Editor) moveDown() {
-	if e.cursor.Row >= len(e.lines)-1 {
+	if e.cursor.Row >= e.LineCount()-1 {
 		return
 	}
 	e.cursor.Row++
@@ -274,7 +275,7 @@ func (e *Editor) moveDown() {
 	}
 }
 func (e *Editor) moveWordLeft() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return
 	}
 	if e.cursor.Col <= 0 {
@@ -282,10 +283,10 @@ func (e *Editor) moveWordLeft() {
 			return
 		}
 		e.cursor.Row--
-		e.cursor.Col = len(e.lines[e.cursor.Row])
+		e.cursor.Col = e.lineLen(e.cursor.Row)
 		return
 	}
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	idx := e.cursor.Col - 1
 	if idx >= len(line) {
 		idx = len(line) - 1
@@ -310,12 +311,12 @@ func (e *Editor) moveWordLeft() {
 	e.cursor.Col = idx
 }
 func (e *Editor) moveWordRight() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return
 	}
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	if e.cursor.Col >= len(line) {
-		if e.cursor.Row >= len(e.lines)-1 {
+		if e.cursor.Row >= e.LineCount()-1 {
 			return
 		}
 		e.cursor.Row++
@@ -355,11 +356,11 @@ func (e *Editor) moveLineStart() {
 	e.cursor.Col = 0
 }
 func (e *Editor) moveLineEnd() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		e.cursor.Col = 0
 		return
 	}
-	e.cursor.Col = len(e.lines[e.cursor.Row])
+	e.cursor.Col = e.lineLen(e.cursor.Row)
 }
 func (e *Editor) moveFileStart() {
 	prevRow := e.cursor.Row
@@ -370,20 +371,20 @@ func (e *Editor) moveFileStart() {
 	}
 }
 func (e *Editor) moveFileEnd() {
-	if len(e.lines) == 0 {
+	if e.LineCount() == 0 {
 		e.cursor.Row = 0
 		e.cursor.Col = 0
 		return
 	}
 	prevRow := e.cursor.Row
-	e.cursor.Row = len(e.lines) - 1
-	e.cursor.Col = len(e.lines[e.cursor.Row])
+	e.cursor.Row = e.LineCount() - 1
+	e.cursor.Col = e.lineLen(e.cursor.Row)
 	if e.mode == ModeInsert && e.cursor.Row != prevRow {
 		e.saveLineState()
 	}
 }
 func (e *Editor) moveLineUp() {
-	if e.cursor.Row <= 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row <= 0 || e.cursor.Row >= e.LineCount() {
 		return
 	}
 	from := e.cursor.Row
@@ -398,7 +399,7 @@ func (e *Editor) moveLineUp() {
 	}
 }
 func (e *Editor) moveLineDown() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines)-1 {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount()-1 {
 		return
 	}
 	from := e.cursor.Row
@@ -434,8 +435,8 @@ func (e *Editor) pageDown() {
 	}
 	prevRow := e.cursor.Row
 	e.cursor.Row += height
-	if e.cursor.Row >= len(e.lines) {
-		e.cursor.Row = len(e.lines) - 1
+	if e.cursor.Row >= e.LineCount() {
+		e.cursor.Row = e.LineCount() - 1
 		if e.cursor.Row < 0 {
 			e.cursor.Row = 0
 		}
@@ -448,21 +449,21 @@ func (e *Editor) pageDown() {
 
 // Helix-style word forward (w) - move to next word start
 func (e *Editor) wordForward() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return
 	}
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	idx := e.cursor.Col
 
 	// If at end of line, move to next line
 	if idx >= len(line) {
-		if e.cursor.Row >= len(e.lines)-1 {
+		if e.cursor.Row >= e.LineCount()-1 {
 			return
 		}
 		e.cursor.Row++
 		e.cursor.Col = 0
 		// Skip to first non-space
-		line = e.lines[e.cursor.Row]
+		line = e.line(e.cursor.Row)
 		for e.cursor.Col < len(line) && isSpaceRune(line[e.cursor.Col]) {
 			e.cursor.Col++
 		}
@@ -501,10 +502,10 @@ func (e *Editor) wordForward() {
 	}
 
 	// If reached end of line, move to next line
-	if idx >= len(line) && e.cursor.Row < len(e.lines)-1 {
+	if idx >= len(line) && e.cursor.Row < e.LineCount()-1 {
 		e.cursor.Row++
 		e.cursor.Col = 0
-		line = e.lines[e.cursor.Row]
+		line = e.line(e.cursor.Row)
 		for e.cursor.Col < len(line) && isSpaceRune(line[e.cursor.Col]) {
 			e.cursor.Col++
 		}
@@ -516,10 +517,10 @@ func (e *Editor) wordForward() {
 
 // Helix-style word backward (b) - move to previous word start
 func (e *Editor) wordBackward() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return
 	}
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	idx := e.cursor.Col
 
 	// If at start of line, move to previous line
@@ -528,7 +529,7 @@ func (e *Editor) wordBackward() {
 			return
 		}
 		e.cursor.Row--
-		line = e.lines[e.cursor.Row]
+		line = e.line(e.cursor.Row)
 		e.cursor.Col = len(line)
 		// Recursively find previous word start
 		e.wordBackward()
@@ -547,7 +548,7 @@ func (e *Editor) wordBackward() {
 	if idx <= 0 {
 		if isSpaceRune(line[0]) && e.cursor.Row > 0 {
 			e.cursor.Row--
-			line = e.lines[e.cursor.Row]
+			line = e.line(e.cursor.Row)
 			e.cursor.Col = len(line)
 			e.wordBackward()
 			return
@@ -572,10 +573,10 @@ func (e *Editor) wordBackward() {
 
 // Helix-style word end (e) - move to end of word
 func (e *Editor) wordEnd() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return
 	}
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	idx := e.cursor.Col
 
 	// Move forward one position to get off current word end
@@ -588,12 +589,12 @@ func (e *Editor) wordEnd() {
 
 	// If reached end of line, move to next line
 	if idx >= len(line) {
-		if e.cursor.Row >= len(e.lines)-1 {
+		if e.cursor.Row >= e.LineCount()-1 {
 			e.cursor.Col = len(line)
 			return
 		}
 		e.cursor.Row++
-		line = e.lines[e.cursor.Row]
+		line = e.line(e.cursor.Row)
 		idx = 0
 		// Skip whitespace on new line
 		for idx < len(line) && isSpaceRune(line[idx]) {
@@ -619,10 +620,10 @@ func (e *Editor) wordEnd() {
 
 // Helix-style goto line (G) - go to last line
 func (e *Editor) gotoLastLine() {
-	if len(e.lines) == 0 {
+	if e.LineCount() == 0 {
 		return
 	}
-	e.cursor.Row = len(e.lines) - 1
+	e.cursor.Row = e.LineCount() - 1
 	e.cursor.Col = 0
 }
 
@@ -634,13 +635,13 @@ func (e *Editor) gotoFirstLine() {
 
 // Helix-style goto file end (ge) - go to end of file
 func (e *Editor) gotoFileEnd() {
-	if len(e.lines) == 0 {
+	if e.LineCount() == 0 {
 		e.cursor.Row = 0
 		e.cursor.Col = 0
 		return
 	}
-	e.cursor.Row = len(e.lines) - 1
-	e.cursor.Col = len(e.lines[e.cursor.Row])
+	e.cursor.Row = e.LineCount() - 1
+	e.cursor.Col = e.lineLen(e.cursor.Row)
 }
 
 // findCharForward finds next occurrence of char on current line
@@ -653,7 +654,7 @@ func isBracketOrQuote(ch rune) bool {
 	return false
 }
 func (e *Editor) findCharForward(ch rune, till bool) bool {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return false
 	}
 
@@ -664,12 +665,12 @@ func (e *Editor) findCharForward(ch rune, till bool) bool {
 
 		// For till mode: if char at cursor+1 is the target, skip it
 		// (we're already at the "till" position from previous search)
-		if till && startCol < len(e.lines[startRow]) && e.lines[startRow][startCol] == ch {
+		if till && startCol < e.lineLen(startRow) && e.line(startRow)[startCol] == ch {
 			startCol++
 		}
 
-		for row := startRow; row < len(e.lines); row++ {
-			line := e.lines[row]
+		for row := startRow; row < e.LineCount(); row++ {
+			line := e.line(row)
 			fromCol := 0
 			if row == startRow {
 				fromCol = startCol
@@ -684,7 +685,7 @@ func (e *Editor) findCharForward(ch rune, till bool) bool {
 						} else if row > startRow {
 							// If at start of line, go to end of previous line
 							e.cursor.Row = row - 1
-							e.cursor.Col = len(e.lines[row-1])
+							e.cursor.Col = e.lineLen(row - 1)
 						} else {
 							e.cursor.Col = col
 						}
@@ -699,7 +700,7 @@ func (e *Editor) findCharForward(ch rune, till bool) bool {
 	}
 
 	// For regular chars, search only on current line
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	startIdx := e.cursor.Col + 1
 
 	// For till mode: skip immediate target
@@ -722,7 +723,7 @@ func (e *Editor) findCharForward(ch rune, till bool) bool {
 
 // findCharBackward finds previous occurrence of char
 func (e *Editor) findCharBackward(ch rune, till bool) bool {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return false
 	}
 
@@ -733,12 +734,12 @@ func (e *Editor) findCharBackward(ch rune, till bool) bool {
 
 		// For till mode: if char at cursor-1 is the target, skip it
 		// (we're already at the "till" position from previous search)
-		if till && startCol >= 0 && e.lines[startRow][startCol] == ch {
+		if till && startCol >= 0 && e.line(startRow)[startCol] == ch {
 			startCol--
 		}
 
 		for row := startRow; row >= 0; row-- {
-			line := e.lines[row]
+			line := e.line(row)
 			toCol := len(line) - 1
 			if row == startRow {
 				toCol = startCol
@@ -750,7 +751,7 @@ func (e *Editor) findCharBackward(ch rune, till bool) bool {
 						// For till, stop one char after
 						if col < len(line)-1 {
 							e.cursor.Col = col + 1
-						} else if row < len(e.lines)-1 {
+						} else if row < e.LineCount()-1 {
 							// If at end of line, go to start of next line
 							e.cursor.Row = row + 1
 							e.cursor.Col = 0
@@ -768,7 +769,7 @@ func (e *Editor) findCharBackward(ch rune, till bool) bool {
 	}
 
 	// For regular chars, search only on current line
-	line := e.lines[e.cursor.Row]
+	line := e.line(e.cursor.Row)
 	startIdx := e.cursor.Col - 1
 
 	// For till mode: skip immediate target

@@ -10,6 +10,7 @@ const (
 	ModeCommand
 	ModeBranchPicker
 	ModeSearch
+	ModeMerge
 )
 
 const (
@@ -94,6 +95,9 @@ const (
 	// View mode
 	actionViewMode = "view_mode" // z - enter view mode
 
+	// Merge mode
+	actionMergeMode = "merge_mode" // Shift+M - enter merge mode
+
 	// Search
 	actionSearchForward  = "search_forward"  // / - exact search forward
 	actionSearchBackward = "search_backward" // ? - exact search backward
@@ -114,6 +118,12 @@ const (
 
 	// File operations
 	actionSave = "save" // Cmd+S - save file
+
+	// AI integration
+	actionAIPanel  = "ai_panel"  // Cmd+Shift+I - toggle AI panel
+	actionAISend   = "ai_send"   // Cmd+I - send context to AI
+	actionAIApply  = "ai_apply"  // Apply suggested edit
+	actionAIReject = "ai_reject" // Reject suggested edit
 )
 
 // CommandInfo describes an available command with description
@@ -128,6 +138,11 @@ const (
 	CmdGroupFile = "File"
 	CmdGroupEdit = "Edit"
 	CmdGroupView = "View"
+)
+
+// Command groups for autocomplete
+const (
+	CmdGroupAI = "AI"
 )
 
 // AvailableCommands lists all commands for autocomplete
@@ -145,11 +160,18 @@ var AvailableCommands = []CommandInfo{
 	{"ln off", "disable line numbers", CmdGroupView},
 	{"ln abs", "absolute line numbers", CmdGroupView},
 	{"ln rel", "relative line numbers", CmdGroupView},
+	{"merge", "merge mode", CmdGroupView},
+	{"auto-reload-on-changes", "auto reload on external changes", CmdGroupView},
 	// Edit
 	{"fmt", "format code", CmdGroupEdit},
 	// Sidebar
 	{"sidebar", "toggle sidebar", CmdGroupView},
 	{"sidew", "set sidebar width", CmdGroupView},
+	// AI
+	{"ide", "toggle AI panel", CmdGroupAI},
+	{"ai", "AI provider info", CmdGroupAI},
+	{"ai list", "list AI providers", CmdGroupAI},
+	{"ai model", "show AI models", CmdGroupAI},
 }
 
 // SpaceMenuItem represents an item in the space menu
@@ -353,8 +375,13 @@ type Editor struct {
 	mode                         Mode
 	filename                     string
 	fileSnapshot                 fileSnapshot
+	diskContent                  string
 	externalChange               ExternalChange
+	autoReloadOnChanges          bool
+	autoReloadInProgress         bool
 	dirty                        bool
+	conflictBlocks               []conflictBlock
+	conflictBlocksDirty          bool
 	keymap                       keymapSet
 	cmd                          []rune
 	cmdCursor                    int      // cursor position within cmd
@@ -369,6 +396,10 @@ type Editor struct {
 	viewWidth                    int
 	styleMain                    Style
 	styleStatus                  Style
+	styleStatusWarning           Style
+	styleMergeLocal              Style
+	styleMergeRemote             Style
+	styleMergeHeader             Style
 	styleCommand                 Style
 	styleLineNumber              Style
 	styleLineNumberActive        Style
@@ -479,12 +510,18 @@ type Editor struct {
 	// Test hook for keymap coverage.
 	actionHook func(action string)
 
+	autoReloadConfigHook func(enabled bool) error
+
 	// Command autocomplete state
 	cmdAutoCompleteActive    bool
 	cmdAutoCompleteItems     []CommandInfo
 	cmdAutoCompleteIndex     int
 	cmdAutoCompleteCols      int           // number of columns for display (computed during render)
 	cmdAutoCompleteColGroups [][]GroupInfo // column layout (computed during render)
+
+	// AI integration
+	aiPanel   *AIPanel  // AI chat panel (right sidebar)
+	aiManager AIManager // AI provider manager
 }
 
 // SearchMatch represents a match location

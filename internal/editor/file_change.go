@@ -91,16 +91,17 @@ func (e *Editor) ReloadFromDisk(force bool) error {
 	if e.filename == "" {
 		return errors.New("no file name")
 	}
-	if e.dirty && !force {
+	if e.HasLocalChanges() && !force {
 		return errors.New("unsaved changes (use :e!)")
 	}
 	data, err := os.ReadFile(e.filename)
 	if err != nil {
 		return err
 	}
+	e.externalChange = ExternalChangeNone
 	e.replaceBuffer(string(data), false)
 	e.selectionActive = false
-	e.externalChange = ExternalChangeNone
+	e.diskContent = e.Content()
 	_ = e.syncFileSnapshot()
 	_ = e.LoadUndoHistory()
 	return nil
@@ -114,16 +115,113 @@ func (e *Editor) ExternalChange() ExternalChange {
 // SetExternalChange marks an external change as pending.
 func (e *Editor) SetExternalChange(change ExternalChange) {
 	e.externalChange = change
+	e.updateDirty()
 }
 
 // ClearExternalChange clears any pending external-change state.
 func (e *Editor) ClearExternalChange() {
 	e.externalChange = ExternalChangeNone
+	e.updateDirty()
+}
+
+// AutoReloadInProgress reports whether an auto-reload is running.
+func (e *Editor) AutoReloadInProgress() bool {
+	return e.autoReloadInProgress
+}
+
+// SetAutoReloadInProgress updates auto-reload progress state.
+func (e *Editor) SetAutoReloadInProgress(inProgress bool) {
+	e.autoReloadInProgress = inProgress
+	if inProgress {
+		e.statusMessage = "auto reload... waiting for file write to finish"
+		return
+	}
+	if e.statusMessage == "auto reload... waiting for file write to finish" {
+		e.statusMessage = ""
+	}
+}
+
+// AutoReloadOnChanges reports whether auto-reload on external changes is enabled.
+func (e *Editor) AutoReloadOnChanges() bool {
+	return e.autoReloadOnChanges
+}
+
+// SetAutoReloadOnChanges updates the runtime auto-reload setting.
+func (e *Editor) SetAutoReloadOnChanges(enabled bool) {
+	e.autoReloadOnChanges = enabled
+}
+
+// SetAutoReloadConfigHook registers a persistence hook for auto-reload setting.
+func (e *Editor) SetAutoReloadConfigHook(hook func(enabled bool) error) {
+	e.autoReloadConfigHook = hook
 }
 
 // IsDirty reports whether the buffer has unsaved changes.
 func (e *Editor) IsDirty() bool {
 	return e.dirty
+}
+
+// HasLocalChanges reports whether the buffer has local unsaved edits.
+func (e *Editor) HasLocalChanges() bool {
+	return len(e.undo) != e.savePoint
+}
+
+// MarkExternalDirty marks the buffer dirty due to on-disk changes.
+func (e *Editor) MarkExternalDirty() {
+	e.updateDirty()
+}
+
+// MergeExternalContent merges on-disk content into the current buffer.
+// Returns true if conflicts were produced.
+func (e *Editor) MergeExternalContent(remote string) (bool, error) {
+	remoteNormalized := string(normalizeNewlines([]byte(remote)))
+	base := e.diskContent
+	if base == "" {
+		base = e.Content()
+	}
+	local := e.Content()
+	if local == remoteNormalized {
+		e.diskContent = remoteNormalized
+		e.externalChange = ExternalChangeNone
+		e.updateDirty()
+		_ = e.syncFileSnapshot()
+		return false, nil
+	}
+	if local == base {
+		e.externalChange = ExternalChangeNone
+		e.replaceBuffer(remoteNormalized, false)
+		e.selectionActive = false
+		e.diskContent = remoteNormalized
+		e.updateDirty()
+		e.resetConflictBlocks()
+		_ = e.syncFileSnapshot()
+		return false, nil
+	}
+	merged, conflict, err := mergeWithGitFunc(base, local, remoteNormalized)
+	if err != nil {
+		return false, err
+	}
+	e.externalChange = ExternalChangeNone
+	if conflict {
+		cleaned, blocks := buildConflictView(merged)
+		e.replaceBuffer(cleaned, true)
+		e.conflictBlocks = blocks
+		e.conflictBlocksDirty = false
+		if e.mode == ModeNormal {
+			e.mode = ModeMerge
+		}
+	} else {
+		e.replaceBuffer(merged, true)
+		e.resetConflictBlocks()
+		if e.mode == ModeMerge {
+			e.mode = ModeNormal
+		}
+	}
+	e.selectionActive = false
+	e.diskContent = remoteNormalized
+	e.updateDirty()
+	_ = e.syncFileSnapshot()
+	return conflict, nil
 }
 
 // Filename returns the current buffer filename.

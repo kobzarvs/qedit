@@ -10,10 +10,33 @@ import (
 func (e *Editor) setStatus(msg string) {
 	e.statusMessage = msg
 }
+func (e *Editor) line(row int) []rune {
+	if e.text == nil {
+		return nil
+	}
+	return e.text.Line(row)
+}
+func (e *Editor) lineLen(row int) int {
+	if e.text == nil {
+		return 0
+	}
+	return e.text.LineLen(row)
+}
 func (e *Editor) clampCursorCol() {
-	lineLen := len(e.lines[e.cursor.Row])
+	lineCount := e.LineCount()
+	if lineCount == 0 {
+		e.cursor.Col = 0
+		return
+	}
+	if e.cursor.Row < 0 || e.cursor.Row >= lineCount {
+		return
+	}
+	lineLen := e.text.LineLen(e.cursor.Row)
 	if e.cursor.Col > lineLen {
 		e.cursor.Col = lineLen
+	}
+	if e.cursor.Col < 0 {
+		e.cursor.Col = 0
 	}
 }
 func (e *Editor) ensureCursorVisible(viewHeight int) {
@@ -57,8 +80,8 @@ func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
 	}
 
 	var visualCursorCol int
-	if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
-		visualCursorCol = visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth)
+	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
+		visualCursorCol = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.tabWidth)
 	}
 
 	// Cursor position relative to scrollX
@@ -101,6 +124,40 @@ func joinLines(lines [][]rune) string {
 		b.WriteString(string(line))
 	}
 	return b.String()
+}
+func joinText(lines [][]rune) []rune {
+	if len(lines) == 0 {
+		return nil
+	}
+	length := 0
+	for _, line := range lines {
+		length += len(line)
+	}
+	length += len(lines) - 1
+	out := make([]rune, 0, length)
+	for i, line := range lines {
+		if i > 0 {
+			out = append(out, '\n')
+		}
+		out = append(out, line...)
+	}
+	return out
+}
+func splitRunesByNewline(runes []rune) [][]rune {
+	if len(runes) == 0 {
+		return nil
+	}
+	lines := make([][]rune, 0, 1)
+	start := 0
+	for i, r := range runes {
+		if r != '\n' {
+			continue
+		}
+		lines = append(lines, append([]rune(nil), runes[start:i]...))
+		start = i + 1
+	}
+	lines = append(lines, append([]rune(nil), runes[start:]...))
+	return lines
 }
 func (e *Editor) styleForHighlight(kind string) (Style, bool) {
 	switch kind {
@@ -194,10 +251,17 @@ func clampRange(value, min, max int) int {
 	return value
 }
 func (e *Editor) swapLines(a, b int) bool {
-	if a < 0 || b < 0 || a >= len(e.lines) || b >= len(e.lines) {
+	lineCount := e.LineCount()
+	if a < 0 || b < 0 || a >= lineCount || b >= lineCount {
 		return false
 	}
-	e.lines[a], e.lines[b] = e.lines[b], e.lines[a]
+	if a == b {
+		return true
+	}
+	lineA := e.text.Line(a)
+	lineB := e.text.Line(b)
+	_ = e.text.ReplaceLine(a, lineB)
+	_ = e.text.ReplaceLine(b, lineA)
 	e.lastEdit.Valid = false
 	return true
 }
@@ -216,31 +280,31 @@ func runeSliceByteLen(rs []rune) int {
 	return n
 }
 func (e *Editor) byteOffset(pos Cursor) (int, int) {
+	lineCount := e.LineCount()
 	row := pos.Row
 	if row < 0 {
 		row = 0
 	}
-	if row > len(e.lines) {
-		row = len(e.lines)
+	if row > lineCount {
+		row = lineCount
 	}
-	offset := 0
-	for i := 0; i < row && i < len(e.lines); i++ {
-		offset += runeSliceByteLen(e.lines[i]) + 1
+	if row == lineCount {
+		endIndex := e.text.RuneCount()
+		return e.text.ByteOffset(endIndex), 0
 	}
-	if row >= len(e.lines) {
-		return offset, 0
-	}
-	line := e.lines[row]
+	lineStart := e.text.LineStartIndex(row)
+	lineLen := e.text.LineLen(row)
 	col := pos.Col
 	if col < 0 {
 		col = 0
 	}
-	if col > len(line) {
-		col = len(line)
+	if col > lineLen {
+		col = lineLen
 	}
-	colBytes := runeSliceByteLen(line[:col])
-	offset += colBytes
-	return offset, colBytes
+	index := lineStart + col
+	byteOffset := e.text.ByteOffset(index)
+	lineStartBytes := e.text.ByteOffset(lineStart)
+	return byteOffset, byteOffset - lineStartBytes
 }
 func (e *Editor) recordTextEdit(start, oldEnd, newEnd Cursor, insertedBytes int) {
 	startByte, startColBytes := e.byteOffset(start)
@@ -262,6 +326,7 @@ func (e *Editor) recordTextEdit(start, oldEnd, newEnd Cursor, insertedBytes int)
 		NewEndRow:      newEnd.Row,
 		NewEndColBytes: newEndColBytes,
 	}
+	e.adjustConflictBlocksForEdit(start.Row, oldEnd.Row, newEnd.Row)
 }
 func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
@@ -340,10 +405,14 @@ func (e *Editor) toggleLineNumbers() {
 	}
 }
 func (e *Editor) gutterWidth() int {
-	if e.lineNumberMode == LineNumberOff {
-		return 0
+	diffWidth := 0
+	if e.hasConflictBlocks() {
+		diffWidth = 1
 	}
-	maxLine := len(e.lines)
+	if e.lineNumberMode == LineNumberOff {
+		return diffWidth
+	}
+	maxLine := e.LineCount()
 	if maxLine < 1 {
 		maxLine = 1
 	}
@@ -351,8 +420,8 @@ func (e *Editor) gutterWidth() int {
 	if digits < 2 {
 		digits = 2
 	}
-	// Format: " " + digits + " " (leading space + number + trailing space)
-	return 1 + digits + 1
+	// Format: " " + digits + " " + diff sign
+	return 1 + digits + 1 + diffWidth
 }
 
 // fuzzyMatch checks if pattern matches text (simple substring for now)

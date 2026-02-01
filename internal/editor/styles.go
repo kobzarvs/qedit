@@ -4,6 +4,10 @@ package editor
 type EditorStyles struct {
 	Main                    Style
 	Status                  Style
+	StatusWarning           Style
+	MergeLocal              Style
+	MergeRemote             Style
+	MergeHeader             Style
 	Command                 Style
 	CommandCheckmark        Style
 	LineNumber              Style
@@ -46,6 +50,10 @@ type EditorStyles struct {
 func (e *Editor) SetStyles(s EditorStyles) {
 	e.styleMain = s.Main
 	e.styleStatus = s.Status
+	e.styleStatusWarning = s.StatusWarning
+	e.styleMergeLocal = s.MergeLocal
+	e.styleMergeRemote = s.MergeRemote
+	e.styleMergeHeader = s.MergeHeader
 	e.styleCommand = s.Command
 	e.styleCommandCheckmark = s.CommandCheckmark
 	e.styleLineNumber = s.LineNumber

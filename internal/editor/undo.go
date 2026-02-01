@@ -92,8 +92,8 @@ func (e *Editor) applyAction(act action) (action, bool) {
 		if e.cursor.Row < 0 {
 			e.cursor.Row = 0
 		}
-		if e.cursor.Row >= len(e.lines) {
-			e.cursor.Row = len(e.lines) - 1
+		if e.cursor.Row >= e.LineCount() {
+			e.cursor.Row = e.LineCount() - 1
 		}
 		e.clampCursorCol()
 		return action{kind: actionMoveLine, rowFrom: act.rowTo, rowTo: act.rowFrom}, true
@@ -161,7 +161,7 @@ func (e *Editor) finishUndoGroup() {
 	e.updateDirty()
 }
 func (e *Editor) updateDirty() {
-	e.dirty = len(e.undo) != e.savePoint
+	e.dirty = len(e.undo) != e.savePoint || e.externalChange != ExternalChangeNone
 }
 
 // changelogFilePath returns the path for the changelog file for the given file path.
@@ -376,7 +376,7 @@ func (e *Editor) ClearUndoHistory() error {
 	return err
 }
 func (e *Editor) saveLineState() {
-	if e.cursor.Row < 0 || e.cursor.Row >= len(e.lines) {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		e.lineUndoValid = false
 		return
 	}
@@ -384,7 +384,7 @@ func (e *Editor) saveLineState() {
 		return // Already tracking this line
 	}
 	e.lineUndoRow = e.cursor.Row
-	e.lineUndoContent = append([]rune(nil), e.lines[e.cursor.Row]...)
+	e.lineUndoContent = append([]rune(nil), e.line(e.cursor.Row)...)
 	e.lineUndoValid = true
 }
 func (e *Editor) undoLine() {
@@ -393,13 +393,13 @@ func (e *Editor) undoLine() {
 		return
 	}
 	row := e.lineUndoRow
-	if row < 0 || row >= len(e.lines) {
+	if row < 0 || row >= e.LineCount() {
 		e.setStatus("line no longer exists")
 		e.lineUndoValid = false
 		return
 	}
 
-	currentLine := e.lines[row]
+	currentLine := e.line(row)
 	originalLine := e.lineUndoContent
 
 	// If line hasn't changed, nothing to do
@@ -432,8 +432,8 @@ func (e *Editor) undoLine() {
 	// Position cursor at start of line
 	e.cursor.Row = row
 	e.cursor.Col = 0
-	if e.cursor.Col > len(e.lines[row]) {
-		e.cursor.Col = len(e.lines[row])
+	if e.cursor.Col > e.lineLen(row) {
+		e.cursor.Col = e.lineLen(row)
 	}
 
 	// Invalidate line undo since we've restored it

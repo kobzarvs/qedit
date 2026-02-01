@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 
@@ -13,14 +14,17 @@ type Keymap struct {
 }
 
 type EditorOptions struct {
-	TabWidth             int    `toml:"tab-width"`
-	LineNumbers          string `toml:"line-numbers"`
-	GitBranchSymbol      string `toml:"git-branch-symbol"`
-	SidebarWidth         string `toml:"sidebar-width"`
-	SidebarMinWidth      int    `toml:"sidebar-min-width"`
-	SidebarMaxWidth      string `toml:"sidebar-max-width"`
-	SidebarCloseOnSelect bool   `toml:"sidebar-close-on-select"`
-	HighlightMaxBytes    int64  `toml:"highlight-max-bytes"`
+	TabWidth              int    `toml:"tab-width"`
+	LineNumbers           string `toml:"line-numbers"`
+	GitBranchSymbol       string `toml:"git-branch-symbol"`
+	SidebarWidth          string `toml:"sidebar-width"`
+	SidebarMinWidth       int    `toml:"sidebar-min-width"`
+	SidebarMaxWidth       string `toml:"sidebar-max-width"`
+	SidebarCloseOnSelect  bool   `toml:"sidebar-close-on-select"`
+	HighlightMaxBytes     int64  `toml:"highlight-max-bytes"`
+	AutoReloadOnChanges   bool   `toml:"auto-reload-on-changes"`
+	AutoReloadStabilizeMS int    `toml:"auto-reload-stabilize-ms"`
+	AutoReloadMaxRetries  int    `toml:"auto-reload-max-retries"`
 }
 
 type Theme struct {
@@ -29,6 +33,12 @@ type Theme struct {
 	Background                   string `toml:"background"`
 	StatuslineForeground         string `toml:"statusline-foreground"`
 	StatuslineBackground         string `toml:"statusline-background"`
+	StatuslineWarningForeground  string `toml:"statusline-warning-foreground"`
+	StatuslineWarningBackground  string `toml:"statusline-warning-background"`
+	MergeLocalBackground         string `toml:"merge-local-background"`
+	MergeRemoteBackground        string `toml:"merge-remote-background"`
+	MergeHeaderForeground        string `toml:"merge-header-foreground"`
+	MergeHeaderBackground        string `toml:"merge-header-background"`
 	CommandlineForeground        string `toml:"commandline-foreground"`
 	CommandlineBackground        string `toml:"commandline-background"`
 	LineNumberForeground         string `toml:"line-number-foreground"`
@@ -85,14 +95,17 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Editor: EditorOptions{
-			TabWidth:             4,
-			LineNumbers:          "absolute",
-			GitBranchSymbol:      "git:",
-			SidebarWidth:         "30",
-			SidebarMinWidth:      15,
-			SidebarMaxWidth:      "50",
-			SidebarCloseOnSelect: false,
-			HighlightMaxBytes:    8 << 20,
+			TabWidth:              4,
+			LineNumbers:           "absolute",
+			GitBranchSymbol:       "git:",
+			SidebarWidth:          "30",
+			SidebarMinWidth:       15,
+			SidebarMaxWidth:       "50",
+			SidebarCloseOnSelect:  false,
+			HighlightMaxBytes:     8 << 20,
+			AutoReloadOnChanges:   true,
+			AutoReloadStabilizeMS: 300,
+			AutoReloadMaxRetries:  10,
 		},
 		Theme: Theme{
 			Theme:                        "",
@@ -100,6 +113,12 @@ func Default() Config {
 			Background:                   "#0A0E14",
 			StatuslineForeground:         "#B3B1AD",
 			StatuslineBackground:         "#0F1419",
+			StatuslineWarningForeground:  "#FFD700",
+			StatuslineWarningBackground:  "#0F1419",
+			MergeLocalBackground:         "#3A1E1E",
+			MergeRemoteBackground:        "#1E3A24",
+			MergeHeaderForeground:        "#FFD700",
+			MergeHeaderBackground:        "#0F1419",
 			CommandlineForeground:        "#B3B1AD",
 			CommandlineBackground:        "#0F1419",
 			LineNumberForeground:         "#3E4B59",
@@ -242,6 +261,11 @@ func Default() Config {
 
 				// File operations
 				"cmd+s": "save",
+
+				// AI integration
+				"cmd+shift+i": "ai_panel",
+				"cmd+i":       "ai_send",
+				"M":           "merge_mode",
 			},
 			Insert: map[string]string{
 				"esc":           "enter_normal",
@@ -332,6 +356,23 @@ func Load() (Config, error) {
 			cfg.Editor.HighlightMaxBytes = userCfg.Editor.HighlightMaxBytes
 		}
 	}
+	if md.IsDefined("editor", "auto-reload-on-changes") {
+		cfg.Editor.AutoReloadOnChanges = userCfg.Editor.AutoReloadOnChanges
+	}
+	if md.IsDefined("editor", "auto-reload-stabilize-ms") {
+		if userCfg.Editor.AutoReloadStabilizeMS < 0 {
+			cfg.Editor.AutoReloadStabilizeMS = 0
+		} else {
+			cfg.Editor.AutoReloadStabilizeMS = userCfg.Editor.AutoReloadStabilizeMS
+		}
+	}
+	if md.IsDefined("editor", "auto-reload-max-retries") {
+		if userCfg.Editor.AutoReloadMaxRetries < 1 {
+			cfg.Editor.AutoReloadMaxRetries = 1
+		} else {
+			cfg.Editor.AutoReloadMaxRetries = userCfg.Editor.AutoReloadMaxRetries
+		}
+	}
 	if userCfg.Theme.Theme != "" {
 		cfg.Theme.Theme = userCfg.Theme.Theme
 	}
@@ -369,6 +410,24 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.StatuslineBackground != "" {
 		dst.StatuslineBackground = src.StatuslineBackground
+	}
+	if src.StatuslineWarningForeground != "" {
+		dst.StatuslineWarningForeground = src.StatuslineWarningForeground
+	}
+	if src.StatuslineWarningBackground != "" {
+		dst.StatuslineWarningBackground = src.StatuslineWarningBackground
+	}
+	if src.MergeLocalBackground != "" {
+		dst.MergeLocalBackground = src.MergeLocalBackground
+	}
+	if src.MergeRemoteBackground != "" {
+		dst.MergeRemoteBackground = src.MergeRemoteBackground
+	}
+	if src.MergeHeaderForeground != "" {
+		dst.MergeHeaderForeground = src.MergeHeaderForeground
+	}
+	if src.MergeHeaderBackground != "" {
+		dst.MergeHeaderBackground = src.MergeHeaderBackground
 	}
 	if src.CommandlineForeground != "" {
 		dst.CommandlineForeground = src.CommandlineForeground
@@ -535,6 +594,36 @@ func LoadTheme(name string) (Theme, error) {
 		return Theme{}, err
 	}
 	return wrap.Theme, nil
+}
+
+// UpdateEditorAutoReloadOnChanges persists auto-reload-on-changes in config.
+func UpdateEditorAutoReloadOnChanges(enabled bool) error {
+	path, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg := map[string]interface{}{}
+	if data, err := os.ReadFile(path); err == nil {
+		if _, err := toml.Decode(string(data), &cfg); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	section, ok := cfg["editor"].(map[string]interface{})
+	if !ok || section == nil {
+		section = map[string]interface{}{}
+		cfg["editor"] = section
+	}
+	section["auto-reload-on-changes"] = enabled
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
 func ConfigDir() (string, error) {

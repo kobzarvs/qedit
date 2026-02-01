@@ -46,6 +46,10 @@ func testStyles() EditorStyles {
 	return EditorStyles{
 		Main:                    main,
 		Status:                  status,
+		StatusWarning:           status,
+		MergeLocal:              main,
+		MergeRemote:             main,
+		MergeHeader:             status,
 		Command:                 command,
 		CommandCheckmark:        command,
 		LineNumber:              main,
@@ -105,6 +109,7 @@ func optionsFromConfig(cfg config.Config) Options {
 		SidebarMinWidth:      cfg.Editor.SidebarMinWidth,
 		SidebarMaxWidth:      cfg.Editor.SidebarMaxWidth,
 		SidebarCloseOnSelect: cfg.Editor.SidebarCloseOnSelect,
+		AutoReloadOnChanges:  cfg.Editor.AutoReloadOnChanges,
 		KeymapNormal:         cfg.Keymap.Normal,
 		KeymapInsert:         cfg.Keymap.Insert,
 	}

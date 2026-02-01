@@ -60,6 +60,8 @@ func (e *Editor) execAction(action string) bool {
 		e.cmd = e.cmd[:0]
 		e.cmdCursor = 0
 		e.cmdHistoryIndex = -1
+	case actionMergeMode:
+		return e.enterMergeMode()
 	case actionQuit:
 		return true
 	case actionBackspace:
@@ -255,6 +257,20 @@ func (e *Editor) execAction(action string) bool {
 			e.setStatus("saved " + e.filename)
 		}
 		return false
+
+	// AI integration
+	case actionAIPanel:
+		e.toggleAIPanel()
+		return false
+	case actionAISend:
+		e.sendToAI()
+		return false
+	case actionAIApply:
+		e.applyAIEdit()
+		return false
+	case actionAIReject:
+		e.rejectAIEdit()
+		return false
 	}
 	if !e.selectMode {
 		e.clearSelection()
@@ -363,6 +379,44 @@ func (e *Editor) execCommand(cmd string) bool {
 			}
 		}
 		return false
+	case "autoreload", "auto-reload", "auto-reload-on-changes":
+		if len(args) == 0 {
+			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.autoReloadOnChanges))
+			return false
+		}
+		if len(args) > 1 {
+			e.setStatus("usage: auto-reload-on-changes 1|0")
+			return false
+		}
+		enabled, ok := parseBoolArg(args[0])
+		if !ok {
+			e.setStatus("auto-reload-on-changes expects 1|0")
+			return false
+		}
+		if enabled == e.autoReloadOnChanges {
+			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.autoReloadOnChanges))
+			return false
+		}
+		if e.autoReloadConfigHook != nil {
+			if err := e.autoReloadConfigHook(enabled); err != nil {
+				e.setStatus("config write failed: " + err.Error())
+				return false
+			}
+		}
+		e.autoReloadOnChanges = enabled
+		e.setStatus("auto-reload-on-changes=" + boolToFlag(e.autoReloadOnChanges))
+		return false
+	case "merge":
+		if len(args) > 0 {
+			e.setStatus("merge takes no arguments")
+			return false
+		}
+		return e.enterMergeMode()
+	case "ide":
+		e.toggleAIPanel()
+		return false
+	case "ai":
+		return e.handleAICommand(args)
 	default:
 		// Check if command is a line number
 		if lineNum, err := strconv.Atoi(name); err == nil && lineNum > 0 {
@@ -373,12 +427,107 @@ func (e *Editor) execCommand(cmd string) bool {
 		return false
 	}
 }
+
+// handleAICommand handles :ai subcommands
+func (e *Editor) handleAICommand(args []string) bool {
+	if e.aiManager == nil {
+		e.setStatus("AI not configured")
+		return false
+	}
+
+	if len(args) == 0 {
+		// :ai - show current provider and model
+		name := e.aiManager.ActiveName()
+		model := e.aiManager.CurrentModel()
+		if name == "" {
+			e.setStatus("AI: no provider active")
+		} else {
+			e.setStatus(fmt.Sprintf("AI: %s / %s", name, model))
+		}
+		return false
+	}
+
+	switch args[0] {
+	case "list":
+		// :ai list - show available providers
+		providers := e.aiManager.ListProviders()
+		if len(providers) == 0 {
+			e.setStatus("AI: no providers configured")
+			return false
+		}
+		var names []string
+		for _, p := range providers {
+			status := "offline"
+			if p.Available {
+				status = "online"
+			}
+			if p.Name == e.aiManager.ActiveName() {
+				names = append(names, "*"+p.Name+"("+status+")")
+			} else {
+				names = append(names, p.Name+"("+status+")")
+			}
+		}
+		e.setStatus("AI providers: " + strings.Join(names, ", "))
+		return false
+
+	case "model":
+		if len(args) < 2 {
+			// :ai model - show available models
+			models, err := e.aiManager.ListModels()
+			if err != nil {
+				e.setStatus("AI: " + err.Error())
+				return false
+			}
+			if len(models) == 0 {
+				e.setStatus("AI: no models available")
+				return false
+			}
+			var names []string
+			current := e.aiManager.CurrentModel()
+			for _, m := range models {
+				if m.ID == current {
+					names = append(names, "*"+m.ID)
+				} else {
+					names = append(names, m.ID)
+				}
+			}
+			e.setStatus("Models: " + strings.Join(names, ", "))
+			return false
+		}
+		// :ai model <name> - set model
+		model := args[1]
+		if err := e.aiManager.SetModel(model); err != nil {
+			e.setStatus("AI: " + err.Error())
+			return false
+		}
+		e.setStatus("AI model: " + model)
+		if e.aiPanel != nil {
+			e.aiPanel.ModelName = model
+		}
+		return false
+
+	default:
+		// :ai <provider> - switch provider
+		provider := args[0]
+		if err := e.aiManager.SetActive(provider); err != nil {
+			e.setStatus("AI: " + err.Error())
+			return false
+		}
+		e.setStatus("AI provider: " + provider)
+		if e.aiPanel != nil {
+			e.aiPanel.ProviderName = provider
+			e.aiPanel.ModelName = e.aiManager.CurrentModel()
+		}
+		return false
+	}
+}
 func (e *Editor) gotoLineNumber(lineNum int) {
 	if lineNum < 1 {
 		lineNum = 1
 	}
-	if lineNum > len(e.lines) {
-		lineNum = len(e.lines)
+	lineCount := e.LineCount()
+	if lineNum > lineCount {
+		lineNum = lineCount
 	}
 	e.cursor.Row = lineNum - 1
 	e.cursor.Col = 0
@@ -387,6 +536,31 @@ func (e *Editor) gotoLineNumber(lineNum int) {
 	e.scrollX = 0
 	e.setStatus(fmt.Sprintf("line %d", lineNum))
 }
+
+func parseBoolArg(value string) (bool, bool) {
+	if value == "" {
+		return false, false
+	}
+	val := strings.ToLower(strings.TrimSpace(value))
+	switch val {
+	case "on", "yes":
+		return true, true
+	case "off", "no":
+		return false, true
+	}
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		return false, false
+	}
+	return b, true
+}
+
+func boolToFlag(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
+}
 func (e *Editor) Save(path string) error {
 	if path == "" {
 		if e.filename == "" {
@@ -394,14 +568,15 @@ func (e *Editor) Save(path string) error {
 		}
 		path = e.filename
 	}
-	data := []byte(joinLines(e.lines))
+	data := []byte(e.Content())
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err
 	}
 	e.filename = path
 	e.savePoint = len(e.undo)
-	e.updateDirty()
 	e.externalChange = ExternalChangeNone
+	e.diskContent = e.Content()
+	e.updateDirty()
 	_ = e.syncFileSnapshot()
 	_ = e.SaveUndoHistory()
 	e.saveSessionState()
@@ -802,7 +977,7 @@ func (e *Editor) zoomWithAnimation(zoomIn bool, steps int) {
 		if targetScroll < 0 {
 			targetScroll = 0
 		}
-		maxScroll := len(e.lines) - e.viewHeight
+		maxScroll := e.LineCount() - e.viewHeight
 		if maxScroll < 0 {
 			maxScroll = 0
 		}

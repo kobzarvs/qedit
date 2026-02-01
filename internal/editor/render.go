@@ -15,6 +15,7 @@ func (e *Editor) Render(s Screen) {
 	if w <= 0 || h <= 0 {
 		return
 	}
+	showTopMessage := e.showTopStatusMessage(w)
 
 	statusY := h - 2
 	cmdY := h - 1
@@ -28,6 +29,7 @@ func (e *Editor) Render(s Screen) {
 	}
 	e.viewHeight = viewHeight
 	e.viewWidth = w
+	e.ensureConflictBlocks()
 
 	// Calculate sidebar width (refs picker or new sidebar, mutually exclusive)
 	sidebarWidth := 0
@@ -42,8 +44,23 @@ func (e *Editor) Render(s Screen) {
 			sidebarWidth = w / 2
 		}
 	}
+
+	// Calculate AI panel width (right sidebar)
+	aiPanelWidth := 0
+	if e.aiPanel != nil && e.aiPanel.Visible {
+		aiPanelWidth = e.aiPanel.Width
+		if aiPanelWidth < 30 {
+			aiPanelWidth = 30
+		}
+		// Limit AI panel to 50% of remaining width after left sidebar
+		maxAIPanelWidth := (w - sidebarWidth) / 2
+		if aiPanelWidth > maxAIPanelWidth {
+			aiPanelWidth = maxAIPanelWidth
+		}
+	}
+
 	editorX := sidebarWidth
-	editorWidth := w - sidebarWidth
+	editorWidth := w - sidebarWidth - aiPanelWidth
 
 	gutterWidth := e.gutterWidth()
 	if !e.freeScroll {
@@ -57,7 +74,7 @@ func (e *Editor) Render(s Screen) {
 	// Draw editor content (offset by sidebar)
 	for y := 0; y < viewHeight; y++ {
 		lineIdx := e.scroll + y
-		if lineIdx >= len(e.lines) {
+		if lineIdx >= e.LineCount() {
 			clearLineAt(s, editorX, y, editorWidth, e.styleMain)
 			continue
 		}
@@ -71,12 +88,18 @@ func (e *Editor) Render(s Screen) {
 		e.renderRefsSidebar(s, sidebarWidth, viewHeight)
 	}
 
+	// Draw AI panel (right sidebar)
+	if e.aiPanel != nil && e.aiPanel.Visible && aiPanelWidth > 0 {
+		aiPanelX := w - aiPanelWidth
+		e.renderAIPanel(s, aiPanelX, 0, aiPanelWidth, viewHeight)
+	}
+
 	// Draw scroll indicator if recently scrolled
 	e.renderScrollIndicator(s, w, viewHeight)
 
 	var cx, cy int
 	if statusY >= 0 && !e.zoomPendingRestore {
-		e.renderStatusline(s, w, statusY)
+		e.renderStatusline(s, w, statusY, showTopMessage)
 	}
 	if cmdY >= 0 && !e.zoomPendingRestore {
 		cmdCursor := e.renderCommandline(s, w, cmdY)
@@ -94,11 +117,19 @@ func (e *Editor) Render(s Screen) {
 		if cy < 0 || cy >= viewHeight {
 			cursorVisible = false
 		}
-		if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
-			cx = editorX + gutterWidth + visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth) - e.scrollX
+		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
+			cx = editorX + gutterWidth + visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.tabWidth) - e.scrollX
 		}
 		if cx < editorX+gutterWidth {
 			cx = editorX + gutterWidth
+		}
+		// Limit cursor to editor area (before AI panel)
+		maxCursorX := w - aiPanelWidth - 1
+		if maxCursorX < editorX+gutterWidth {
+			maxCursorX = editorX + gutterWidth
+		}
+		if cx > maxCursorX {
+			cx = maxCursorX
 		}
 		if cx >= w {
 			cx = w - 1
@@ -126,8 +157,12 @@ func (e *Editor) Render(s Screen) {
 	if e.keybindingsHelpActive {
 		e.renderKeybindingsHelp(s, w, viewHeight)
 	}
+	if showTopMessage {
+		e.renderTopStatusMessage(s, w)
+	}
 	sidebarFocused := e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
-	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || sidebarFocused || !cursorVisible {
+	aiPanelFocused := e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused
+	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || sidebarFocused || aiPanelFocused || !cursorVisible {
 		s.HideCursor()
 		s.Show()
 		return
@@ -140,7 +175,42 @@ func (e *Editor) Render(s Screen) {
 	s.ShowCursor(cx, cy)
 	s.Show()
 }
-func (e *Editor) renderStatusline(s Screen, w, y int) {
+
+const statusMessageTopThreshold = 40
+
+func (e *Editor) showTopStatusMessage(w int) bool {
+	if e.statusMessage == "" {
+		return false
+	}
+	if e.autoReloadInProgress {
+		return true
+	}
+	msgLen := utf8.RuneCountInString(e.statusMessage)
+	return msgLen >= statusMessageTopThreshold
+}
+
+func (e *Editor) renderTopStatusMessage(s Screen, w int) {
+	if w <= 0 {
+		return
+	}
+	msgRunes := []rune(e.statusMessage)
+	if len(msgRunes) > w {
+		msgRunes = msgRunes[:w]
+	}
+	style := e.styleStatus
+	if e.externalChange != ExternalChangeNone || e.autoReloadInProgress {
+		style = e.styleStatusWarning
+	}
+	for x := 0; x < w; x++ {
+		r := ' '
+		if x < len(msgRunes) {
+			r = msgRunes[x]
+		}
+		s.SetContent(x, 0, r, nil, style)
+	}
+}
+
+func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	mode := "NORMAL"
 	if e.mode == ModeInsert {
 		mode = "INSERT"
@@ -150,6 +220,8 @@ func (e *Editor) renderStatusline(s Screen, w, y int) {
 		mode = "BRANCHES"
 	} else if e.mode == ModeSearch {
 		mode = "SEARCH"
+	} else if e.mode == ModeMerge {
+		mode = "MERGE"
 	}
 	name := e.filename
 	if name == "" {
@@ -178,14 +250,18 @@ func (e *Editor) renderStatusline(s Screen, w, y int) {
 		flags += "[!]"
 	}
 
+	msg := e.statusMessage
+	if showTopMessage {
+		msg = ""
+	}
 	status := fmt.Sprintf(" %s | %s %s", mode, name, flags)
-	if e.statusMessage != "" {
-		status = fmt.Sprintf(" %s | %s %s | %s ", mode, name, flags, e.statusMessage)
+	if msg != "" {
+		status = fmt.Sprintf(" %s | %s %s | %s ", mode, name, flags, msg)
 	}
 	row := e.cursor.Row + 1
 	col := 1
-	if e.cursor.Row >= 0 && e.cursor.Row < len(e.lines) {
-		col = visualCol(e.lines[e.cursor.Row], e.cursor.Col, e.tabWidth) + 1
+	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
+		col = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.tabWidth) + 1
 	}
 
 	// Build right part, tracking branch position for styling
@@ -204,6 +280,14 @@ func (e *Editor) renderStatusline(s Screen, w, y int) {
 
 	line := composeStatusLine(status, right, w)
 	lineStr := string(line)
+	statusMsgStart := -1
+	statusMsgEnd := -1
+	if msg != "" {
+		if idx := strings.LastIndex(lineStr, msg); idx >= 0 {
+			statusMsgStart = utf8.RuneCountInString(lineStr[:idx])
+			statusMsgEnd = statusMsgStart + utf8.RuneCountInString(msg)
+		}
+	}
 
 	// Find branch position in the composed line (using rune indices)
 	branchStart := -1
@@ -252,6 +336,8 @@ func (e *Editor) renderStatusline(s Screen, w, y int) {
 			style = branchStyle
 		} else if layoutStart >= 0 && x >= layoutStart && x < layoutEnd {
 			style = layoutStyle
+		} else if statusMsgStart >= 0 && x >= statusMsgStart && x < statusMsgEnd && (e.externalChange != ExternalChangeNone || e.autoReloadInProgress) {
+			style = e.styleStatusWarning
 		}
 		s.SetContent(x, y, r, nil, style)
 	}
@@ -628,7 +714,7 @@ func (e *Editor) renderScrollIndicator(s Screen, w, viewHeight int) {
 		return
 	}
 
-	totalLines := len(e.lines)
+	totalLines := e.LineCount()
 	if totalLines <= viewHeight {
 		return // No need for scroll indicator if all content fits
 	}
@@ -693,7 +779,7 @@ func (e *Editor) renderScrollIndicator(s Screen, w, viewHeight int) {
 		}
 	}
 }
-func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int, scrollX int) {
+func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int, scrollX int, conflictKind conflictLineKind) {
 	col := 0 // visual column (accounting for tabs)
 	if tabWidth < 1 {
 		tabWidth = 1
@@ -701,6 +787,11 @@ func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int,
 	fallbackStyle := e.styleMain
 	if highlightActive {
 		fallbackStyle = e.styleSyntaxUnknown
+	}
+	conflictBg, conflictActive := e.conflictBackground(conflictKind)
+	if conflictActive {
+		fg, _, _ := fallbackStyle.Decompose()
+		fallbackStyle = fallbackStyle.Foreground(fg).Background(conflictBg)
 	}
 
 	for idx, r := range line {
@@ -718,6 +809,10 @@ func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int,
 			}
 		} else if highlightActive && !isWordRune(r) {
 			activeStyle = e.styleMain
+		}
+		if conflictActive {
+			fg, _, _ := activeStyle.Decompose()
+			activeStyle = activeStyle.Foreground(fg).Background(conflictBg)
 		}
 
 		// Check for search match highlight
@@ -831,15 +926,52 @@ func formatGitBranch(symbol, branch string) string {
 	return symbol + " " + branch
 }
 func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx int) {
-	if gutterWidth > 0 {
-		// gutterWidth = 1 (leading space) + digits + 1 (trailing space)
-		digits := gutterWidth - 2
+	line := e.text.Line(lineIdx)
+	if markerKind, _ := parseConflictMarker(line); markerKind != conflictNone {
+		e.drawConflictMarkerLine(s, y, x0+gutterWidth, x0+w)
+		return
+	}
+	kind, _ := e.conflictLineInfo(lineIdx)
+	diffWidth := 0
+	if e.hasConflictBlocks() {
+		diffWidth = 1
+	}
+	numWidth := gutterWidth - diffWidth
+	if numWidth > 0 && e.lineNumberMode != LineNumberOff {
+		// numWidth = 1 (leading space) + digits + 1 (trailing space)
+		digits := numWidth - 2
 		if digits < 1 {
 			digits = 1
 		}
-		num := lineIdx + 1
+		localBefore, remoteBefore := e.conflictLineOffsets(lineIdx)
+		localNum := lineIdx + 1 - remoteBefore
+		remoteNum := lineIdx + 1 - localBefore
+		if localNum < 1 {
+			localNum = 1
+		}
+		if remoteNum < 1 {
+			remoteNum = 1
+		}
+		num := localNum
+		if kind == conflictRemote {
+			num = remoteNum
+		}
 		if e.lineNumberMode == LineNumberRelative && lineIdx != e.cursor.Row {
-			diff := lineIdx - e.cursor.Row
+			cursorKind, _ := e.conflictLineInfo(e.cursor.Row)
+			cursorLocalBefore, cursorRemoteBefore := e.conflictLineOffsets(e.cursor.Row)
+			cursorLocalNum := e.cursor.Row + 1 - cursorRemoteBefore
+			cursorRemoteNum := e.cursor.Row + 1 - cursorLocalBefore
+			if cursorLocalNum < 1 {
+				cursorLocalNum = 1
+			}
+			if cursorRemoteNum < 1 {
+				cursorRemoteNum = 1
+			}
+			cursorNum := cursorLocalNum
+			if cursorKind == conflictRemote {
+				cursorNum = cursorRemoteNum
+			}
+			diff := num - cursorNum
 			if diff < 0 {
 				diff = -diff
 			}
@@ -850,25 +982,52 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 		if lineIdx == e.cursor.Row {
 			style = e.styleLineNumberActive
 		}
+		spaceStyle := e.styleMain
+		if kind == conflictLocal || kind == conflictRemote {
+			mergeStyle := e.styleMergeLocal
+			if kind == conflictRemote {
+				mergeStyle = e.styleMergeRemote
+			}
+			if mergeStyle != nil {
+				fg, _, _ := style.Decompose()
+				_, mergeBg, _ := mergeStyle.Decompose()
+				style = style.Foreground(fg).Background(mergeBg)
+				spaceStyle = style
+			}
+		}
 		// Draw leading space
 		if w > 0 {
-			s.SetContent(x0, y, ' ', nil, e.styleMain)
+			s.SetContent(x0, y, ' ', nil, spaceStyle)
 		}
 		// Draw number (right-aligned with leading spaces)
 		for i, r := range numStr {
 			x := 1 + i
-			if x >= gutterWidth-1 || x >= w {
+			if x >= numWidth-1 || x >= w {
 				break
 			}
 			s.SetContent(x0+x, y, r, nil, style)
 		}
 		// Draw trailing space
-		if gutterWidth-1 < w {
-			s.SetContent(x0+gutterWidth-1, y, ' ', nil, e.styleMain)
+		if numWidth-1 < w {
+			s.SetContent(x0+numWidth-1, y, ' ', nil, spaceStyle)
 		}
 	}
 	if gutterWidth >= w {
 		return
+	}
+	if diffWidth > 0 && gutterWidth > 0 {
+		ch := ' '
+		style := e.styleMain
+		if sign, signStyle, ok := e.conflictSign(kind); ok {
+			ch = sign
+			if signStyle != nil {
+				style = signStyle
+			}
+		}
+		col := x0 + gutterWidth - 1
+		if col < w {
+			s.SetContent(col, y, ch, nil, style)
+		}
 	}
 	selStart, selEnd, ok := e.selectionRangeForLine(lineIdx)
 	if !ok {
@@ -880,7 +1039,7 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 	if highlightActive {
 		spans = e.highlights[lineIdx]
 	}
-	e.drawLine(s, y, x0+w, x0+gutterWidth, e.lines[lineIdx], e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX)
+	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX, kind)
 }
 func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 	if !e.branchPickerActive || len(e.branchPickerItems) == 0 {
@@ -1447,7 +1606,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"find_char": "Search", "find_char_backward": "Search", "till_char": "Search", "till_char_backward": "Search",
 		// Modes
 		"enter_insert": "Modes", "enter_command": "Modes", "goto_mode": "Modes", "match_mode": "Modes",
-		"view_mode": "Modes", "space_mode": "Modes",
+		"view_mode": "Modes", "space_mode": "Modes", "merge_mode": "Modes",
 		// History
 		"undo": "History", "redo": "History",
 		// Other
@@ -1475,7 +1634,8 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"collapse_selection": "Collapse selection", "select_all": "Select all",
 		"indent": "Indent", "unindent": "Unindent",
 		"goto_mode": "Goto mode (g)", "match_mode": "Match mode (m)", "view_mode": "View mode (z)", "space_mode": "Space menu",
-		"find_char": "Find char (f)", "find_char_backward": "Find char back (F)",
+		"merge_mode": "Merge mode (Shift+M)",
+		"find_char":  "Find char (f)", "find_char_backward": "Find char back (F)",
 		"till_char": "Till char (t)", "till_char_backward": "Till char back (T)",
 		"search_forward": "Search /", "search_backward": "Search ?",
 		"search_next": "Next match (n)", "search_prev": "Prev match (N)",

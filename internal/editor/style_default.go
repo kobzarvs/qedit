@@ -26,6 +26,10 @@ func defaultEditorStyles() EditorStyles {
 	return EditorStyles{
 		Main:                    base,
 		Status:                  base,
+		StatusWarning:           base,
+		MergeLocal:              base,
+		MergeRemote:             base,
+		MergeHeader:             base,
 		Command:                 base,
 		CommandCheckmark:        base,
 		LineNumber:              base,

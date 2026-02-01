@@ -29,6 +29,12 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	colors["background"] = parseColor(theme.Background, tcell.ColorBlack)
 	colors["statusline-foreground"] = resolve(theme.StatuslineForeground, tcell.ColorBlack)
 	colors["statusline-background"] = resolve(theme.StatuslineBackground, tcell.ColorGray)
+	colors["statusline-warning-foreground"] = resolve(theme.StatuslineWarningForeground, tcell.ColorYellow)
+	colors["statusline-warning-background"] = resolve(theme.StatuslineWarningBackground, colors["statusline-background"])
+	colors["merge-local-background"] = resolve(theme.MergeLocalBackground, tcell.ColorMaroon)
+	colors["merge-remote-background"] = resolve(theme.MergeRemoteBackground, tcell.ColorDarkGreen)
+	colors["merge-header-foreground"] = resolve(theme.MergeHeaderForeground, colors["statusline-foreground"])
+	colors["merge-header-background"] = resolve(theme.MergeHeaderBackground, colors["statusline-background"])
 	colors["commandline-foreground"] = resolve(theme.CommandlineForeground, colors["statusline-foreground"])
 	colors["commandline-background"] = resolve(theme.CommandlineBackground, colors["statusline-background"])
 	colors["line-number-foreground"] = resolve(theme.LineNumberForeground, tcell.ColorGray)
@@ -87,6 +93,10 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 
 	main := style(colors["foreground"], colors["background"])
 	status := style(colors["statusline-foreground"], colors["statusline-background"])
+	statusWarning := style(colors["statusline-warning-foreground"], colors["statusline-warning-background"])
+	mergeLocal := style(colors["foreground"], colors["merge-local-background"])
+	mergeRemote := style(colors["foreground"], colors["merge-remote-background"])
+	mergeHeader := style(colors["merge-header-foreground"], colors["merge-header-background"])
 	command := style(colors["commandline-foreground"], colors["commandline-background"])
 	lineNumber := style(colors["line-number-foreground"], colors["background"])
 	lineNumberActive := style(colors["line-number-active-foreground"], colors["background"])
@@ -133,6 +143,10 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	return editor.EditorStyles{
 		Main:                    main,
 		Status:                  status,
+		StatusWarning:           statusWarning,
+		MergeLocal:              mergeLocal,
+		MergeRemote:             mergeRemote,
+		MergeHeader:             mergeHeader,
 		Command:                 command,
 		CommandCheckmark:        command,
 		LineNumber:              lineNumber,
