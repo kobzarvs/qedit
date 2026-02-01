@@ -5,7 +5,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/kobzarvs/qedit/internal/logger"
 )
 
@@ -75,7 +74,7 @@ type SidebarContent interface {
 
 	// HandleKey processes mode-specific keys
 	// Returns: handled, action
-	HandleKey(ev *tcell.EventKey) (bool, SidebarActionData)
+	HandleKey(ev EventKey) (bool, SidebarActionData)
 
 	// OnEnter called when Enter pressed on current item
 	OnEnter() SidebarActionData
@@ -89,17 +88,19 @@ type SidebarContent interface {
 
 // SidebarStyles contains all sidebar styling
 type SidebarStyles struct {
-	Base        tcell.Style // default fg/bg
-	Dir         tcell.Style // directories
-	Selected    tcell.Style // selected item
-	Header      tcell.Style // title bar
-	Border      tcell.Style // vertical separator
-	Hidden      tcell.Style // dimmed items
-	Ignored     tcell.Style // gitignored
-	Indicator   tcell.Style // ">" cursor
-	Hotkey      tcell.Style // hotkey hints in menu
-	Unavailable tcell.Style // greyed out items
-	Current     tcell.Style // current branch marker
+	Base     Style // default fg/bg
+	Dir      Style // directories
+	Selected Style // selected item
+	// SelectedBackground is used for selection highlight without affecting text colors.
+	SelectedBackground Color
+	Header             Style // title bar
+	Border             Style // vertical separator
+	Hidden             Style // dimmed items
+	Ignored            Style // gitignored
+	Indicator          Style // ">" cursor
+	Hotkey             Style // hotkey hints in menu
+	Unavailable        Style // greyed out items
+	Current            Style // current branch marker
 }
 
 // Sidebar is the main sidebar container
@@ -346,7 +347,7 @@ func (s *Sidebar) EnsureVisible(height int) {
 }
 
 // HandleKey processes common sidebar keys and delegates to content
-func (s *Sidebar) HandleKey(ev *tcell.EventKey, viewHeight int) SidebarActionData {
+func (s *Sidebar) HandleKey(ev EventKey, viewHeight int) SidebarActionData {
 	if s.Content == nil {
 		logger.Debug("Sidebar.HandleKey: content is nil")
 		return SidebarActionData{Action: SidebarActionNone}
@@ -365,55 +366,55 @@ func (s *Sidebar) HandleKey(ev *tcell.EventKey, viewHeight int) SidebarActionDat
 
 	// Common navigation
 	switch {
-	case key == tcell.KeyUp || r == 'k':
+	case key == KeyUp || r == 'k':
 		s.MoveUp()
 		s.EnsureVisible(viewHeight)
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyDown || r == 'j':
+	case key == KeyDown || r == 'j':
 		s.MoveDown()
 		s.EnsureVisible(viewHeight)
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyPgUp:
+	case key == KeyPgUp:
 		s.PageUp(viewHeight)
 		s.EnsureVisible(viewHeight)
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyPgDn:
+	case key == KeyPgDn:
 		s.PageDown(viewHeight)
 		s.EnsureVisible(viewHeight)
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyHome || (r == 'g' && ev.Modifiers() == 0):
+	case key == KeyHome || (r == 'g' && ev.Modifiers() == 0):
 		// Note: 'gg' motion would need state tracking
 		s.MoveToFirst()
 		s.EnsureVisible(viewHeight)
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyEnd || r == 'G':
+	case key == KeyEnd || r == 'G':
 		s.MoveToLast()
 		s.EnsureVisible(viewHeight)
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyEnter:
+	case key == KeyEnter:
 		return s.Content.OnEnter()
 
-	case key == tcell.KeyRight || r == 'l':
+	case key == KeyRight || r == 'l':
 		// Right/l only works in menu mode (to enter submenu), not on leaf items
 		if s.Content.Mode() == SidebarModeMenu {
 			return s.Content.OnEnter()
 		}
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyLeft || r == 'h':
+	case key == KeyLeft || r == 'h':
 		// Left/h: back to menu (does nothing if already in menu)
 		if s.Content.Mode() != SidebarModeMenu {
 			return SidebarActionData{Action: SidebarActionBackToMenu}
 		}
 		return SidebarActionData{Action: SidebarActionNone}
 
-	case key == tcell.KeyEscape || r == 'q':
+	case key == KeyEscape || r == 'q':
 		// Esc/q always closes sidebar
 		return SidebarActionData{Action: SidebarActionClose}
 
@@ -425,7 +426,7 @@ func (s *Sidebar) HandleKey(ev *tcell.EventKey, viewHeight int) SidebarActionDat
 }
 
 // Render renders the sidebar
-func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h int) {
+func (s *Sidebar) Render(screen Screen, styles SidebarStyles, x, y, w, h int) {
 	if s.Content == nil || w <= 0 || h <= 0 {
 		return
 	}
@@ -484,7 +485,10 @@ func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h i
 		isSelected := s.Focused && itemIdx == currentIdx
 
 		// Get the selected background color
-		_, selBg, _ := styles.Selected.Decompose()
+		selBg := styles.SelectedBackground
+		if selBg == 0 && styles.Selected != nil {
+			_, selBg, _ = styles.Selected.Decompose()
+		}
 
 		// Determine text style (foreground color based on item type)
 		textStyle := styles.Base
@@ -503,8 +507,7 @@ func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h i
 
 		// If selected, apply selected background but keep text foreground
 		if isSelected {
-			fg, _, _ := textStyle.Decompose()
-			textStyle = textStyle.Foreground(fg).Background(selBg)
+			textStyle = textStyle.Background(selBg)
 		}
 
 		// Fill entire row with background first (edge to edge selection)
@@ -553,8 +556,7 @@ func (s *Sidebar) Render(screen tcell.Screen, styles SidebarStyles, x, y, w, h i
 					hotkeyStyle = styles.Unavailable
 				}
 				if isSelected {
-					fg, _, _ := hotkeyStyle.Decompose()
-					hotkeyStyle = hotkeyStyle.Foreground(fg).Background(selBg)
+					hotkeyStyle = hotkeyStyle.Background(selBg)
 				}
 				hotkeyCol := hotkeyX
 				for _, r := range item.Hotkey {

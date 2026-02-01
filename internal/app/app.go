@@ -13,10 +13,13 @@ import (
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
+	"github.com/kobzarvs/qedit/internal/integrations"
 	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/platform/keyboard"
+	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
+	"github.com/kobzarvs/qedit/internal/ui"
 )
 
 // App is the top-level runtime for qedit.
@@ -80,9 +83,40 @@ func (a *App) Run() error {
 		}
 	}()
 
+	sessionMgr, _ := session.NewManager()
+	var sessionStore editor.SessionStore
+	if sessionMgr != nil {
+		sessionStore = integrations.NewSessionStore(sessionMgr)
+	}
+	cmdHistoryPath := ""
+	searchHistoryPath := ""
+	if dir, err := config.ConfigDir(); err == nil {
+		cmdHistoryPath = filepath.Join(dir, "history")
+		searchHistoryPath = filepath.Join(dir, "search_history")
+	}
+
 	const maxHighlightBytes = 8 << 20
-	ed := editor.New(cfg)
+	ed := editor.New(editor.Options{
+		TabWidth:             cfg.Editor.TabWidth,
+		LineNumbers:          cfg.Editor.LineNumbers,
+		GitBranchSymbol:      cfg.Editor.GitBranchSymbol,
+		SidebarWidth:         cfg.Editor.SidebarWidth,
+		SidebarMinWidth:      cfg.Editor.SidebarMinWidth,
+		SidebarMaxWidth:      cfg.Editor.SidebarMaxWidth,
+		SidebarCloseOnSelect: cfg.Editor.SidebarCloseOnSelect,
+		KeymapNormal:         cfg.Keymap.Normal,
+		KeymapInsert:         cfg.Keymap.Insert,
+		CmdHistoryPath:       cmdHistoryPath,
+		SearchHistoryPath:    searchHistoryPath,
+		SessionStore:         sessionStore,
+	})
 	defer ed.Shutdown()
+	ed.SetStyles(ui.StylesFromConfig(cfg))
+	ed.SetFormatter(integrations.GoFormatter{})
+	if runtime.GOOS == "darwin" {
+		ed.SetClipboard(integrations.MacClipboard{})
+		ed.SetTerminalZoomer(integrations.TerminalZoomer{})
+	}
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()
 	gitPath := ""
@@ -121,7 +155,7 @@ func (a *App) Run() error {
 	// Determine main branch (from session cache or git)
 	gitRoot := gitinfo.Root(gitPath)
 	if gitRoot != "" {
-		sm := ed.GetSessionManager()
+		sm := sessionMgr
 		var mainBranch string
 		// Try session cache first
 		if sm != nil {
@@ -238,17 +272,18 @@ func (a *App) Run() error {
 			highlightExpected = false
 		}
 	}
-	ed.Render(s)
+	screen := ui.WrapScreen(s)
+	ed.Render(screen)
 	for {
 		ev := s.PollEvent()
 		isMouseScroll := false
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
-			if ed.HandleKey(ev) {
+			if ed.HandleKey(ui.WrapKey(ev)) {
 				return nil
 			}
 		case *tcell.EventMouse:
-			ed.HandleMouse(ev)
+			ed.HandleMouse(ui.WrapMouse(ev))
 			isMouseScroll = true
 		case *tcell.EventResize:
 			s.Sync()
@@ -364,6 +399,6 @@ func (a *App) Run() error {
 		if highlightExpected && !ed.HasHighlights() {
 			continue
 		}
-		ed.Render(s)
+		ed.Render(screen)
 	}
 }

@@ -56,6 +56,7 @@ git-branch-symbol = "branch"
 [theme]
 theme = "test"
 commandline-background = "#123456"
+box-border-foreground = "#abcdef"
 
 [keymap.normal]
 x = "quit"
@@ -82,6 +83,9 @@ x = "quit"
 	}
 	if cfg.Theme.CommandlineBackground != "#123456" {
 		t.Fatalf("CommandlineBackground = %q, want %q", cfg.Theme.CommandlineBackground, "#123456")
+	}
+	if cfg.Theme.BoxBorderForeground != "#abcdef" {
+		t.Fatalf("BoxBorderForeground = %q, want %q", cfg.Theme.BoxBorderForeground, "#abcdef")
 	}
 	if cfg.Keymap.Normal["x"] != "quit" {
 		t.Fatalf("keymap x = %q, want %q", cfg.Keymap.Normal["x"], "quit")

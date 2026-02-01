@@ -1,7 +1,6 @@
 package editor
 
 import (
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -856,9 +855,12 @@ func (e *Editor) helixChange() {
 	e.saveLineState()
 }
 
-// copyToSystemClipboard copies text to macOS clipboard using pbcopy
+// copyToSystemClipboard copies text to system clipboard when available.
 func (e *Editor) copyToSystemClipboard() {
 	if len(e.clipboard) == 0 {
+		return
+	}
+	if e.systemClipboard == nil {
 		return
 	}
 	// Join clipboard lines with newlines
@@ -867,10 +869,7 @@ func (e *Editor) copyToSystemClipboard() {
 		lines = append(lines, string(line))
 	}
 	text := strings.Join(lines, "\n")
-
-	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(text)
-	_ = cmd.Run()
+	_ = e.systemClipboard.Write(text)
 }
 
 // Helix-style yank (y) - copy selection to clipboard

@@ -1,6 +1,6 @@
 package editor
 
-import "github.com/gdamore/tcell/v2"
+
 
 // SidebarLoadingContent shows a non-interactive loading placeholder.
 type SidebarLoadingContent struct {
@@ -40,7 +40,7 @@ func (l *SidebarLoadingContent) SetIndex(i int) {
 	// No-op: non-interactive placeholder.
 }
 
-func (l *SidebarLoadingContent) HandleKey(ev *tcell.EventKey) (bool, SidebarActionData) {
+func (l *SidebarLoadingContent) HandleKey(ev EventKey) (bool, SidebarActionData) {
 	return false, SidebarActionData{Action: SidebarActionNone}
 }
 

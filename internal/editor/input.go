@@ -3,18 +3,15 @@ package editor
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
-	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/logger"
 )
 
-func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
+func (e *Editor) HandleKey(ev EventKey) bool {
 	e.freeScroll = false
 	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" {
 		e.statusMessage = ""
@@ -40,33 +37,33 @@ func (e *Editor) HandleKey(ev *tcell.EventKey) bool {
 		return e.handleNormal(ev)
 	}
 }
-func (e *Editor) HandleMouse(ev *tcell.EventMouse) {
+func (e *Editor) HandleMouse(ev EventMouse) {
 	// Intercept mouse events when modal is open
 	if e.keybindingsHelpActive {
-		if ev.Buttons() == tcell.WheelUp {
+		if ev.Buttons() == WheelUp {
 			if e.keybindingsHelpScroll > 0 {
 				e.keybindingsHelpScroll--
 			}
-		} else if ev.Buttons() == tcell.WheelDown {
+		} else if ev.Buttons() == WheelDown {
 			e.keybindingsHelpScroll++
 		}
 		return
 	}
 
-	if ev.Buttons() == tcell.WheelUp {
+	if ev.Buttons() == WheelUp {
 		e.scrollUp(1)
 		e.freeScroll = true
 		e.lastScrollTime = time.Now()
-	} else if ev.Buttons() == tcell.WheelDown {
+	} else if ev.Buttons() == WheelDown {
 		e.scrollDown(1)
 		e.freeScroll = true
 		e.lastScrollTime = time.Now()
-	} else if ev.Buttons() == tcell.WheelLeft {
+	} else if ev.Buttons() == WheelLeft {
 		e.scrollLeft(1)
-	} else if ev.Buttons() == tcell.WheelRight {
+	} else if ev.Buttons() == WheelRight {
 		textWidth := e.viewWidth - e.gutterWidth()
 		e.scrollRight(1, textWidth)
-	} else if ev.Buttons() == tcell.Button1 {
+	} else if ev.Buttons() == Button1 {
 		e.handleMouseClick(ev)
 	}
 }
@@ -118,7 +115,7 @@ func (e *Editor) maxVisibleLineWidth() int {
 	}
 	return maxWidth
 }
-func (e *Editor) handleMouseClick(ev *tcell.EventMouse) {
+func (e *Editor) handleMouseClick(ev EventMouse) {
 	x, y := ev.Position()
 
 	// Convert screen Y to line number
@@ -205,10 +202,10 @@ func (e *Editor) scrollViewDown() {
 		e.clampCursorCol()
 	}
 }
-func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
+func (e *Editor) handleNormal(ev EventKey) bool {
 	// Handle zoom mode - only allow = (more zoom) or space (restore)
 	if e.zoomPendingRestore {
-		if ev.Key() == tcell.KeyRune {
+		if ev.Key() == KeyRune {
 			switch ev.Rune() {
 			case ' ':
 				e.zoomWithAnimation(false, 20) // zoom out with scroll restore
@@ -245,10 +242,10 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	if e.gotoMode {
 		e.gotoMode = false
 		e.pendingKeys = ""
-		if ev.Key() == tcell.KeyEscape {
+		if ev.Key() == KeyEscape {
 			return false
 		}
-		if ev.Key() == tcell.KeyRune {
+		if ev.Key() == KeyRune {
 			return e.handleGotoKey(ev.Rune())
 		}
 		return false
@@ -258,10 +255,10 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	if e.matchMode {
 		e.matchMode = false
 		e.pendingKeys = ""
-		if ev.Key() == tcell.KeyEscape {
+		if ev.Key() == KeyEscape {
 			return false
 		}
-		if ev.Key() == tcell.KeyRune {
+		if ev.Key() == KeyRune {
 			return e.handleMatchKey(ev.Rune())
 		}
 		return false
@@ -271,10 +268,10 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	if e.viewMode {
 		e.viewMode = false
 		e.pendingKeys = ""
-		if ev.Key() == tcell.KeyEscape {
+		if ev.Key() == KeyEscape {
 			return false
 		}
-		if ev.Key() == tcell.KeyRune {
+		if ev.Key() == KeyRune {
 			return e.handleViewKey(ev.Rune())
 		}
 		return false
@@ -284,10 +281,10 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	if e.windowMode {
 		e.windowMode = false
 		e.pendingKeys = ""
-		if ev.Key() == tcell.KeyEscape {
+		if ev.Key() == KeyEscape {
 			return false
 		}
-		if ev.Key() == tcell.KeyRune {
+		if ev.Key() == KeyRune {
 			return e.handleWindowKey(ev.Rune())
 		}
 		return false
@@ -297,11 +294,11 @@ func (e *Editor) handleNormal(ev *tcell.EventKey) bool {
 	if e.pendingAction != "" {
 		pendingKey := e.pendingKeys
 		e.pendingKeys = ""
-		if ev.Key() == tcell.KeyEscape {
+		if ev.Key() == KeyEscape {
 			e.pendingAction = ""
 			return false
 		}
-		if ev.Key() == tcell.KeyRune {
+		if ev.Key() == KeyRune {
 			e.handlePendingChar(ev.Rune())
 			e.lastCommand = pendingKey + string(ev.Rune())
 			return false
@@ -520,7 +517,7 @@ func (e *Editor) handleWindowKey(ch rune) bool {
 }
 
 // handleKeybindingsHelp handles key input in keybindings help popup
-func (e *Editor) handleKeybindingsHelp(ev *tcell.EventKey) bool {
+func (e *Editor) handleKeybindingsHelp(ev EventKey) bool {
 	// Get current filter based on focus
 	currentFilter := func() *[]rune {
 		switch e.keybindingsHelpFilterFocus {
@@ -534,7 +531,7 @@ func (e *Editor) handleKeybindingsHelp(ev *tcell.EventKey) bool {
 	}
 
 	switch ev.Key() {
-	case tcell.KeyEscape:
+	case KeyEscape:
 		e.keybindingsHelpActive = false
 		e.keybindingsHelpFilterKey = nil
 		e.keybindingsHelpFilterAct = nil
@@ -542,7 +539,7 @@ func (e *Editor) handleKeybindingsHelp(ev *tcell.EventKey) bool {
 		e.keybindingsHelpScroll = 0
 		e.keybindingsHelpFilterFocus = 0
 		return false
-	case tcell.KeyEnter:
+	case KeyEnter:
 		// Clear all filters on Enter
 		if len(e.keybindingsHelpFilterKey) > 0 || len(e.keybindingsHelpFilterAct) > 0 || len(e.keybindingsHelpFilterDesc) > 0 {
 			e.keybindingsHelpFilterKey = nil
@@ -553,36 +550,36 @@ func (e *Editor) handleKeybindingsHelp(ev *tcell.EventKey) bool {
 			e.keybindingsHelpActive = false
 		}
 		return false
-	case tcell.KeyTab:
+	case KeyTab:
 		// Switch between filter fields
 		e.keybindingsHelpFilterFocus = (e.keybindingsHelpFilterFocus + 1) % 3
-	case tcell.KeyBacktab:
+	case KeyBacktab:
 		// Switch backwards
 		e.keybindingsHelpFilterFocus = (e.keybindingsHelpFilterFocus + 2) % 3
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
+	case KeyBackspace, KeyBackspace2:
 		f := currentFilter()
 		if len(*f) > 0 {
 			*f = (*f)[:len(*f)-1]
 			e.keybindingsHelpScroll = 0
 		}
-	case tcell.KeyUp, tcell.KeyCtrlP:
+	case KeyUp, KeyCtrlP:
 		if e.keybindingsHelpScroll > 0 {
 			e.keybindingsHelpScroll--
 		}
-	case tcell.KeyDown, tcell.KeyCtrlN:
+	case KeyDown, KeyCtrlN:
 		e.keybindingsHelpScroll++
-	case tcell.KeyPgUp:
+	case KeyPgUp:
 		e.keybindingsHelpScroll -= 10
 		if e.keybindingsHelpScroll < 0 {
 			e.keybindingsHelpScroll = 0
 		}
-	case tcell.KeyPgDn:
+	case KeyPgDn:
 		e.keybindingsHelpScroll += 10
-	case tcell.KeyHome:
+	case KeyHome:
 		e.keybindingsHelpScroll = 0
-	case tcell.KeyEnd:
+	case KeyEnd:
 		e.keybindingsHelpScroll = 999999 // will be clamped in render
-	case tcell.KeyRune:
+	case KeyRune:
 		// Type into current filter
 		f := currentFilter()
 		*f = append(*f, ev.Rune())
@@ -592,14 +589,14 @@ func (e *Editor) handleKeybindingsHelp(ev *tcell.EventKey) bool {
 }
 
 // handleSpaceMenu handles key input when space menu is active
-func (e *Editor) handleSpaceMenu(ev *tcell.EventKey) bool {
-	if ev.Key() == tcell.KeyEscape {
+func (e *Editor) handleSpaceMenu(ev EventKey) bool {
+	if ev.Key() == KeyEscape {
 		e.spaceMenuActive = false
 		e.pendingKeys = ""
 		return false
 	}
 
-	if ev.Key() == tcell.KeyRune {
+	if ev.Key() == KeyRune {
 		ch := ev.Rune()
 		for _, item := range SpaceMenuItems {
 			if item.Key == ch {
@@ -671,10 +668,12 @@ func (e *Editor) yankToSystemClipboard() {
 		sb.WriteString(string(line))
 	}
 
-	// Try to copy to system clipboard using pbcopy on macOS
-	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(sb.String())
-	if err := cmd.Run(); err != nil {
+	// Try to copy to system clipboard
+	if e.systemClipboard == nil {
+		e.setStatus("yanked (clipboard unavailable)")
+		return
+	}
+	if err := e.systemClipboard.Write(sb.String()); err != nil {
 		e.setStatus("yanked (clipboard unavailable)")
 		return
 	}
@@ -683,15 +682,17 @@ func (e *Editor) yankToSystemClipboard() {
 
 // pasteFromSystemClipboard pastes from system clipboard
 func (e *Editor) pasteFromSystemClipboard(before bool) {
-	// Try to get from system clipboard using pbpaste on macOS
-	cmd := exec.Command("pbpaste")
-	output, err := cmd.Output()
+	// Try to get from system clipboard
+	if e.systemClipboard == nil {
+		e.setStatus("clipboard unavailable")
+		return
+	}
+	text, err := e.systemClipboard.Read()
 	if err != nil {
 		e.setStatus("clipboard unavailable")
 		return
 	}
 
-	text := string(output)
 	if text == "" {
 		e.setStatus("clipboard empty")
 		return
@@ -737,7 +738,7 @@ func isHelixSelectingMotion(action string) bool {
 	}
 	return false
 }
-func (e *Editor) handleInsert(ev *tcell.EventKey) bool {
+func (e *Editor) handleInsert(ev EventKey) bool {
 	if e.handleSelectionMove(ev) {
 		return false
 	}
@@ -747,29 +748,29 @@ func (e *Editor) handleInsert(ev *tcell.EventKey) bool {
 			return e.execAction(action)
 		}
 	}
-	if ev.Key() == tcell.KeyRune {
+	if ev.Key() == KeyRune {
 		e.clearSelection()
 		e.insertRune(ev.Rune())
 	}
 	return false
 }
-func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
+func (e *Editor) handleCommand(ev EventKey) bool {
 	switch ev.Key() {
-	case tcell.KeyEscape:
+	case KeyEscape:
 		e.closeAutoComplete()
 		e.mode = ModeNormal
 		e.cmd = e.cmd[:0]
 		e.cmdCursor = 0
 		e.cmdHistoryIndex = -1
 		return false
-	case tcell.KeyCtrlC:
+	case KeyCtrlC:
 		e.closeAutoComplete()
 		e.mode = ModeNormal
 		e.cmd = e.cmd[:0]
 		e.cmdCursor = 0
 		e.cmdHistoryIndex = -1
 		return false
-	case tcell.KeyTab:
+	case KeyTab:
 		prefix := string(e.cmd)
 		if !e.cmdAutoCompleteActive {
 			e.cmdAutoCompleteItems = filterCommands(prefix)
@@ -788,7 +789,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		}
 		e.updateCmdFromAutocomplete()
 		return false
-	case tcell.KeyBacktab:
+	case KeyBacktab:
 		if e.cmdAutoCompleteActive {
 			// Shift+Tab moves to previous item (up in column, then prev column bottom)
 			e.cmdAutoCompleteIndex--
@@ -798,7 +799,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 			e.updateCmdFromAutocomplete()
 		}
 		return false
-	case tcell.KeyEnter:
+	case KeyEnter:
 		e.closeAutoComplete()
 		cmd := strings.TrimSpace(string(e.cmd))
 		e.mode = ModeNormal
@@ -811,7 +812,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		e.cmdCursor = 0
 		e.cmdHistoryIndex = -1
 		return e.execCommand(cmd)
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
+	case KeyBackspace, KeyBackspace2:
 		e.closeAutoComplete()
 		if e.cmdCursor > 0 && len(e.cmd) > 0 {
 			// Delete char before cursor
@@ -820,7 +821,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 			e.cmdHistoryIndex = -1
 		}
 		return false
-	case tcell.KeyDelete:
+	case KeyDelete:
 		e.closeAutoComplete()
 		if e.cmdCursor < len(e.cmd) {
 			// Delete char at cursor
@@ -828,7 +829,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 			e.cmdHistoryIndex = -1
 		}
 		return false
-	case tcell.KeyLeft, tcell.KeyCtrlB: // Ctrl+B = back (readline)
+	case KeyLeft, KeyCtrlB: // Ctrl+B = back (readline)
 		if e.cmdAutoCompleteActive {
 			e.cmdAutoCompleteLeft()
 			e.updateCmdFromAutocomplete()
@@ -838,7 +839,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 			e.cmdCursor--
 		}
 		return false
-	case tcell.KeyRight, tcell.KeyCtrlF: // Ctrl+F = forward (readline)
+	case KeyRight, KeyCtrlF: // Ctrl+F = forward (readline)
 		if e.cmdAutoCompleteActive {
 			e.cmdAutoCompleteRight()
 			e.updateCmdFromAutocomplete()
@@ -848,13 +849,13 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 			e.cmdCursor++
 		}
 		return false
-	case tcell.KeyHome, tcell.KeyCtrlA: // Ctrl+A = beginning of line
+	case KeyHome, KeyCtrlA: // Ctrl+A = beginning of line
 		e.cmdCursor = 0
 		return false
-	case tcell.KeyEnd, tcell.KeyCtrlE: // Ctrl+E = end of line
+	case KeyEnd, KeyCtrlE: // Ctrl+E = end of line
 		e.cmdCursor = len(e.cmd)
 		return false
-	case tcell.KeyUp, tcell.KeyCtrlP: // Ctrl+P = previous
+	case KeyUp, KeyCtrlP: // Ctrl+P = previous
 		if e.cmdAutoCompleteActive {
 			e.cmdAutoCompleteUp()
 			e.updateCmdFromAutocomplete()
@@ -862,7 +863,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		}
 		e.cmdHistoryUp()
 		return false
-	case tcell.KeyDown, tcell.KeyCtrlN: // Ctrl+N = next
+	case KeyDown, KeyCtrlN: // Ctrl+N = next
 		if e.cmdAutoCompleteActive {
 			e.cmdAutoCompleteDown()
 			e.updateCmdFromAutocomplete()
@@ -870,16 +871,16 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 		}
 		e.cmdHistoryDown()
 		return false
-	case tcell.KeyCtrlU: // Ctrl+U = clear line
+	case KeyCtrlU: // Ctrl+U = clear line
 		e.cmd = e.cmd[:0]
 		e.cmdCursor = 0
 		e.cmdHistoryIndex = -1
 		return false
-	case tcell.KeyCtrlK: // Ctrl+K = kill to end of line
+	case KeyCtrlK: // Ctrl+K = kill to end of line
 		e.cmd = e.cmd[:e.cmdCursor]
 		e.cmdHistoryIndex = -1
 		return false
-	case tcell.KeyCtrlW: // Ctrl+W = delete word backward
+	case KeyCtrlW: // Ctrl+W = delete word backward
 		if e.cmdCursor > 0 {
 			// Find start of previous word
 			i := e.cmdCursor - 1
@@ -894,7 +895,7 @@ func (e *Editor) handleCommand(ev *tcell.EventKey) bool {
 			e.cmdHistoryIndex = -1
 		}
 		return false
-	case tcell.KeyRune:
+	case KeyRune:
 		e.closeAutoComplete()
 		// Insert char at cursor position
 		e.cmd = append(e.cmd[:e.cmdCursor], append([]rune{ev.Rune()}, e.cmd[e.cmdCursor:]...)...)
@@ -950,19 +951,10 @@ func (e *Editor) cmdHistoryDown() {
 	e.cmdCursor = len(e.cmd)
 }
 
-// historyFilePath returns the path to the command history file
-func historyFilePath() (string, error) {
-	dir, err := config.ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "history"), nil
-}
-
 // LoadCmdHistory loads command history from file
 func (e *Editor) LoadCmdHistory() {
-	path, err := historyFilePath()
-	if err != nil {
+	path := e.cmdHistoryPath
+	if path == "" {
 		return
 	}
 	data, err := os.ReadFile(path)
@@ -979,8 +971,8 @@ func (e *Editor) LoadCmdHistory() {
 
 // saveCmdHistory saves command history to file
 func (e *Editor) saveCmdHistory() {
-	path, err := historyFilePath()
-	if err != nil {
+	path := e.cmdHistoryPath
+	if path == "" {
 		return
 	}
 	// Ensure directory exists
@@ -1170,50 +1162,50 @@ func (e *Editor) updateCmdFromAutocomplete() {
 	}
 }
 
-func (e *Editor) handleSelectionMove(ev *tcell.EventKey) bool {
-	if ev.Modifiers()&tcell.ModShift == 0 {
+func (e *Editor) handleSelectionMove(ev EventKey) bool {
+	if ev.Modifiers()&ModShift == 0 {
 		return false
 	}
 	// Don't handle if Alt is pressed - let keymap handle alt+shift combinations
-	if ev.Modifiers()&tcell.ModAlt != 0 {
+	if ev.Modifiers()&ModAlt != 0 {
 		return false
 	}
 	switch ev.Key() {
-	case tcell.KeyLeft:
-		if ev.Modifiers()&tcell.ModMeta != 0 {
+	case KeyLeft:
+		if ev.Modifiers()&ModMeta != 0 {
 			e.extendSelection(e.moveWordLeft)
 		} else {
 			e.extendSelection(e.moveLeft)
 		}
 		return true
-	case tcell.KeyRight:
-		if ev.Modifiers()&tcell.ModMeta != 0 {
+	case KeyRight:
+		if ev.Modifiers()&ModMeta != 0 {
 			e.extendSelection(e.moveWordRight)
 		} else {
 			e.extendSelection(e.moveRight)
 		}
 		return true
-	case tcell.KeyUp:
+	case KeyUp:
 		e.extendSelection(e.moveUp)
 		return true
-	case tcell.KeyDown:
+	case KeyDown:
 		e.extendSelection(e.moveDown)
 		return true
-	case tcell.KeyPgUp:
+	case KeyPgUp:
 		e.extendSelection(e.pageUp)
 		return true
-	case tcell.KeyPgDn:
+	case KeyPgDn:
 		e.extendSelection(e.pageDown)
 		return true
-	case tcell.KeyHome:
-		if ev.Modifiers()&tcell.ModMeta != 0 {
+	case KeyHome:
+		if ev.Modifiers()&ModMeta != 0 {
 			e.extendSelection(e.moveFileStart)
 			return true
 		}
 		e.extendSelection(e.moveLineStart)
 		return true
-	case tcell.KeyEnd:
-		if ev.Modifiers()&tcell.ModMeta != 0 {
+	case KeyEnd:
+		if ev.Modifiers()&ModMeta != 0 {
 			e.extendSelection(e.moveFileEnd)
 			return true
 		}
@@ -1222,7 +1214,7 @@ func (e *Editor) handleSelectionMove(ev *tcell.EventKey) bool {
 	}
 	return false
 }
-func (e *Editor) handleBranchPicker(ev *tcell.EventKey) bool {
+func (e *Editor) handleBranchPicker(ev EventKey) bool {
 	switch keyString(ev) {
 	case "esc", "ctrl+c":
 		e.closeBranchPicker("")
@@ -1261,7 +1253,7 @@ func (e *Editor) handleBranchPicker(ev *tcell.EventKey) bool {
 	}
 	return false
 }
-func (e *Editor) handleRefsPicker(ev *tcell.EventKey) bool {
+func (e *Editor) handleRefsPicker(ev EventKey) bool {
 	switch keyString(ev) {
 	case "esc", "ctrl+c", "q":
 		e.closeRefsPicker(false)
@@ -1314,7 +1306,7 @@ func (e *Editor) jumpToSelectedRef() {
 }
 
 // handleSidebarKey handles key events when sidebar is focused
-func (e *Editor) handleSidebarKey(ev *tcell.EventKey) bool {
+func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	if e.sidebar == nil || !e.sidebar.Visible {
 		logger.Debug("handleSidebarKey: sidebar nil or not visible")
 		return false
@@ -1579,45 +1571,48 @@ func (e *Editor) handlePendingChar(ch rune) bool {
 
 	return result
 }
-func keyString(ev *tcell.EventKey) string {
+func keyString(ev EventKey) string {
+	if ev.Key() == KeyUnknown {
+		return ""
+	}
 	// Handle alt+shift+arrow combinations first
-	if ev.Modifiers()&tcell.ModAlt != 0 && ev.Modifiers()&tcell.ModShift != 0 {
+	if ev.Modifiers()&ModAlt != 0 && ev.Modifiers()&ModShift != 0 {
 		switch ev.Key() {
-		case tcell.KeyUp:
+		case KeyUp:
 			return "alt+shift+up"
-		case tcell.KeyDown:
+		case KeyDown:
 			return "alt+shift+down"
-		case tcell.KeyLeft:
+		case KeyLeft:
 			return "alt+shift+left"
-		case tcell.KeyRight:
+		case KeyRight:
 			return "alt+shift+right"
 		}
 	}
 	// Handle alt+arrow combinations
-	if ev.Modifiers()&tcell.ModAlt != 0 {
+	if ev.Modifiers()&ModAlt != 0 {
 		switch ev.Key() {
-		case tcell.KeyUp:
+		case KeyUp:
 			return "alt+up"
-		case tcell.KeyDown:
+		case KeyDown:
 			return "alt+down"
-		case tcell.KeyLeft:
+		case KeyLeft:
 			return "alt+left"
-		case tcell.KeyRight:
+		case KeyRight:
 			return "alt+right"
 		}
 	}
-	if ev.Modifiers()&tcell.ModCtrl != 0 {
+	if ev.Modifiers()&ModCtrl != 0 {
 		switch ev.Key() {
-		case tcell.KeyHome:
+		case KeyHome:
 			return "ctrl+home"
-		case tcell.KeyEnd:
+		case KeyEnd:
 			return "ctrl+end"
 		}
 	}
-	if ev.Modifiers()&tcell.ModMeta != 0 {
-		if ev.Key() == tcell.KeyRune {
+	if ev.Modifiers()&ModMeta != 0 {
+		if ev.Key() == KeyRune {
 			r := ev.Rune()
-			if ev.Modifiers()&tcell.ModShift != 0 {
+			if ev.Modifiers()&ModShift != 0 {
 				if r == ' ' {
 					return "cmd+shift+space"
 				}
@@ -1629,45 +1624,45 @@ func keyString(ev *tcell.EventKey) string {
 			return "cmd+" + strings.ToLower(string(r))
 		}
 		switch ev.Key() {
-		case tcell.KeyBackspace, tcell.KeyBackspace2:
+		case KeyBackspace, KeyBackspace2:
 			return "cmd+backspace"
-		case tcell.KeyDelete:
+		case KeyDelete:
 			return "cmd+del"
-		case tcell.KeyEnter:
+		case KeyEnter:
 			return "cmd+enter"
-		case tcell.KeyLeft:
-			if ev.Modifiers()&tcell.ModShift != 0 {
+		case KeyLeft:
+			if ev.Modifiers()&ModShift != 0 {
 				return "cmd+shift+left"
 			}
 			return "cmd+left"
-		case tcell.KeyRight:
-			if ev.Modifiers()&tcell.ModShift != 0 {
+		case KeyRight:
+			if ev.Modifiers()&ModShift != 0 {
 				return "cmd+shift+right"
 			}
 			return "cmd+right"
-		case tcell.KeyUp:
-			if ev.Modifiers()&tcell.ModShift != 0 {
+		case KeyUp:
+			if ev.Modifiers()&ModShift != 0 {
 				return "cmd+shift+up"
 			}
 			return "cmd+up"
-		case tcell.KeyDown:
-			if ev.Modifiers()&tcell.ModShift != 0 {
+		case KeyDown:
+			if ev.Modifiers()&ModShift != 0 {
 				return "cmd+shift+down"
 			}
 			return "cmd+down"
-		case tcell.KeyHome:
-			if ev.Modifiers()&tcell.ModShift != 0 {
+		case KeyHome:
+			if ev.Modifiers()&ModShift != 0 {
 				return "cmd+shift+home"
 			}
 			return "cmd+home"
-		case tcell.KeyEnd:
-			if ev.Modifiers()&tcell.ModShift != 0 {
+		case KeyEnd:
+			if ev.Modifiers()&ModShift != 0 {
 				return "cmd+shift+end"
 			}
 			return "cmd+end"
 		}
 	}
-	if ev.Key() == tcell.KeyRune {
+	if ev.Key() == KeyRune {
 		r := ev.Rune()
 		if r == ' ' {
 			return "space"
@@ -1676,68 +1671,68 @@ func keyString(ev *tcell.EventKey) string {
 	}
 	// Check Tab before ctrlKeyName since KeyTab == KeyCtrlI (0x09)
 	switch ev.Key() {
-	case tcell.KeyTab:
-		if ev.Modifiers()&tcell.ModShift != 0 {
+	case KeyTab:
+		if ev.Modifiers()&ModShift != 0 {
 			return "shift+tab"
 		}
 		return "tab"
-	case tcell.KeyBacktab:
+	case KeyBacktab:
 		return "shift+tab"
 	}
 	if name := ctrlKeyName(ev.Key()); name != "" {
 		return name
 	}
 	switch ev.Key() {
-	case tcell.KeyUp:
+	case KeyUp:
 		return "up"
-	case tcell.KeyDown:
+	case KeyDown:
 		return "down"
-	case tcell.KeyLeft:
+	case KeyLeft:
 		return "left"
-	case tcell.KeyRight:
+	case KeyRight:
 		return "right"
-	case tcell.KeyPgUp:
+	case KeyPgUp:
 		return "pgup"
-	case tcell.KeyPgDn:
+	case KeyPgDn:
 		return "pgdn"
-	case tcell.KeyHome:
+	case KeyHome:
 		return "home"
-	case tcell.KeyEnd:
+	case KeyEnd:
 		return "end"
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
+	case KeyBackspace, KeyBackspace2:
 		return "backspace"
-	case tcell.KeyEnter:
-		if ev.Modifiers()&tcell.ModShift != 0 {
+	case KeyEnter:
+		if ev.Modifiers()&ModShift != 0 {
 			return "shift+enter"
 		}
 		return "enter"
-	case tcell.KeyDelete:
+	case KeyDelete:
 		return "del"
-	case tcell.KeyEscape:
+	case KeyEscape:
 		return "esc"
 	}
 	return ""
 }
-func keyStringDisplay(ev *tcell.EventKey) string {
+func keyStringDisplay(ev EventKey) string {
 	var parts []string
 
 	// Build modifier prefix in order: CMD, CTRL, SHIFT, ALT
-	if ev.Modifiers()&tcell.ModMeta != 0 {
+	if ev.Modifiers()&ModMeta != 0 {
 		parts = append(parts, "CMD")
 	}
-	if ev.Modifiers()&tcell.ModCtrl != 0 {
+	if ev.Modifiers()&ModCtrl != 0 {
 		parts = append(parts, "CTRL")
 	}
-	if ev.Modifiers()&tcell.ModShift != 0 {
+	if ev.Modifiers()&ModShift != 0 {
 		parts = append(parts, "SHIFT")
 	}
-	if ev.Modifiers()&tcell.ModAlt != 0 {
+	if ev.Modifiers()&ModAlt != 0 {
 		parts = append(parts, "ALT")
 	}
 
 	// Get key name
 	var keyName string
-	if ev.Key() == tcell.KeyRune {
+	if ev.Key() == KeyRune {
 		r := ev.Rune()
 		if r == ' ' {
 			keyName = "SPACE"
@@ -1746,83 +1741,85 @@ func keyStringDisplay(ev *tcell.EventKey) string {
 		}
 	} else {
 		switch ev.Key() {
-		case tcell.KeyUp:
+		case KeyUnknown:
+			keyName = ""
+		case KeyUp:
 			keyName = "UP"
-		case tcell.KeyDown:
+		case KeyDown:
 			keyName = "DOWN"
-		case tcell.KeyLeft:
+		case KeyLeft:
 			keyName = "LEFT"
-		case tcell.KeyRight:
+		case KeyRight:
 			keyName = "RIGHT"
-		case tcell.KeyPgUp:
+		case KeyPgUp:
 			keyName = "PGUP"
-		case tcell.KeyPgDn:
+		case KeyPgDn:
 			keyName = "PGDN"
-		case tcell.KeyHome:
+		case KeyHome:
 			keyName = "HOME"
-		case tcell.KeyEnd:
+		case KeyEnd:
 			keyName = "END"
-		case tcell.KeyBackspace, tcell.KeyBackspace2:
+		case KeyBackspace, KeyBackspace2:
 			keyName = "BKSP"
-		case tcell.KeyEnter:
+		case KeyEnter:
 			keyName = "ENTER"
-		case tcell.KeyDelete:
+		case KeyDelete:
 			keyName = "DEL"
-		case tcell.KeyEscape:
+		case KeyEscape:
 			keyName = "ESC"
-		case tcell.KeyTab:
+		case KeyTab:
 			keyName = "TAB"
-		case tcell.KeyCtrlA:
+		case KeyCtrlA:
 			keyName = "A"
-		case tcell.KeyCtrlB:
+		case KeyCtrlB:
 			keyName = "B"
-		case tcell.KeyCtrlC:
+		case KeyCtrlC:
 			keyName = "C"
-		case tcell.KeyCtrlD:
+		case KeyCtrlD:
 			keyName = "D"
-		case tcell.KeyCtrlE:
+		case KeyCtrlE:
 			keyName = "E"
-		case tcell.KeyCtrlF:
+		case KeyCtrlF:
 			keyName = "F"
-		case tcell.KeyCtrlG:
+		case KeyCtrlG:
 			keyName = "G"
-		case tcell.KeyCtrlH:
+		case KeyCtrlH:
 			keyName = "H"
-		case tcell.KeyCtrlI:
+		case KeyCtrlI:
 			keyName = "I"
-		case tcell.KeyCtrlJ:
+		case KeyCtrlJ:
 			keyName = "J"
-		case tcell.KeyCtrlK:
+		case KeyCtrlK:
 			keyName = "K"
-		case tcell.KeyCtrlL:
+		case KeyCtrlL:
 			keyName = "L"
-		case tcell.KeyCtrlM:
+		case KeyCtrlM:
 			keyName = "M"
-		case tcell.KeyCtrlN:
+		case KeyCtrlN:
 			keyName = "N"
-		case tcell.KeyCtrlO:
+		case KeyCtrlO:
 			keyName = "O"
-		case tcell.KeyCtrlP:
+		case KeyCtrlP:
 			keyName = "P"
-		case tcell.KeyCtrlQ:
+		case KeyCtrlQ:
 			keyName = "Q"
-		case tcell.KeyCtrlR:
+		case KeyCtrlR:
 			keyName = "R"
-		case tcell.KeyCtrlS:
+		case KeyCtrlS:
 			keyName = "S"
-		case tcell.KeyCtrlT:
+		case KeyCtrlT:
 			keyName = "T"
-		case tcell.KeyCtrlU:
+		case KeyCtrlU:
 			keyName = "U"
-		case tcell.KeyCtrlV:
+		case KeyCtrlV:
 			keyName = "V"
-		case tcell.KeyCtrlW:
+		case KeyCtrlW:
 			keyName = "W"
-		case tcell.KeyCtrlX:
+		case KeyCtrlX:
 			keyName = "X"
-		case tcell.KeyCtrlY:
+		case KeyCtrlY:
 			keyName = "Y"
-		case tcell.KeyCtrlZ:
+		case KeyCtrlZ:
 			keyName = "Z"
 		default:
 			keyName = fmt.Sprintf("KEY%d", ev.Key())
@@ -1838,14 +1835,14 @@ func keyStringDisplay(ev *tcell.EventKey) string {
 	}
 	return strings.Join(parts, "-")
 }
-func keyStringForMap(ev *tcell.EventKey, keymap map[string]string) string {
-	if ev.Modifiers()&tcell.ModMeta != 0 {
+func keyStringForMap(ev EventKey, keymap map[string]string) string {
+	if ev.Modifiers()&ModMeta != 0 {
 		switch ev.Key() {
-		case tcell.KeyHome:
+		case KeyHome:
 			if _, ok := keymap["cmd+left"]; ok {
 				return "cmd+left"
 			}
-		case tcell.KeyEnd:
+		case KeyEnd:
 			if _, ok := keymap["cmd+right"]; ok {
 				return "cmd+right"
 			}
@@ -1853,59 +1850,59 @@ func keyStringForMap(ev *tcell.EventKey, keymap map[string]string) string {
 	}
 	return keyString(ev)
 }
-func ctrlKeyName(key tcell.Key) string {
+func ctrlKeyName(key Key) string {
 	switch key {
-	case tcell.KeyCtrlA:
+	case KeyCtrlA:
 		return "ctrl+a"
-	case tcell.KeyCtrlB:
+	case KeyCtrlB:
 		return "ctrl+b"
-	case tcell.KeyCtrlC:
+	case KeyCtrlC:
 		return "ctrl+c"
-	case tcell.KeyCtrlD:
+	case KeyCtrlD:
 		return "ctrl+d"
-	case tcell.KeyCtrlE:
+	case KeyCtrlE:
 		return "ctrl+e"
-	case tcell.KeyCtrlF:
+	case KeyCtrlF:
 		return "ctrl+f"
-	case tcell.KeyCtrlG:
+	case KeyCtrlG:
 		return "ctrl+g"
-	case tcell.KeyCtrlH:
+	case KeyCtrlH:
 		return "ctrl+h"
-	case tcell.KeyCtrlI:
+	case KeyCtrlI:
 		return "ctrl+i"
-	case tcell.KeyCtrlJ:
+	case KeyCtrlJ:
 		return "ctrl+j"
-	case tcell.KeyCtrlK:
+	case KeyCtrlK:
 		return "ctrl+k"
-	case tcell.KeyCtrlL:
+	case KeyCtrlL:
 		return "ctrl+l"
-	case tcell.KeyCtrlM:
+	case KeyCtrlM:
 		return "ctrl+m"
-	case tcell.KeyCtrlN:
+	case KeyCtrlN:
 		return "ctrl+n"
-	case tcell.KeyCtrlO:
+	case KeyCtrlO:
 		return "ctrl+o"
-	case tcell.KeyCtrlP:
+	case KeyCtrlP:
 		return "ctrl+p"
-	case tcell.KeyCtrlQ:
+	case KeyCtrlQ:
 		return "ctrl+q"
-	case tcell.KeyCtrlR:
+	case KeyCtrlR:
 		return "ctrl+r"
-	case tcell.KeyCtrlS:
+	case KeyCtrlS:
 		return "ctrl+s"
-	case tcell.KeyCtrlT:
+	case KeyCtrlT:
 		return "ctrl+t"
-	case tcell.KeyCtrlU:
+	case KeyCtrlU:
 		return "ctrl+u"
-	case tcell.KeyCtrlV:
+	case KeyCtrlV:
 		return "ctrl+v"
-	case tcell.KeyCtrlW:
+	case KeyCtrlW:
 		return "ctrl+w"
-	case tcell.KeyCtrlX:
+	case KeyCtrlX:
 		return "ctrl+x"
-	case tcell.KeyCtrlY:
+	case KeyCtrlY:
 		return "ctrl+y"
-	case tcell.KeyCtrlZ:
+	case KeyCtrlZ:
 		return "ctrl+z"
 	}
 	return ""

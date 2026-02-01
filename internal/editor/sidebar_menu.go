@@ -1,6 +1,6 @@
 package editor
 
-import "github.com/gdamore/tcell/v2"
+
 
 // SidebarMenuContent implements SidebarContent for the main menu
 type SidebarMenuContent struct {
@@ -81,7 +81,7 @@ func (m *SidebarMenuContent) SetIndex(i int) {
 }
 
 // HandleKey processes mode-specific keys
-func (m *SidebarMenuContent) HandleKey(ev *tcell.EventKey) (bool, SidebarActionData) {
+func (m *SidebarMenuContent) HandleKey(ev EventKey) (bool, SidebarActionData) {
 	// No special keys for menu, navigation is handled by container
 	return false, SidebarActionData{Action: SidebarActionNone}
 }

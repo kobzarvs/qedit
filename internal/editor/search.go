@@ -8,24 +8,12 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/gdamore/tcell/v2"
-	"github.com/kobzarvs/qedit/internal/config"
 )
-
-// searchHistoryFilePath returns the path to the search history file
-func searchHistoryFilePath() (string, error) {
-	dir, err := config.ConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "search_history"), nil
-}
 
 // LoadSearchHistory loads search history from file
 func (e *Editor) LoadSearchHistory() {
-	path, err := searchHistoryFilePath()
-	if err != nil {
+	path := e.searchHistoryPath
+	if path == "" {
 		return
 	}
 	data, err := os.ReadFile(path)
@@ -41,8 +29,8 @@ func (e *Editor) LoadSearchHistory() {
 
 // saveSearchHistory saves search history to file
 func (e *Editor) saveSearchHistory() {
-	path, err := searchHistoryFilePath()
-	if err != nil {
+	path := e.searchHistoryPath
+	if path == "" {
 		return
 	}
 	// Ensure directory exists
@@ -149,11 +137,11 @@ func (e *Editor) navigateSearchHistory(direction int) {
 		e.updateSearchMatches()
 	}
 }
-func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
+func (e *Editor) handleSearch(ev EventKey) bool {
 	// Handle Cmd+Up/Down for navigating matches in file
-	if ev.Modifiers()&tcell.ModMeta != 0 {
+	if ev.Modifiers()&ModMeta != 0 {
 		switch ev.Key() {
-		case tcell.KeyUp:
+		case KeyUp:
 			// Navigate to previous match
 			if len(e.searchMatches) > 0 {
 				e.searchMatchIndex--
@@ -163,7 +151,7 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 				e.jumpToCurrentMatch()
 			}
 			return false
-		case tcell.KeyDown:
+		case KeyDown:
 			// Navigate to next match
 			if len(e.searchMatches) > 0 {
 				e.searchMatchIndex++
@@ -177,21 +165,21 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 	}
 
 	switch ev.Key() {
-	case tcell.KeyEscape:
+	case KeyEscape:
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
 		e.searchMatches = nil
 		e.searchHistoryIndex = -1
 		return false
-	case tcell.KeyCtrlC:
+	case KeyCtrlC:
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
 		e.searchMatches = nil
 		e.searchHistoryIndex = -1
 		return false
-	case tcell.KeyEnter:
+	case KeyEnter:
 		// Confirm search and go to first/current match
 		query := string(e.searchQuery)
 		if query != "" {
@@ -208,49 +196,49 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 		e.searchCursor = 0
 		e.searchHistoryIndex = -1
 		return false
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
+	case KeyBackspace, KeyBackspace2:
 		if e.searchCursor > 0 && len(e.searchQuery) > 0 {
 			e.searchQuery = append(e.searchQuery[:e.searchCursor-1], e.searchQuery[e.searchCursor:]...)
 			e.searchCursor--
 			e.updateSearchMatches()
 		}
 		return false
-	case tcell.KeyDelete:
+	case KeyDelete:
 		if e.searchCursor < len(e.searchQuery) {
 			e.searchQuery = append(e.searchQuery[:e.searchCursor], e.searchQuery[e.searchCursor+1:]...)
 			e.updateSearchMatches()
 		}
 		return false
-	case tcell.KeyLeft, tcell.KeyCtrlB:
+	case KeyLeft, KeyCtrlB:
 		if e.searchCursor > 0 {
 			e.searchCursor--
 		}
 		return false
-	case tcell.KeyRight, tcell.KeyCtrlF:
+	case KeyRight, KeyCtrlF:
 		if e.searchCursor < len(e.searchQuery) {
 			e.searchCursor++
 		}
 		return false
-	case tcell.KeyHome, tcell.KeyCtrlA:
+	case KeyHome, KeyCtrlA:
 		e.searchCursor = 0
 		return false
-	case tcell.KeyEnd, tcell.KeyCtrlE:
+	case KeyEnd, KeyCtrlE:
 		e.searchCursor = len(e.searchQuery)
 		return false
-	case tcell.KeyUp, tcell.KeyCtrlP:
+	case KeyUp, KeyCtrlP:
 		// Navigate history (older)
 		e.navigateSearchHistory(-1)
 		return false
-	case tcell.KeyDown, tcell.KeyCtrlN:
+	case KeyDown, KeyCtrlN:
 		// Navigate history (newer)
 		e.navigateSearchHistory(1)
 		return false
-	case tcell.KeyCtrlU:
+	case KeyCtrlU:
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
 		e.updateSearchMatches()
 		return false
-	case tcell.KeyCtrlW:
+	case KeyCtrlW:
 		if e.searchCursor > 0 {
 			i := e.searchCursor - 1
 			for i > 0 && e.searchQuery[i-1] == ' ' {
@@ -264,7 +252,7 @@ func (e *Editor) handleSearch(ev *tcell.EventKey) bool {
 			e.updateSearchMatches()
 		}
 		return false
-	case tcell.KeyRune:
+	case KeyRune:
 		e.searchQuery = append(e.searchQuery[:e.searchCursor], append([]rune{ev.Rune()}, e.searchQuery[e.searchCursor:]...)...)
 		e.searchCursor++
 		e.updateSearchMatches()

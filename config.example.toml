@@ -10,6 +10,9 @@ sidebar-close-on-select = false # close sidebar when selecting item
 
 [theme]
 theme = "ayu"
+# Optional: box/border colors for popups and panels
+# box-border-foreground = "#B3B1AD"
+# box-border-background = "#292929"
 
 [keymap.normal]
 h = "move_left"

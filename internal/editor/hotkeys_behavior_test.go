@@ -39,7 +39,7 @@ func TestSearchNextPrevHotkeys(t *testing.T) {
 	e.handleSearch(keyRune('o'))
 	e.handleSearch(keyRune('n'))
 	e.handleSearch(keyRune('e'))
-	e.handleSearch(tcell.NewEventKey(tcell.KeyEnter, 0, 0))
+	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
 	if len(e.searchMatches) < 2 {
 		t.Fatalf("expected matches, got %d", len(e.searchMatches))
 	}

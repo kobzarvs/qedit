@@ -5,8 +5,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/gdamore/tcell/v2"
 )
 
 func (e *Editor) setStatus(msg string) {
@@ -104,7 +102,7 @@ func joinLines(lines [][]rune) string {
 	}
 	return b.String()
 }
-func (e *Editor) styleForHighlight(kind string) (tcell.Style, bool) {
+func (e *Editor) styleForHighlight(kind string) (Style, bool) {
 	switch kind {
 	case "keyword":
 		return e.styleSyntaxKeyword, true
@@ -270,30 +268,6 @@ func isWordRune(r rune) bool {
 }
 func isSpaceRune(r rune) bool {
 	return unicode.IsSpace(r)
-}
-func parseColor(name string, fallback tcell.Color) tcell.Color {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return fallback
-	}
-	if strings.HasPrefix(name, "#") && len(name) == 7 {
-		r, err1 := strconv.ParseInt(name[1:3], 16, 32)
-		g, err2 := strconv.ParseInt(name[3:5], 16, 32)
-		b, err3 := strconv.ParseInt(name[5:7], 16, 32)
-		if err1 == nil && err2 == nil && err3 == nil {
-			return tcell.NewRGBColor(int32(r), int32(g), int32(b))
-		}
-		return fallback
-	}
-	name = strings.ToLower(name)
-	if name == "default" {
-		return tcell.ColorDefault
-	}
-	c := tcell.GetColor(name)
-	if c == tcell.ColorDefault {
-		return fallback
-	}
-	return c
 }
 func visualCol(line []rune, logicalCol int, tabWidth int) int {
 	if tabWidth < 1 {

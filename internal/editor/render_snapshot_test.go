@@ -40,7 +40,7 @@ func renderSnapshot(t *testing.T, e *Editor, w, h int) string {
 	defer s.Fini()
 	s.SetSize(w, h)
 
-	e.Render(s)
+	e.Render(wrapScreen(s))
 
 	return snapshotFromScreen(s)
 }

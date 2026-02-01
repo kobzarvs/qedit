@@ -8,11 +8,9 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/gdamore/tcell/v2"
 )
 
-func (e *Editor) Render(s tcell.Screen) {
+func (e *Editor) Render(s Screen) {
 	w, h := s.Size()
 	if w <= 0 || h <= 0 {
 		return
@@ -134,15 +132,15 @@ func (e *Editor) Render(s tcell.Screen) {
 		s.Show()
 		return
 	}
-	cursorStyle := tcell.CursorStyleSteadyBlock
+	cursorStyle := CursorStyleSteadyBlock
 	if e.mode == ModeInsert || e.mode == ModeSearch || e.mode == ModeCommand {
-		cursorStyle = tcell.CursorStyleSteadyBar
+		cursorStyle = CursorStyleSteadyBar
 	}
 	s.SetCursorStyle(cursorStyle)
 	s.ShowCursor(cx, cy)
 	s.Show()
 }
-func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
+func (e *Editor) renderStatusline(s Screen, w, y int) {
 	mode := "NORMAL"
 	if e.mode == ModeInsert {
 		mode = "INSERT"
@@ -255,7 +253,7 @@ func (e *Editor) renderStatusline(s tcell.Screen, w, y int) {
 		s.SetContent(x, y, r, nil, style)
 	}
 }
-func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
+func (e *Editor) renderCommandline(s Screen, w, y int) int {
 	var cmdRunes []rune
 	var rightText string
 
@@ -347,7 +345,10 @@ func (e *Editor) renderCommandline(s tcell.Screen, w, y int) int {
 	}
 
 	// Style for green checkmark
-	styleGreen := e.styleCommand.Foreground(tcell.ColorGreen)
+	styleGreen := e.styleCommandCheckmark
+	if styleGreen == nil {
+		styleGreen = e.styleCommand
+	}
 
 	// Draw command line content
 	for x := 0; x < w; x++ {
@@ -471,7 +472,7 @@ func calculateOptimalLayout(groups []GroupInfo, maxHeight int) (int, [][]GroupIn
 
 // renderCommandAutocomplete renders the command autocomplete popup above the command line
 // Uses group-aware layout: groups are never split across columns
-func (e *Editor) renderCommandAutocomplete(s tcell.Screen, w, statusY int) {
+func (e *Editor) renderCommandAutocomplete(s Screen, w, statusY int) {
 	if !e.cmdAutoCompleteActive || len(e.cmdAutoCompleteItems) == 0 {
 		return
 	}
@@ -576,7 +577,7 @@ func (e *Editor) renderCommandAutocomplete(s tcell.Screen, w, statusY int) {
 					// Keep hotkey visible on selection - use selection bg with hotkey fg
 					_, selBg, _ := e.styleSelection.Decompose()
 					hotkeyFg, _, _ := e.styleAutoCompleteHotkey.Decompose()
-					hotkeyStyle = tcell.StyleDefault.Foreground(hotkeyFg).Background(selBg)
+					hotkeyStyle = e.styleAutoCompleteHotkey.Foreground(hotkeyFg).Background(selBg)
 				}
 
 				// Clear column area with style
@@ -613,7 +614,7 @@ func (e *Editor) renderCommandAutocomplete(s tcell.Screen, w, statusY int) {
 
 const scrollIndicatorDuration = 1500 * time.Millisecond
 
-func (e *Editor) renderScrollIndicator(s tcell.Screen, w, viewHeight int) {
+func (e *Editor) renderScrollIndicator(s Screen, w, viewHeight int) {
 	if viewHeight < 1 || w < 1 {
 		return
 	}
@@ -673,7 +674,10 @@ func (e *Editor) renderScrollIndicator(s tcell.Screen, w, viewHeight int) {
 
 	// Draw scroll indicator in the rightmost column
 	x := w - 1
-	style := tcell.StyleDefault.Foreground(tcell.ColorGray)
+	style := e.styleScrollIndicator
+	if style == nil {
+		style = e.styleLineNumber
+	}
 	for y := 0; y < viewHeight; y++ {
 		var ch rune
 		if y >= thumbPos && y < thumbPos+thumbSize {
@@ -686,7 +690,7 @@ func (e *Editor) renderScrollIndicator(s tcell.Screen, w, viewHeight int) {
 		}
 	}
 }
-func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int, scrollX int) {
+func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int, scrollX int) {
 	col := 0 // visual column (accounting for tabs)
 	if tabWidth < 1 {
 		tabWidth = 1
@@ -782,7 +786,7 @@ func (e *Editor) drawLine(s tcell.Screen, y, w, startX int, line []rune, tabWidt
 		}
 	}
 }
-func clearLineAt(s tcell.Screen, x0, y, w int, style tcell.Style) {
+func clearLineAt(s Screen, x0, y, w int, style Style) {
 	for x := 0; x < w; x++ {
 		s.SetContent(x0+x, y, ' ', nil, style)
 	}
@@ -823,7 +827,7 @@ func formatGitBranch(symbol, branch string) string {
 	}
 	return symbol + " " + branch
 }
-func (e *Editor) drawLineWithGutterAt(s tcell.Screen, x0, y, w, gutterWidth, lineIdx int) {
+func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx int) {
 	if gutterWidth > 0 {
 		// gutterWidth = 1 (leading space) + digits + 1 (trailing space)
 		digits := gutterWidth - 2
@@ -875,7 +879,7 @@ func (e *Editor) drawLineWithGutterAt(s tcell.Screen, x0, y, w, gutterWidth, lin
 	}
 	e.drawLine(s, y, x0+w, x0+gutterWidth, e.lines[lineIdx], e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX)
 }
-func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
+func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 	if !e.branchPickerActive || len(e.branchPickerItems) == 0 {
 		return
 	}
@@ -924,7 +928,10 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 		y0 = 0
 	}
 
-	borderStyle := e.styleStatus
+	borderStyle := e.styleBoxBorder
+	if borderStyle == nil {
+		borderStyle = e.styleStatus
+	}
 	itemStyle := e.styleStatus
 	selectedStyle := e.styleSelection
 	innerWidth := boxWidth - 2
@@ -984,7 +991,10 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 	}
 
 	// Style for current branch marker (light green)
-	markerStyle := tcell.StyleDefault.Foreground(tcell.NewRGBColor(144, 238, 144)).Background(tcell.ColorDefault)
+	markerStyle := e.styleBranchMarker
+	if markerStyle == nil {
+		markerStyle = e.styleMainBranch
+	}
 	_, markerBg, _ := itemStyle.Decompose()
 	markerStyle = markerStyle.Background(markerBg)
 
@@ -1039,12 +1049,15 @@ func (e *Editor) renderBranchPicker(s tcell.Screen, w, viewHeight int) {
 		}
 	}
 }
-func (e *Editor) renderRefsSidebar(s tcell.Screen, sidebarWidth, viewHeight int) {
+func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
 	if !e.refsPickerActive || len(e.refsPickerItems) == 0 {
 		return
 	}
 
-	borderStyle := e.styleStatus
+	borderStyle := e.styleBoxBorder
+	if borderStyle == nil {
+		borderStyle = e.styleStatus
+	}
 	itemStyle := e.styleMain
 	selectedStyle := e.styleSelection
 
@@ -1137,7 +1150,7 @@ func (e *Editor) renderRefsSidebar(s tcell.Screen, sidebarWidth, viewHeight int)
 		}
 	}
 }
-func (e *Editor) renderSpaceMenu(s tcell.Screen, w, viewHeight int) {
+func (e *Editor) renderSpaceMenu(s Screen, w, viewHeight int) {
 	if !e.spaceMenuActive {
 		return
 	}
@@ -1177,7 +1190,10 @@ func (e *Editor) renderSpaceMenu(s tcell.Screen, w, viewHeight int) {
 		y0 = 0
 	}
 
-	borderStyle := e.styleStatus
+	borderStyle := e.styleBoxBorder
+	if borderStyle == nil {
+		borderStyle = e.styleStatus
+	}
 	itemStyle := e.styleCommand
 	dimStyle := e.styleLineNumber // for unimplemented items
 
@@ -1267,7 +1283,7 @@ func (e *Editor) renderSpaceMenu(s tcell.Screen, w, viewHeight int) {
 }
 
 // renderMenu renders a generic mode menu popup
-func (e *Editor) renderMenu(s tcell.Screen, w, viewHeight int, title string, items []SpaceMenuItem) {
+func (e *Editor) renderMenu(s Screen, w, viewHeight int, title string, items []SpaceMenuItem) {
 	if w < 20 || viewHeight < 5 {
 		return
 	}
@@ -1304,7 +1320,10 @@ func (e *Editor) renderMenu(s tcell.Screen, w, viewHeight int, title string, ite
 		y0 = 0
 	}
 
-	borderStyle := e.styleStatus
+	borderStyle := e.styleBoxBorder
+	if borderStyle == nil {
+		borderStyle = e.styleStatus
+	}
 	itemStyle := e.styleCommand
 	dimStyle := e.styleLineNumber
 
@@ -1393,7 +1412,7 @@ func (e *Editor) renderMenu(s tcell.Screen, w, viewHeight int, title string, ite
 }
 
 // renderKeybindingsHelp renders a help popup showing all keybindings
-func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
+func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 	if w < 40 || viewHeight < 10 {
 		return
 	}
@@ -1549,7 +1568,10 @@ func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
 	x0 := (w - boxWidth) / 2
 	y0 := (viewHeight - boxHeight) / 2
 
-	borderStyle := e.styleStatus
+	borderStyle := e.styleBoxBorder
+	if borderStyle == nil {
+		borderStyle = e.styleStatus
+	}
 	contentStyle := e.styleCommand
 	headerStyle := e.styleStatus
 
@@ -1597,8 +1619,14 @@ func (e *Editor) renderKeybindingsHelp(s tcell.Screen, w, viewHeight int) {
 	}
 
 	// Row 1: Column headers with filter inputs
-	filterActiveStyle := contentStyle.Foreground(tcell.ColorWhite)
-	filterInactiveStyle := contentStyle.Foreground(tcell.ColorGray)
+	filterActiveStyle := e.styleFilterActive
+	if filterActiveStyle == nil {
+		filterActiveStyle = contentStyle
+	}
+	filterInactiveStyle := e.styleFilterInactive
+	if filterInactiveStyle == nil {
+		filterInactiveStyle = contentStyle
+	}
 
 	// Draw column headers with filters
 	col := 1

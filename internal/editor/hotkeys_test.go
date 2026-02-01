@@ -95,7 +95,7 @@ func sortedKeys(m map[string]string) []string {
 	return keys
 }
 
-func eventForKeyString(t *testing.T, key string) *tcell.EventKey {
+func eventForKeyString(t *testing.T, key string) EventKey {
 	t.Helper()
 	parts := strings.Split(key, "+")
 	base := parts[len(parts)-1]
@@ -118,44 +118,44 @@ func eventForKeyString(t *testing.T, key string) *tcell.EventKey {
 	if mod&tcell.ModCtrl != 0 && base != "home" && base != "end" {
 		if r := []rune(base); len(r) == 1 {
 			if ctrlKey := ctrlKeyForRune(r[0]); ctrlKey != 0 {
-				return tcell.NewEventKey(ctrlKey, 0, 0)
+				return wrapKey(tcell.NewEventKey(ctrlKey, 0, 0))
 			}
 		}
 	}
 
 	switch base {
 	case "left":
-		return tcell.NewEventKey(tcell.KeyLeft, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyLeft, 0, mod))
 	case "right":
-		return tcell.NewEventKey(tcell.KeyRight, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyRight, 0, mod))
 	case "up":
-		return tcell.NewEventKey(tcell.KeyUp, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyUp, 0, mod))
 	case "down":
-		return tcell.NewEventKey(tcell.KeyDown, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, mod))
 	case "home":
-		return tcell.NewEventKey(tcell.KeyHome, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyHome, 0, mod))
 	case "end":
-		return tcell.NewEventKey(tcell.KeyEnd, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyEnd, 0, mod))
 	case "pgup":
-		return tcell.NewEventKey(tcell.KeyPgUp, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyPgUp, 0, mod))
 	case "pgdn":
-		return tcell.NewEventKey(tcell.KeyPgDn, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyPgDn, 0, mod))
 	case "enter":
-		return tcell.NewEventKey(tcell.KeyEnter, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, mod))
 	case "backspace":
-		return tcell.NewEventKey(tcell.KeyBackspace, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyBackspace, 0, mod))
 	case "del":
-		return tcell.NewEventKey(tcell.KeyDelete, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyDelete, 0, mod))
 	case "tab":
-		return tcell.NewEventKey(tcell.KeyTab, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyTab, 0, mod))
 	case "esc":
-		return tcell.NewEventKey(tcell.KeyEscape, 0, mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, mod))
 	case "space":
-		return tcell.NewEventKey(tcell.KeyRune, ' ', mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyRune, ' ', mod))
 	}
 
 	if r := []rune(base); len(r) == 1 {
-		return tcell.NewEventKey(tcell.KeyRune, r[0], mod)
+		return wrapKey(tcell.NewEventKey(tcell.KeyRune, r[0], mod))
 	}
 
 	t.Fatalf("unsupported key %q", key)

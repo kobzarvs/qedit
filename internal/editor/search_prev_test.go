@@ -19,7 +19,7 @@ func TestSearchPrevKeyBinding(t *testing.T) {
 	ed.cursor.Col = 0
 
 	// Test keyString for Shift+N
-	ev := tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModShift)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModShift))
 	key := keyString(ev)
 	t.Logf("keyString for Shift+N: %q", key)
 
@@ -59,7 +59,7 @@ func TestSearchPrevAfterSearchMode(t *testing.T) {
 	t.Logf("In search mode: matches=%d", len(ed.searchMatches))
 
 	// Exit search mode with Enter (confirm)
-	enterEv := tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone)
+	enterEv := wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 	ed.HandleKey(enterEv)
 	t.Logf("After Enter: mode=%d, lastSearchQuery=%q", ed.mode, ed.lastSearchQuery)
 
@@ -76,7 +76,7 @@ func TestSearchPrevAfterSearchMode(t *testing.T) {
 	t.Logf("Cursor at row=%d", ed.cursor.Row)
 
 	// Now press Shift+N
-	shiftN := tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModShift)
+	shiftN := wrapKey(tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModShift))
 	ed.HandleKey(shiftN)
 	t.Logf("After Shift+N: row=%d, status=%q", ed.cursor.Row, ed.statusMessage)
 
@@ -106,7 +106,7 @@ func TestSearchPrevWithRefsPicker(t *testing.T) {
 	ed.cursor.Col = 0
 
 	// Test Shift+N with refs picker active
-	ev := tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModShift)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModShift))
 	t.Logf("Before HandleKey (refs picker active): row=%d col=%d", ed.cursor.Row, ed.cursor.Col)
 	ed.HandleKey(ev)
 	t.Logf("After HandleKey: row=%d col=%d", ed.cursor.Row, ed.cursor.Col)

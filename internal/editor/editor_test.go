@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -15,12 +16,26 @@ func newTestEditor(lines ...string) *Editor {
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
-	e := New(config.Default())
+	cfg := config.Default()
+	e := New(optionsFromConfig(cfg))
+	applyTestStyles(e)
 	e.lines = make([][]rune, len(lines))
 	for i, line := range lines {
 		e.lines[i] = []rune(line)
 	}
 	return e
+}
+
+type testGoFormatter struct{}
+
+func (testGoFormatter) FormatGo(src string) (string, error) {
+	cmd := exec.Command("gofmt")
+	cmd.Stdin = strings.NewReader(src)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func TestVisualColWithTabs(t *testing.T) {
@@ -105,7 +120,7 @@ func TestSelectionRangeForLine(t *testing.T) {
 func TestSelectionMoveWithShiftMeta(t *testing.T) {
 	e := newTestEditor("foo  bar")
 	e.cursor = Cursor{Row: 0, Col: len(e.lines[0])}
-	ev := tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModMeta|tcell.ModShift)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyLeft, 0, tcell.ModMeta|tcell.ModShift))
 	if !e.handleSelectionMove(ev) {
 		t.Fatalf("handleSelectionMove returned false")
 	}
@@ -121,7 +136,7 @@ func TestSelectionMoveWithShiftPgUp(t *testing.T) {
 	e := newTestEditor("0", "1", "2", "3", "4", "5")
 	e.cursor = Cursor{Row: 4, Col: 0}
 	e.viewHeight = 3
-	ev := tcell.NewEventKey(tcell.KeyPgUp, 0, tcell.ModShift)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyPgUp, 0, tcell.ModShift))
 	if !e.handleSelectionMove(ev) {
 		t.Fatalf("handleSelectionMove returned false")
 	}
@@ -189,6 +204,7 @@ func TestExecCommandFmtNoGo(t *testing.T) {
 		t.Skip("gofmt not available")
 	}
 	e := newTestEditor("package main\nfunc main() {  }\n")
+	e.SetFormatter(testGoFormatter{})
 	if quit := e.execCommand("fmt"); quit {
 		t.Fatalf("execCommand fmt returned true")
 	}
@@ -249,7 +265,7 @@ func TestHandleInsertBackspaceUndo(t *testing.T) {
 	if quit := e.HandleKey(keyRune('i')); quit {
 		t.Fatalf("enter insert returned quit")
 	}
-	if quit := e.HandleKey(tcell.NewEventKey(tcell.KeyBackspace, 0, 0)); quit {
+	if quit := e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyBackspace, 0, 0))); quit {
 		t.Fatalf("backspace returned quit")
 	}
 	if got := e.Content(); got != "a" {
@@ -274,7 +290,7 @@ func TestHandleInsertNewlineUndo(t *testing.T) {
 	if quit := e.HandleKey(keyRune('i')); quit {
 		t.Fatalf("enter insert returned quit")
 	}
-	if quit := e.HandleKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)); quit {
+	if quit := e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0))); quit {
 		t.Fatalf("enter returned quit")
 	}
 	if len(e.lines) != 2 || string(e.lines[0]) != "a" || string(e.lines[1]) != "b" {
@@ -297,7 +313,7 @@ func TestHandleInsertClearsSelection(t *testing.T) {
 	e.selectionActive = true
 	e.selectionStart = Cursor{Row: 0, Col: 0}
 	e.selectionEnd = Cursor{Row: 0, Col: 1}
-	ev := tcell.NewEventKey(tcell.KeyRune, 'x', 0)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyRune, 'x', 0))
 	e.handleInsert(ev)
 	if e.selectionActive {
 		t.Fatalf("selectionActive = true, want false")
@@ -305,7 +321,7 @@ func TestHandleInsertClearsSelection(t *testing.T) {
 }
 
 func TestKeyStringForMapMetaHome(t *testing.T) {
-	ev := tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModMeta)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModMeta))
 	key := keyStringForMap(ev, map[string]string{"cmd+left": "word_left"})
 	if key != "cmd+left" {
 		t.Fatalf("key = %q, want %q", key, "cmd+left")
@@ -338,7 +354,7 @@ func TestHandleKeyCommandWriteQuit(t *testing.T) {
 			t.Fatalf("write command returned quit")
 		}
 	}
-	if quit := e.HandleKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)); quit {
+	if quit := e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0))); quit {
 		t.Fatalf("write command returned quit")
 	}
 	data, err := os.ReadFile(path)
@@ -355,7 +371,7 @@ func TestHandleKeyCommandWriteQuit(t *testing.T) {
 	if quit := e.HandleKey(keyRune('q')); quit {
 		t.Fatalf("q rune returned quit")
 	}
-	if quit := e.HandleKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)); !quit {
+	if quit := e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0))); !quit {
 		t.Fatalf("expected quit on :q")
 	}
 }
@@ -366,8 +382,8 @@ func TestBranchPickerSelection(t *testing.T) {
 	if e.mode != ModeBranchPicker {
 		t.Fatalf("mode = %v, want branch picker", e.mode)
 	}
-	_ = e.HandleKey(tcell.NewEventKey(tcell.KeyDown, 0, 0))
-	_ = e.HandleKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0))
+	_ = e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, 0)))
+	_ = e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
 	branch, ok := e.ConsumeBranchSelection()
 	if !ok || branch != "main" {
 		t.Fatalf("selection = %q ok=%v, want main", branch, ok)
@@ -380,7 +396,7 @@ func TestBranchPickerSelection(t *testing.T) {
 func TestBranchPickerCancel(t *testing.T) {
 	e := newTestEditor("a")
 	e.ShowBranchPicker([]string{"dev", "main"}, "dev")
-	_ = e.HandleKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0))
+	_ = e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0)))
 	if _, ok := e.ConsumeBranchSelection(); ok {
 		t.Fatalf("expected no selection on cancel")
 	}
@@ -389,36 +405,36 @@ func TestBranchPickerCancel(t *testing.T) {
 	}
 }
 
-func keyRune(r rune) *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyRune, r, 0)
+func keyRune(r rune) EventKey {
+	return wrapKey(tcell.NewEventKey(tcell.KeyRune, r, 0))
 }
 
-func keyEsc() *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyEscape, 0, 0)
+func keyEsc() EventKey {
+	return wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0))
 }
 
 // ============================================================================
 // TAB / Shift+TAB (indent/unindent) tests - REAL WORKFLOW via HandleKey
 // ============================================================================
 
-func keyTab() *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyTab, 0, 0)
+func keyTab() EventKey {
+	return wrapKey(tcell.NewEventKey(tcell.KeyTab, 0, 0))
 }
 
-func keyShiftTab() *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyBacktab, 0, 0)
+func keyShiftTab() EventKey {
+	return wrapKey(tcell.NewEventKey(tcell.KeyBacktab, 0, 0))
 }
 
-func keyUndo() *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyRune, 'u', 0)
+func keyUndo() EventKey {
+	return wrapKey(tcell.NewEventKey(tcell.KeyRune, 'u', 0))
 }
 
-func keyShiftDown() *tcell.EventKey {
-	return tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift)
+func keyShiftDown() EventKey {
+	return wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift))
 }
 
 func TestKeyStringForTab(t *testing.T) {
-	ev := tcell.NewEventKey(tcell.KeyTab, 0, 0)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyTab, 0, 0))
 	key := keyString(ev)
 	if key != "tab" {
 		t.Fatalf("keyString(Tab) = %q, want %q", key, "tab")
@@ -427,14 +443,14 @@ func TestKeyStringForTab(t *testing.T) {
 
 func TestKeyStringForShiftTab(t *testing.T) {
 	// Test KeyTab with ModShift
-	ev := tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModShift)
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModShift))
 	key := keyString(ev)
 	if key != "shift+tab" {
 		t.Fatalf("keyString(Shift+Tab) = %q, want %q", key, "shift+tab")
 	}
 
 	// Test KeyBacktab (alternative representation)
-	ev2 := tcell.NewEventKey(tcell.KeyBacktab, 0, 0)
+	ev2 := wrapKey(tcell.NewEventKey(tcell.KeyBacktab, 0, 0))
 	key2 := keyString(ev2)
 	if key2 != "shift+tab" {
 		t.Fatalf("keyString(Backtab) = %q, want %q", key2, "shift+tab")
@@ -763,8 +779,8 @@ func TestUserFlowShiftSelectThenTab(t *testing.T) {
 	if quit := e.HandleKey(keyRune('l')); quit {
 		t.Fatalf("move right returned quit")
 	}
-	e.HandleKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift))
-	e.HandleKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift))
+	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift)))
+	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModShift)))
 
 	if !e.selectionActive {
 		t.Fatalf("selectionActive = false, want true")
@@ -789,13 +805,13 @@ func TestMouseClickMovesCursorClearsSelection(t *testing.T) {
 	e.lineNumberMode = LineNumberOff
 
 	// Create a selection via shift+right
-	e.HandleKey(tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModShift))
+	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModShift)))
 	if !e.selectionActive {
 		t.Fatalf("selectionActive = false, want true")
 	}
 
 	// Click inside the tab expansion (visual col 3)
-	e.HandleMouse(tcell.NewEventMouse(3, 0, tcell.Button1, 0))
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(3, 0, tcell.Button1, 0)))
 	if e.cursor.Row != 0 {
 		t.Fatalf("cursor row = %d, want 0", e.cursor.Row)
 	}
@@ -824,9 +840,9 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 	}
 	defer s.Fini()
 	s.SetSize(20, 5)
-	e.Render(s)
+	e.Render(wrapScreen(s))
 
-	e.HandleMouse(tcell.NewEventMouse(0, 0, tcell.WheelDown, 0))
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(0, 0, tcell.WheelDown, 0)))
 	if e.scroll != 1 {
 		t.Fatalf("scroll = %d, want 1", e.scroll)
 	}
@@ -834,7 +850,7 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 		t.Fatalf("freeScroll = false, want true")
 	}
 
-	e.HandleMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, 0))
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, 0)))
 	if e.scroll != 0 {
 		t.Fatalf("scroll = %d, want 0", e.scroll)
 	}
@@ -876,9 +892,9 @@ func TestGroupCommands(t *testing.T) {
 
 func TestDistributeGroups(t *testing.T) {
 	groups := []GroupInfo{
-		{Name: "File", Size: 6},  // 5 commands + header
-		{Name: "View", Size: 5},  // 4 commands + header
-		{Name: "Edit", Size: 2},  // 1 command + header
+		{Name: "File", Size: 6}, // 5 commands + header
+		{Name: "View", Size: 5}, // 4 commands + header
+		{Name: "Edit", Size: 2}, // 1 command + header
 	}
 
 	// Height 7: File alone in col1, View+Edit fit in col2

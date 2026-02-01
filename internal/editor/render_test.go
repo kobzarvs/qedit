@@ -20,7 +20,7 @@ func TestRenderCommandlinePlacement(t *testing.T) {
 	defer s.Fini()
 	s.SetSize(20, 5)
 
-	e.Render(s)
+	e.Render(wrapScreen(s))
 
 	cells, w, h := s.GetContents()
 	cmdCell := cells[(h-1)*w]
@@ -44,7 +44,7 @@ func TestRenderCommandlineIdleBlank(t *testing.T) {
 	defer s.Fini()
 	s.SetSize(20, 5)
 
-	e.Render(s)
+	e.Render(wrapScreen(s))
 	cells, w, h := s.GetContents()
 	cmdCell := cells[(h-1)*w]
 	if len(cmdCell.Runes) == 0 {
@@ -58,7 +58,8 @@ func TestRenderCommandlineIdleBlank(t *testing.T) {
 func TestRenderCursorWithTab(t *testing.T) {
 	cfg := config.Default()
 	cfg.Editor.LineNumbers = "off"
-	e := New(cfg)
+	e := New(optionsFromConfig(cfg))
+	applyTestStyles(e)
 	e.lines = [][]rune{[]rune("a\tb")}
 	e.cursor = Cursor{Row: 0, Col: 2}
 
@@ -69,7 +70,7 @@ func TestRenderCursorWithTab(t *testing.T) {
 	defer s.Fini()
 	s.SetSize(20, 5)
 
-	e.Render(s)
+	e.Render(wrapScreen(s))
 	x, y, visible := s.GetCursor()
 	if !visible {
 		t.Fatalf("cursor not visible")
@@ -86,7 +87,8 @@ func TestRenderCursorWithTab(t *testing.T) {
 func TestRenderSelectionStyle(t *testing.T) {
 	cfg := config.Default()
 	cfg.Editor.LineNumbers = "off"
-	e := New(cfg)
+	e := New(optionsFromConfig(cfg))
+	applyTestStyles(e)
 	e.lines = [][]rune{[]rune("abc")}
 	e.selectionActive = true
 	e.selectionStart = Cursor{Row: 0, Col: 1}
@@ -99,7 +101,7 @@ func TestRenderSelectionStyle(t *testing.T) {
 	defer s.Fini()
 	s.SetSize(10, 3)
 
-	e.Render(s)
+	e.Render(wrapScreen(s))
 	cells, w, _ := s.GetContents()
 	normal := cells[0*w+0].Style
 	selected := cells[0*w+1].Style
@@ -113,7 +115,8 @@ func TestRenderSelectionStyle(t *testing.T) {
 func TestRenderSyntaxHighlightStyle(t *testing.T) {
 	cfg := config.Default()
 	cfg.Editor.LineNumbers = "off"
-	e := New(cfg)
+	e := New(optionsFromConfig(cfg))
+	applyTestStyles(e)
 	e.lines = [][]rune{[]rune("abc")}
 	e.SetHighlights(0, 0, map[int][]HighlightSpan{
 		0: {
@@ -128,7 +131,7 @@ func TestRenderSyntaxHighlightStyle(t *testing.T) {
 	defer s.Fini()
 	s.SetSize(10, 3)
 
-	e.Render(s)
+	e.Render(wrapScreen(s))
 	cells, w, _ := s.GetContents()
 	unknownStyle := cells[0*w+1].Style
 	hlStyle := cells[0*w+0].Style

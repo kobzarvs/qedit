@@ -1,11 +1,6 @@
 package editor
 
-import (
-	"time"
-
-	"github.com/gdamore/tcell/v2"
-	"github.com/kobzarvs/qedit/internal/session"
-)
+import "time"
 
 type Mode int
 
@@ -347,8 +342,10 @@ type LSPGotoFunc func(method, path string, line, col int) ([]LSPLocation, error)
 type HighlightRangeFunc func(path string, startLine, endLine int) map[int][]HighlightSpan
 
 type Editor struct {
-	lines                        [][]rune
-	cursor                       Cursor
+	Buffer
+	Selection
+	UndoManager
+	SearchState
 	scroll                       int
 	scrollX                      int // horizontal scroll offset (visual columns)
 	mode                         Mode
@@ -360,52 +357,54 @@ type Editor struct {
 	cmdHistory                   []string // command history
 	cmdHistoryIndex              int      // current position in history (-1 = not browsing)
 	cmdHistoryPrefix             string   // prefix for filtered history search
+	cmdHistoryPath               string   // command history file path
+	searchHistoryPath            string   // search history file path
 	statusMessage                string
-	undo                         []action
-	redo                         []action
-	savePoint                    int
 	tabWidth                     int
 	viewHeight                   int
 	viewWidth                    int
-	styleMain                    tcell.Style
-	styleStatus                  tcell.Style
-	styleCommand                 tcell.Style
-	styleLineNumber              tcell.Style
-	styleLineNumberActive        tcell.Style
-	styleSelection               tcell.Style
-	styleSearchMatch             tcell.Style
-	styleSyntaxKeyword           tcell.Style
-	styleSyntaxString            tcell.Style
-	styleSyntaxComment           tcell.Style
-	styleSyntaxType              tcell.Style
-	styleSyntaxFunction          tcell.Style
-	styleSyntaxNumber            tcell.Style
-	styleSyntaxConstant          tcell.Style
-	styleSyntaxOperator          tcell.Style
-	styleSyntaxPunctuation       tcell.Style
-	styleSyntaxField             tcell.Style
-	styleSyntaxBuiltin           tcell.Style
-	styleSyntaxUnknown           tcell.Style
-	styleSyntaxVariable          tcell.Style
-	styleSyntaxParameter         tcell.Style
-	styleTableBorder             tcell.Style
-	styleBranch                  tcell.Style
-	styleMainBranch              tcell.Style
-	styleLayoutUS                tcell.Style
-	styleLayoutRU                tcell.Style
-	styleLayoutOther             tcell.Style
-	styleAutoComplete            tcell.Style
-	styleAutoCompleteHotkey      tcell.Style
-	styleAutoCompleteDescription tcell.Style
-	styleAutoCompleteGroup       tcell.Style
+	styleMain                    Style
+	styleStatus                  Style
+	styleCommand                 Style
+	styleLineNumber              Style
+	styleLineNumberActive        Style
+	styleSelection               Style
+	styleSearchMatch             Style
+	styleSyntaxKeyword           Style
+	styleSyntaxString            Style
+	styleSyntaxComment           Style
+	styleSyntaxType              Style
+	styleSyntaxFunction          Style
+	styleSyntaxNumber            Style
+	styleSyntaxConstant          Style
+	styleSyntaxOperator          Style
+	styleSyntaxPunctuation       Style
+	styleSyntaxField             Style
+	styleSyntaxBuiltin           Style
+	styleSyntaxUnknown           Style
+	styleSyntaxVariable          Style
+	styleSyntaxParameter         Style
+	styleTableBorder             Style
+	styleBranch                  Style
+	styleMainBranch              Style
+	styleLayoutUS                Style
+	styleLayoutRU                Style
+	styleLayoutOther             Style
+	styleAutoComplete            Style
+	styleAutoCompleteHotkey      Style
+	styleAutoCompleteDescription Style
+	styleAutoCompleteGroup       Style
+	styleCommandCheckmark        Style
+	styleScrollIndicator         Style
+	styleBranchMarker            Style
+	styleFilterActive            Style
+	styleFilterInactive          Style
+	styleBoxBorder               Style
 	lineNumberMode               LineNumberMode
 	layoutName                   string
 	gitBranch                    string
 	gitMainBranch                string // detected main branch (main/master)
 	gitBranchSymbol              string
-	selectionActive              bool
-	selectionStart               Cursor
-	selectionEnd                 Cursor
 	highlights                   map[int][]HighlightSpan
 	highlightStart               int
 	highlightEnd                 int
@@ -418,13 +417,12 @@ type Editor struct {
 	branchPickerSelection        string
 	sidebar                      *Sidebar
 	sidebarStyles                SidebarStyles
-	lineUndoRow                  int
-	lineUndoContent              []rune
-	lineUndoValid                bool
 	lastKeyCombo                 string
 	freeScroll                   bool
 	lastScrollTime               time.Time
-	undoGroup                    uint64
+	systemClipboard              Clipboard
+	formatter                    Formatter
+	terminalZoomer               TerminalZoomer
 
 	// Helix-style state
 	clipboard                  [][]rune // yanked text (lines)
@@ -446,19 +444,6 @@ type Editor struct {
 	keybindingsHelpFilterAct   []rune   // filter for Action column
 	keybindingsHelpFilterDesc  []rune   // filter for Description column
 	keybindingsHelpFilterFocus int      // 0=Key, 1=Action, 2=Description
-
-	// Search state
-	searchQuery         []rune        // current search query
-	searchCursor        int           // cursor position within search query
-	searchMatches       []SearchMatch // all matches in the file
-	searchMatchIndex    int           // current match index
-	searchForward       bool          // search direction
-	searchFuzzy         bool          // true = fuzzy search (cmd+f), false = exact (/)
-	searchRegex         bool          // true = regex search (cmd+e)
-	lastSearchQuery     string        // last search query for n/N
-	searchHistory       []string      // search history (prefixed with /: F: or E:)
-	searchHistoryIndex  int           // current position in search history (-1 = not browsing)
-	searchHistoryPrefix string        // prefix for filtered search history
 
 	// Terminal zoom state
 	zoomPendingRestore bool // true = waiting for space to restore zoom
@@ -485,7 +470,7 @@ type Editor struct {
 	refsPickerHighlights map[string]map[int][]HighlightSpan // cache of highlights for preview
 
 	// Session persistence
-	sessionManager *session.Manager
+	sessionStore SessionStore
 
 	// Test hook for keymap coverage.
 	actionHook func(action string)

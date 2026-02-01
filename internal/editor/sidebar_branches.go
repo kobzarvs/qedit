@@ -1,6 +1,6 @@
 package editor
 
-import "github.com/gdamore/tcell/v2"
+
 
 // SidebarBranchesContent implements SidebarContent for git branches
 type SidebarBranchesContent struct {
@@ -64,7 +64,7 @@ func (b *SidebarBranchesContent) SetIndex(i int) {
 }
 
 // HandleKey processes mode-specific keys
-func (b *SidebarBranchesContent) HandleKey(ev *tcell.EventKey) (bool, SidebarActionData) {
+func (b *SidebarBranchesContent) HandleKey(ev EventKey) (bool, SidebarActionData) {
 	// No special keys for branches, navigation is handled by container
 	return false, SidebarActionData{Action: SidebarActionNone}
 }

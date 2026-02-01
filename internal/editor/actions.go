@@ -1,11 +1,9 @@
 package editor
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -387,20 +385,13 @@ func (e *Editor) Save(path string) error {
 }
 func (e *Editor) FormatGo() error {
 	src := e.Content()
-	cmd := exec.Command("gofmt")
-	cmd.Stdin = strings.NewReader(src)
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return errors.New(msg)
-		}
+	if e.formatter == nil {
+		return errors.New("formatter unavailable")
+	}
+	formatted, err := e.formatter.FormatGo(src)
+	if err != nil {
 		return err
 	}
-	formatted := out.String()
 	if formatted == src {
 		return nil
 	}
@@ -755,14 +746,12 @@ func isPipeTableBlock(lines []string) bool {
 	return true
 }
 
-// sendTerminalZoomStep sends a single zoom command to the terminal via AppleScript.
+// sendTerminalZoomStep sends a single zoom command to the terminal via the zoomer.
 func (e *Editor) sendTerminalZoomStep(zoomIn bool) {
-	key := "+"
-	if !zoomIn {
-		key = "-"
+	if e.terminalZoomer == nil {
+		return
 	}
-	script := fmt.Sprintf(`tell application "System Events" to keystroke "%s" using command down`, key)
-	_ = exec.Command("osascript", "-e", script).Run()
+	_ = e.terminalZoomer.ZoomStep(zoomIn)
 }
 
 // zoomWithAnimation performs zoom with synchronized scroll animation.
