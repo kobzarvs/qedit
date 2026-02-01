@@ -44,7 +44,7 @@ func CurrentLayoutRaw() string {
 }
 
 var layoutAbbreviations = map[string]string{
-	"ABC":       "US",
+	"ABC":       "EN",
 	"US":        "US",
 	"Russian":   "RU",
 	"RussianPC": "RU",

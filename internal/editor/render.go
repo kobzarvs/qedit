@@ -237,7 +237,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int) {
 	// Choose layout style based on layout name
 	layoutStyle := e.styleLayoutOther
 	switch {
-	case strings.HasPrefix(e.layoutName, "US"):
+	case strings.HasPrefix(e.layoutName, "EN"):
 		layoutStyle = e.styleLayoutUS
 	case strings.HasPrefix(e.layoutName, "RU"):
 		layoutStyle = e.styleLayoutRU
