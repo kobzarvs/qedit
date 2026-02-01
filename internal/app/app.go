@@ -96,7 +96,7 @@ func (a *App) Run() error {
 		searchHistoryPath = filepath.Join(dir, "search_history")
 	}
 
-	const maxHighlightBytes = 8 << 20
+	highlightMaxBytes := cfg.Editor.HighlightMaxBytes
 	ed := editor.New(editor.Options{
 		TabWidth:             cfg.Editor.TabWidth,
 		LineNumbers:          cfg.Editor.LineNumbers,
@@ -131,8 +131,10 @@ func (a *App) Run() error {
 			return err
 		}
 		gitPath = openPath
-		if info, err := os.Stat(openPath); err == nil && info.Size() > maxHighlightBytes {
-			highlightEnabled = false
+		if highlightMaxBytes > 0 {
+			if info, err := os.Stat(openPath); err == nil && info.Size() > highlightMaxBytes {
+				highlightEnabled = false
+			}
 		}
 		content := ed.Content()
 		ls.OpenFile(openPath, content)

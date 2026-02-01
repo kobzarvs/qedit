@@ -20,6 +20,7 @@ type EditorOptions struct {
 	SidebarMinWidth      int    `toml:"sidebar-min-width"`
 	SidebarMaxWidth      string `toml:"sidebar-max-width"`
 	SidebarCloseOnSelect bool   `toml:"sidebar-close-on-select"`
+	HighlightMaxBytes    int64  `toml:"highlight-max-bytes"`
 }
 
 type Theme struct {
@@ -91,6 +92,7 @@ func Default() Config {
 			SidebarMinWidth:      15,
 			SidebarMaxWidth:      "50",
 			SidebarCloseOnSelect: false,
+			HighlightMaxBytes:    8 << 20,
 		},
 		Theme: Theme{
 			Theme:                        "",
@@ -322,6 +324,13 @@ func Load() (Config, error) {
 	}
 	if md.IsDefined("editor", "sidebar-close-on-select") {
 		cfg.Editor.SidebarCloseOnSelect = userCfg.Editor.SidebarCloseOnSelect
+	}
+	if md.IsDefined("editor", "highlight-max-bytes") {
+		if userCfg.Editor.HighlightMaxBytes < 0 {
+			cfg.Editor.HighlightMaxBytes = 0
+		} else {
+			cfg.Editor.HighlightMaxBytes = userCfg.Editor.HighlightMaxBytes
+		}
 	}
 	if userCfg.Theme.Theme != "" {
 		cfg.Theme.Theme = userCfg.Theme.Theme

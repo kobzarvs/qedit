@@ -116,3 +116,34 @@ background = "#bbbbbb"
 		t.Fatalf("Background = %q, want %q", theme.Background, "#bbbbbb")
 	}
 }
+
+func TestLoadHighlightMaxBytes(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QEDIT_CONFIG_HOME", dir)
+
+	writeFile(t, filepath.Join(dir, "config.toml"), `
+[editor]
+highlight-max-bytes = 0
+`)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Editor.HighlightMaxBytes != 0 {
+		t.Fatalf("HighlightMaxBytes = %d, want 0", cfg.Editor.HighlightMaxBytes)
+	}
+
+	writeFile(t, filepath.Join(dir, "config.toml"), `
+[editor]
+highlight-max-bytes = 12345
+`)
+
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Editor.HighlightMaxBytes != 12345 {
+		t.Fatalf("HighlightMaxBytes = %d, want 12345", cfg.Editor.HighlightMaxBytes)
+	}
+}

@@ -2,6 +2,7 @@
 tab-width = 4
 line-numbers = "absolute"
 git-branch-symbol = ""
+highlight-max-bytes = 8388608 # 0 = no limit
 
 [theme]
 theme = "ayu"
