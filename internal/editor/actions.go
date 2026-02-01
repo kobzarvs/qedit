@@ -281,6 +281,28 @@ func (e *Editor) execCommand(cmd string) bool {
 		}
 		e.setStatus("written")
 		return false
+	case "e", "edit":
+		if len(args) > 0 {
+			e.setStatus("edit file not supported")
+			return false
+		}
+		if err := e.ReloadFromDisk(false); err != nil {
+			e.setStatus(err.Error())
+			return false
+		}
+		e.setStatus("reloaded")
+		return false
+	case "e!", "edit!":
+		if len(args) > 0 {
+			e.setStatus("edit file not supported")
+			return false
+		}
+		if err := e.ReloadFromDisk(true); err != nil {
+			e.setStatus(err.Error())
+			return false
+		}
+		e.setStatus("reloaded")
+		return false
 	case "q":
 		if e.dirty {
 			e.setStatus("unsaved changes (use :q!)")
@@ -379,6 +401,8 @@ func (e *Editor) Save(path string) error {
 	e.filename = path
 	e.savePoint = len(e.undo)
 	e.updateDirty()
+	e.externalChange = ExternalChangeNone
+	_ = e.syncFileSnapshot()
 	_ = e.SaveUndoHistory()
 	e.saveSessionState()
 	return nil

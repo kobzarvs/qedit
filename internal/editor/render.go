@@ -170,14 +170,17 @@ func (e *Editor) renderStatusline(s Screen, w, y int) {
 			name = filepath.Base(name)
 		}
 	}
-	dirty := ""
+	flags := ""
 	if e.dirty {
-		dirty = "[*]"
+		flags += "[*]"
+	}
+	if e.externalChange != ExternalChangeNone {
+		flags += "[!]"
 	}
 
-	status := fmt.Sprintf(" %s | %s %s", mode, name, dirty)
+	status := fmt.Sprintf(" %s | %s %s", mode, name, flags)
 	if e.statusMessage != "" {
-		status = fmt.Sprintf(" %s | %s %s | %s ", mode, name, dirty, e.statusMessage)
+		status = fmt.Sprintf(" %s | %s %s | %s ", mode, name, flags, e.statusMessage)
 	}
 	row := e.cursor.Row + 1
 	col := 1

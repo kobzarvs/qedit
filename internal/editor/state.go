@@ -75,6 +75,8 @@ func (e *Editor) OpenFile(path string) error {
 	e.selectionActive = false
 	e.updateDirty()
 	_ = e.LoadUndoHistory()
+	_ = e.syncFileSnapshot()
+	e.externalChange = ExternalChangeNone
 
 	// Restore session state
 	e.restoreSessionState()

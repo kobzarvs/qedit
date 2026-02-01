@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/gdamore/tcell/v2"
 	sitter "github.com/smacker/go-tree-sitter"
 
@@ -145,6 +146,122 @@ func (a *App) Run() error {
 	if gitPath == "" {
 		if cwd, err := os.Getwd(); err == nil {
 			gitPath = cwd
+		}
+	}
+
+	const (
+		fileChangeDebounce = 300 * time.Millisecond
+		autoReloadMaxBytes = int64(8 << 20)
+		filePollInterval   = time.Second
+	)
+	var (
+		fileWatcher       *fsnotify.Watcher
+		fileEvents        chan time.Time
+		pendingFileChange bool
+		lastFileEvent     time.Time
+		lastFileCheck     time.Time
+		watchedPath       string
+	)
+	if openPath != "" {
+		absPath := openPath
+		if abs, err := filepath.Abs(openPath); err == nil {
+			absPath = abs
+		}
+		watchedPath = absPath
+		watchedDir := filepath.Dir(absPath)
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			logger.Warn("file watcher unavailable", "error", err)
+		} else if err := watcher.Add(watchedDir); err != nil {
+			_ = watcher.Close()
+			logger.Warn("file watcher disabled", "error", err)
+		} else {
+			fileWatcher = watcher
+			fileEvents = make(chan time.Time, 1)
+			go func() {
+				sendEvent := func(ts time.Time) {
+					select {
+					case fileEvents <- ts:
+						return
+					default:
+					}
+					select {
+					case <-fileEvents:
+					default:
+					}
+					select {
+					case fileEvents <- ts:
+					default:
+					}
+				}
+				for {
+					select {
+					case ev, ok := <-watcher.Events:
+						if !ok {
+							return
+						}
+						if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
+							continue
+						}
+						if filepath.Clean(ev.Name) != watchedPath {
+							continue
+						}
+						sendEvent(time.Now())
+						_ = s.PostEvent(tcell.NewEventInterrupt(nil))
+					case err, ok := <-watcher.Errors:
+						if !ok {
+							return
+						}
+						logger.Warn("file watcher error", "error", err)
+					}
+				}
+			}()
+		}
+	}
+	if fileWatcher != nil {
+		defer func() { _ = fileWatcher.Close() }()
+	}
+	applyExternalChange := func() {
+		change, err := ed.CheckExternalChange()
+		if err != nil {
+			logger.Error("file change check failed", "error", err)
+			return
+		}
+		if change == editor.ExternalChangeNone {
+			if ed.ExternalChange() != editor.ExternalChangeNone {
+				ed.ClearExternalChange()
+			}
+			return
+		}
+		if change == editor.ExternalChangeModified && !ed.IsDirty() {
+			autoReload := true
+			if name := ed.Filename(); name != "" {
+				if info, err := os.Stat(name); err == nil && info.Size() > autoReloadMaxBytes {
+					autoReload = false
+				}
+			}
+			if autoReload {
+				if err := ed.ReloadFromDisk(false); err != nil {
+					ed.SetStatusMessage("reload failed: " + err.Error())
+				} else {
+					ed.SetStatusMessage("reloaded from disk")
+				}
+				return
+			}
+			if ed.ExternalChange() != change {
+				ed.SetExternalChange(change)
+				ed.SetStatusMessage("file changed on disk (>8MB, use :e to reload)")
+			}
+			return
+		}
+		if ed.ExternalChange() != change {
+			ed.SetExternalChange(change)
+			switch change {
+			case editor.ExternalChangeDeleted:
+				ed.SetStatusMessage("file deleted on disk")
+			default:
+				ed.SetStatusMessage("file changed on disk (use :e! to reload)")
+			}
 		}
 	}
 
@@ -330,6 +447,27 @@ func (a *App) Run() error {
 				ed.SetGitBranch(branch)
 				ed.SetStatusMessage("checked out " + branch)
 			}
+		}
+		if fileWatcher != nil {
+			for {
+				select {
+				case ts := <-fileEvents:
+					pendingFileChange = true
+					if ts.After(lastFileEvent) {
+						lastFileEvent = ts
+					}
+				default:
+					goto doneFileEvents
+				}
+			}
+		doneFileEvents:
+			if pendingFileChange && time.Since(lastFileEvent) >= fileChangeDebounce {
+				pendingFileChange = false
+				applyExternalChange()
+			}
+		} else if openPath != "" && time.Since(lastFileCheck) > filePollInterval {
+			lastFileCheck = time.Now()
+			applyExternalChange()
 		}
 		if openPath != "" && highlightEnabled && langName != "" {
 			tick := ed.ChangeTick()

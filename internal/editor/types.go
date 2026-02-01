@@ -134,6 +134,8 @@ const (
 var AvailableCommands = []CommandInfo{
 	// File
 	{"w", "write file", CmdGroupFile},
+	{"e", "reload file", CmdGroupFile},
+	{"e!", "reload file (discard changes)", CmdGroupFile},
 	{"q", "quit", CmdGroupFile},
 	{"q!", "force quit", CmdGroupFile},
 	{"wq", "write and quit", CmdGroupFile},
@@ -350,6 +352,8 @@ type Editor struct {
 	scrollX                      int // horizontal scroll offset (visual columns)
 	mode                         Mode
 	filename                     string
+	fileSnapshot                 fileSnapshot
+	externalChange               ExternalChange
 	dirty                        bool
 	keymap                       keymapSet
 	cmd                          []rune
