@@ -297,7 +297,8 @@ func Load() (Config, error) {
 	}
 
 	var userCfg Config
-	if _, err := toml.Decode(string(data), &userCfg); err != nil {
+	md, err := toml.Decode(string(data), &userCfg)
+	if err != nil {
 		return cfg, err
 	}
 
@@ -319,7 +320,7 @@ func Load() (Config, error) {
 	if userCfg.Editor.SidebarMaxWidth != "" {
 		cfg.Editor.SidebarMaxWidth = userCfg.Editor.SidebarMaxWidth
 	}
-	if userCfg.Editor.SidebarCloseOnSelect {
+	if md.IsDefined("editor", "sidebar-close-on-select") {
 		cfg.Editor.SidebarCloseOnSelect = userCfg.Editor.SidebarCloseOnSelect
 	}
 	if userCfg.Theme.Theme != "" {
@@ -332,129 +333,7 @@ func Load() (Config, error) {
 		}
 		mergeTheme(&cfg.Theme, theme)
 	}
-	if userCfg.Theme.Foreground != "" {
-		cfg.Theme.Foreground = userCfg.Theme.Foreground
-	}
-	if userCfg.Theme.Background != "" {
-		cfg.Theme.Background = userCfg.Theme.Background
-	}
-	if userCfg.Theme.StatuslineForeground != "" {
-		cfg.Theme.StatuslineForeground = userCfg.Theme.StatuslineForeground
-	}
-	if userCfg.Theme.StatuslineBackground != "" {
-		cfg.Theme.StatuslineBackground = userCfg.Theme.StatuslineBackground
-	}
-	if userCfg.Theme.CommandlineForeground != "" {
-		cfg.Theme.CommandlineForeground = userCfg.Theme.CommandlineForeground
-	}
-	if userCfg.Theme.CommandlineBackground != "" {
-		cfg.Theme.CommandlineBackground = userCfg.Theme.CommandlineBackground
-	}
-	if userCfg.Theme.LineNumberForeground != "" {
-		cfg.Theme.LineNumberForeground = userCfg.Theme.LineNumberForeground
-	}
-	if userCfg.Theme.LineNumberActiveForeground != "" {
-		cfg.Theme.LineNumberActiveForeground = userCfg.Theme.LineNumberActiveForeground
-	}
-	if userCfg.Theme.SelectionForeground != "" {
-		cfg.Theme.SelectionForeground = userCfg.Theme.SelectionForeground
-	}
-	if userCfg.Theme.SelectionBackground != "" {
-		cfg.Theme.SelectionBackground = userCfg.Theme.SelectionBackground
-	}
-	if userCfg.Theme.SearchMatchForeground != "" {
-		cfg.Theme.SearchMatchForeground = userCfg.Theme.SearchMatchForeground
-	}
-	if userCfg.Theme.SearchMatchBackground != "" {
-		cfg.Theme.SearchMatchBackground = userCfg.Theme.SearchMatchBackground
-	}
-	if userCfg.Theme.SyntaxKeyword != "" {
-		cfg.Theme.SyntaxKeyword = userCfg.Theme.SyntaxKeyword
-	}
-	if userCfg.Theme.SyntaxString != "" {
-		cfg.Theme.SyntaxString = userCfg.Theme.SyntaxString
-	}
-	if userCfg.Theme.SyntaxComment != "" {
-		cfg.Theme.SyntaxComment = userCfg.Theme.SyntaxComment
-	}
-	if userCfg.Theme.SyntaxType != "" {
-		cfg.Theme.SyntaxType = userCfg.Theme.SyntaxType
-	}
-	if userCfg.Theme.SyntaxFunction != "" {
-		cfg.Theme.SyntaxFunction = userCfg.Theme.SyntaxFunction
-	}
-	if userCfg.Theme.SyntaxNumber != "" {
-		cfg.Theme.SyntaxNumber = userCfg.Theme.SyntaxNumber
-	}
-	if userCfg.Theme.SyntaxConstant != "" {
-		cfg.Theme.SyntaxConstant = userCfg.Theme.SyntaxConstant
-	}
-	if userCfg.Theme.SyntaxOperator != "" {
-		cfg.Theme.SyntaxOperator = userCfg.Theme.SyntaxOperator
-	}
-	if userCfg.Theme.SyntaxPunctuation != "" {
-		cfg.Theme.SyntaxPunctuation = userCfg.Theme.SyntaxPunctuation
-	}
-	if userCfg.Theme.SyntaxField != "" {
-		cfg.Theme.SyntaxField = userCfg.Theme.SyntaxField
-	}
-	if userCfg.Theme.SyntaxBuiltin != "" {
-		cfg.Theme.SyntaxBuiltin = userCfg.Theme.SyntaxBuiltin
-	}
-	if userCfg.Theme.SyntaxUnknown != "" {
-		cfg.Theme.SyntaxUnknown = userCfg.Theme.SyntaxUnknown
-	}
-	if userCfg.Theme.SyntaxVariable != "" {
-		cfg.Theme.SyntaxVariable = userCfg.Theme.SyntaxVariable
-	}
-	if userCfg.Theme.SyntaxParameter != "" {
-		cfg.Theme.SyntaxParameter = userCfg.Theme.SyntaxParameter
-	}
-	if userCfg.Theme.SidebarForeground != "" {
-		cfg.Theme.SidebarForeground = userCfg.Theme.SidebarForeground
-	}
-	if userCfg.Theme.SidebarBackground != "" {
-		cfg.Theme.SidebarBackground = userCfg.Theme.SidebarBackground
-	}
-	if userCfg.Theme.SidebarDirForeground != "" {
-		cfg.Theme.SidebarDirForeground = userCfg.Theme.SidebarDirForeground
-	}
-	if userCfg.Theme.SidebarSelectedForeground != "" {
-		cfg.Theme.SidebarSelectedForeground = userCfg.Theme.SidebarSelectedForeground
-	}
-	if userCfg.Theme.SidebarSelectedBackground != "" {
-		cfg.Theme.SidebarSelectedBackground = userCfg.Theme.SidebarSelectedBackground
-	}
-	if userCfg.Theme.SidebarHeaderForeground != "" {
-		cfg.Theme.SidebarHeaderForeground = userCfg.Theme.SidebarHeaderForeground
-	}
-	if userCfg.Theme.SidebarHeaderBackground != "" {
-		cfg.Theme.SidebarHeaderBackground = userCfg.Theme.SidebarHeaderBackground
-	}
-	if userCfg.Theme.SidebarBorderForeground != "" {
-		cfg.Theme.SidebarBorderForeground = userCfg.Theme.SidebarBorderForeground
-	}
-	if userCfg.Theme.SidebarHiddenForeground != "" {
-		cfg.Theme.SidebarHiddenForeground = userCfg.Theme.SidebarHiddenForeground
-	}
-	if userCfg.Theme.SidebarIgnoredForeground != "" {
-		cfg.Theme.SidebarIgnoredForeground = userCfg.Theme.SidebarIgnoredForeground
-	}
-	if userCfg.Theme.SidebarIndicatorForeground != "" {
-		cfg.Theme.SidebarIndicatorForeground = userCfg.Theme.SidebarIndicatorForeground
-	}
-	if userCfg.Theme.SidebarHotkeyForeground != "" {
-		cfg.Theme.SidebarHotkeyForeground = userCfg.Theme.SidebarHotkeyForeground
-	}
-	if userCfg.Theme.SidebarUnavailableForeground != "" {
-		cfg.Theme.SidebarUnavailableForeground = userCfg.Theme.SidebarUnavailableForeground
-	}
-	if userCfg.Theme.BoxBorderForeground != "" {
-		cfg.Theme.BoxBorderForeground = userCfg.Theme.BoxBorderForeground
-	}
-	if userCfg.Theme.BoxBorderBackground != "" {
-		cfg.Theme.BoxBorderBackground = userCfg.Theme.BoxBorderBackground
-	}
+	mergeTheme(&cfg.Theme, userCfg.Theme)
 	if userCfg.Keymap.Normal != nil {
 		for k, v := range userCfg.Keymap.Normal {
 			cfg.Keymap.Normal[k] = v
