@@ -1,0 +1,39 @@
+[[language]]
+name = "go"
+file-types = ["go", "go.mod", "go.sum"]
+roots = ["go.mod", ".git"]
+language-servers = ["gopls"]
+
+[[language]]
+name = "toml"
+file-types = ["toml"]
+roots = []
+
+[[language]]
+name = "yaml"
+file-types = ["yaml", "yml"]
+roots = []
+
+[[language]]
+name = "json"
+file-types = ["json", "jsonc"]
+roots = []
+
+[[language]]
+name = "markdown"
+file-types = ["md", "markdown"]
+roots = []
+
+[[language]]
+name = "bash"
+file-types = ["sh", "bash", "zsh", ".bashrc", ".zshrc", ".bash_profile", ".zprofile", ".profile"]
+roots = []
+
+[[language]]
+name = "gitignore"
+file-types = [".gitignore", ".dockerignore"]
+roots = []
+
+[language-server.gopls]
+command = "gopls"
+args = []

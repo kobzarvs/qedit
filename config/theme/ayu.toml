@@ -1,0 +1,70 @@
+# base
+foreground = "#B3B1AD"
+background = "#0A0E14"
+
+# statusline
+statusline-foreground = "#B3B1AD"
+statusline-background = "#292929"
+
+# commandline
+commandline-foreground = "#B3B1AD"
+commandline-background = "#181818"
+
+# line numbers
+line-number-foreground = "#3E4B59"
+line-number-active-foreground = "#B3B1AD"
+
+# selection
+selection-foreground = "#B3B1AD"
+selection-background = "#27425A"
+
+# search
+search-foreground = "#000000"
+search-background = "#FFD700"
+
+# syntax
+syntax-keyword = "#47A2ED" # "#77B9E2" #"#FFA759"
+syntax-string = "#BAE67E"
+syntax-comment = "#898989" # "#5C6773"
+syntax-type = "#5CCFE6"
+syntax-function = "#FFD173"
+syntax-number = "#D4BFFF"
+syntax-constant = "#FFDD8E"
+syntax-operator = "#D0D0D0"
+syntax-punctuation = "#D0D0D0"
+syntax-field = "#E6B673"
+syntax-builtin = "#F0F0F0" # "#73D0FF"
+syntax-variable = "#92D8F9" # "#B3B1AD"
+syntax-parameter = "#77B9E2"
+syntax-unknown = "#FF0000"
+
+# branches
+branch-foreground = "#FFDD8E"
+branch-background = "statusline-background"
+main-branch-foreground = "#FFDD8E"
+main-branch-background = "statusline-background"
+
+# autocomplete
+autocomplete-background = "commandline-background"
+autocomplete-hotkey = "#FFFFFF"
+autocomplete-description = "commandline-foreground"
+autocomplete-group = "#808080"
+
+# sidebar
+sidebar-foreground = "#B3B1AD"
+sidebar-background = "transparent"
+sidebar-dir-foreground = "#59C2FF"
+sidebar-selected-foreground = "#0A0E14"
+sidebar-selected-background = "#555555"
+sidebar-header-foreground = "#B3B1AD"
+sidebar-header-background = "#0F1419"
+sidebar-border-foreground = "#3E4B59"
+sidebar-hidden-foreground = "#3E4B59"
+sidebar-ignored-foreground = "#3E4B59"
+sidebar-indicator-foreground = "#E6B450"
+sidebar-hotkey-foreground = "#59C2FF"
+sidebar-unavailable-foreground = "#3E4B59"
+
+# box border
+box-border-foreground = "statusline-foreground"
+box-border-background = "statusline-background"
