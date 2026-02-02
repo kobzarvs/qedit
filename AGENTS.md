@@ -43,3 +43,5 @@ description or screenshot from the terminal.
 If you add or modify defaults, update the relevant TOML in `config/` and note
 the change in your PR description. Keep binary assets in `assets/` and avoid
 adding large, uncompressed files to the repo.
+When introducing new theme color keys, update both `config/theme/ayu.toml` and
+`~/.config/qedit/theme/ayu.toml`.

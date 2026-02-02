@@ -82,6 +82,9 @@ Files:
 - `theme/<name>.toml` - Theme definitions
 - `history`, `search_history` - Command/search history
 
+When adding new theme color keys, update both `config/theme/ayu.toml` and
+`~/.config/qedit/theme/ayu.toml`.
+
 ## Ongoing Refactoring
 
 The editor module is being refactored per `docs/refactoring/editor.md`:
