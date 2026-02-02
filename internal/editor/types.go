@@ -14,43 +14,46 @@ const (
 )
 
 const (
-	actionMoveLeft          = "move_left"
-	actionMoveRight         = "move_right"
-	actionMoveUp            = "move_up"
-	actionMoveDown          = "move_down"
-	actionWordLeft          = "word_left"
-	actionWordRight         = "word_right"
-	actionLineStart         = "line_start"
-	actionLineEnd           = "line_end"
-	actionFileStart         = "file_start"
-	actionFileEnd           = "file_end"
-	actionPageUp            = "page_up"
-	actionPageDown          = "page_down"
-	actionMoveLineUp        = "move_line_up"
-	actionMoveLineDown      = "move_line_down"
-	actionToggleLineNumbers = "toggle_line_numbers"
-	actionBranchPicker      = "branch_picker"
-	actionToggleSidebar     = "toggle_sidebar"
-	actionEnterInsert       = "enter_insert"
-	actionEnterNormal       = "enter_normal"
-	actionEnterCommand      = "enter_command"
-	actionQuit              = "quit"
-	actionBackspace         = "backspace"
-	actionNewline           = "newline"
-	actionInsertTab         = "insert_tab"
-	actionUndo              = "undo"
-	actionRedo              = "redo"
-	actionDeleteLine        = "delete_line"
-	actionDeleteChar        = "delete_char"
-	actionDeleteWordLeft    = "delete_word_left"
-	actionDeleteWordRight   = "delete_word_right"
-	actionInsertLineBelow   = "insert_line_below"
-	actionUndoLine          = "undo_line"
-	actionScrollUp          = "scroll_up"
-	actionScrollDown        = "scroll_down"
-	actionIndent            = "indent"
-	actionUnindent          = "unindent"
-	actionSelectAll         = "select_all"
+	actionMoveLeft           = "move_left"
+	actionMoveRight          = "move_right"
+	actionMoveUp             = "move_up"
+	actionMoveDown           = "move_down"
+	actionWordLeft           = "word_left"
+	actionWordRight          = "word_right"
+	actionLineStart          = "line_start"
+	actionLineEnd            = "line_end"
+	actionFileStart          = "file_start"
+	actionFileEnd            = "file_end"
+	actionPageUp             = "page_up"
+	actionPageDown           = "page_down"
+	actionMoveLineUp         = "move_line_up"
+	actionMoveLineDown       = "move_line_down"
+	actionToggleLineNumbers  = "toggle_line_numbers"
+	actionBranchPicker       = "branch_picker"
+	actionToggleSidebar      = "toggle_sidebar"
+	actionToggleSidebarFocus = "toggle_sidebar_focus"
+	actionToggleAIPanelFocus = "toggle_ai_panel_focus"
+	actionFocusEditor        = "focus_editor"
+	actionEnterInsert        = "enter_insert"
+	actionEnterNormal        = "enter_normal"
+	actionEnterCommand       = "enter_command"
+	actionQuit               = "quit"
+	actionBackspace          = "backspace"
+	actionNewline            = "newline"
+	actionInsertTab          = "insert_tab"
+	actionUndo               = "undo"
+	actionRedo               = "redo"
+	actionDeleteLine         = "delete_line"
+	actionDeleteChar         = "delete_char"
+	actionDeleteWordLeft     = "delete_word_left"
+	actionDeleteWordRight    = "delete_word_right"
+	actionInsertLineBelow    = "insert_line_below"
+	actionUndoLine           = "undo_line"
+	actionScrollUp           = "scroll_up"
+	actionScrollDown         = "scroll_down"
+	actionIndent             = "indent"
+	actionUnindent           = "unindent"
+	actionSelectAll          = "select_all"
 
 	// Helix-style motions
 	actionWordForward      = "word_forward"       // w - move to next word start
@@ -120,10 +123,13 @@ const (
 	actionSave = "save" // Cmd+S - save file
 
 	// AI integration
-	actionAIPanel  = "ai_panel"  // Cmd+Shift+I - toggle AI panel
-	actionAISend   = "ai_send"   // Cmd+I - send context to AI
-	actionAIApply  = "ai_apply"  // Apply suggested edit
-	actionAIReject = "ai_reject" // Reject suggested edit
+	actionAIPanel          = "ai_panel"           // toggle AI panel
+	actionAISend           = "ai_send"            // Cmd+I - send context to AI
+	actionAIToggleReason   = "ai_toggle_reason"   // toggle AI reasoning
+	actionAIToggleThinking = "ai_toggle_thinking" // toggle AI thinking level
+	actionAIApply          = "ai_apply"           // Apply suggested edit
+	actionAIReject         = "ai_reject"          // Reject suggested edit
+	actionAIEdit           = "ai_edit"            // Edit conversation
 )
 
 // CommandInfo describes an available command with description
@@ -167,11 +173,21 @@ var AvailableCommands = []CommandInfo{
 	// Sidebar
 	{"sidebar", "toggle sidebar", CmdGroupView},
 	{"sidew", "set sidebar width", CmdGroupView},
+	{"sidebar-focus", "toggle sidebar focus", CmdGroupView},
+	{"focus-editor", "focus editor", CmdGroupView},
 	// AI
 	{"ide", "toggle AI panel", CmdGroupAI},
+	{"ai-focus", "toggle AI panel focus", CmdGroupAI},
 	{"ai", "AI provider info", CmdGroupAI},
 	{"ai list", "list AI providers", CmdGroupAI},
 	{"ai model", "show AI models", CmdGroupAI},
+	{"ai model <name>", "set AI model", CmdGroupAI},
+	{"ai thinking", "show AI thinking level", CmdGroupAI},
+	{"ai thinking <level>", "set AI thinking level", CmdGroupAI},
+	{"ai thinking list", "list AI thinking levels", CmdGroupAI},
+	{"ai max", "toggle AI panel maximize", CmdGroupAI},
+	{"ai edit", "edit AI conversation", CmdGroupAI},
+	{"ai <provider>", "set AI provider", CmdGroupAI},
 }
 
 // SpaceMenuItem represents an item in the space menu
@@ -365,6 +381,9 @@ type LSPGotoFunc func(method, path string, line, col int) ([]LSPLocation, error)
 // HighlightRangeFunc is a callback to get syntax highlights for a range
 type HighlightRangeFunc func(path string, startLine, endLine int) map[int][]HighlightSpan
 
+// MarkdownHighlightFunc is a callback to highlight markdown text.
+type MarkdownHighlightFunc func(text string) map[int][]HighlightSpan
+
 type Editor struct {
 	Buffer
 	Selection
@@ -420,6 +439,12 @@ type Editor struct {
 	styleSyntaxVariable          Style
 	styleSyntaxParameter         Style
 	styleTableBorder             Style
+	styleAIReasoning             Style
+	styleAIUser                  Style
+	styleAIAssistant             Style
+	styleAIThinking              Style
+	styleAIStatusOnline          Style
+	styleAIHeader                Style
 	styleBranch                  Style
 	styleMainBranch              Style
 	styleLayoutUS                Style
@@ -497,6 +522,7 @@ type Editor struct {
 	// LSP integration
 	lspGotoFunc          LSPGotoFunc                        // callback for LSP goto operations
 	highlightRangeFunc   HighlightRangeFunc                 // callback to get highlights for a range
+	aiMarkdownHighlight  MarkdownHighlightFunc              // callback to highlight AI markdown
 	refsPickerActive     bool                               // whether references picker is shown
 	refsPickerItems      []LSPLocation                      // list of references
 	refsPickerIndex      int                                // selected reference index
@@ -518,10 +544,19 @@ type Editor struct {
 	cmdAutoCompleteIndex     int
 	cmdAutoCompleteCols      int           // number of columns for display (computed during render)
 	cmdAutoCompleteColGroups [][]GroupInfo // column layout (computed during render)
+	aiInputCursorX           int
+	aiInputCursorY           int
+	aiInputCursorVisible     bool
 
 	// AI integration
-	aiPanel   *AIPanel  // AI chat panel (right sidebar)
-	aiManager AIManager // AI provider manager
+	aiPanel                 *AIPanel  // AI chat panel (right sidebar)
+	aiManager               AIManager // AI provider manager
+	aiThinkingLevels        []string
+	aiThinkingLevelsByModel map[string][]string
+
+	// AI edit mode state
+	aiEditBufferPath    string   // path to temp file for AI conversation editing
+	aiEditOriginalPanel *AIPanel // reference to original AI panel when in edit mode
 }
 
 // SearchMatch represents a match location

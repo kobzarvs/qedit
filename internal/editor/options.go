@@ -18,4 +18,7 @@ type Options struct {
 	SearchHistoryPath string
 
 	SessionStore SessionStore
+
+	AIThinkingLevels        []string
+	AIThinkingLevelsByModel map[string][]string
 }

@@ -1,12 +1,11 @@
 package editor
 
-
-
 // SidebarMenuContent implements SidebarContent for the main menu
 type SidebarMenuContent struct {
 	items    []SidebarMenuItem
 	index    int
 	gitAvail bool
+	aiAvail  bool
 }
 
 // SidebarMenuItem represents a menu item
@@ -18,9 +17,10 @@ type SidebarMenuItem struct {
 }
 
 // NewSidebarMenuContent creates a new menu content
-func NewSidebarMenuContent(gitAvailable bool) *SidebarMenuContent {
+func NewSidebarMenuContent(gitAvailable bool, aiAvailable bool) *SidebarMenuContent {
 	m := &SidebarMenuContent{
 		gitAvail: gitAvailable,
+		aiAvail:  aiAvailable,
 		index:    0,
 	}
 	m.buildItems()
@@ -32,15 +32,17 @@ func (m *SidebarMenuContent) buildItems() {
 	m.items = []SidebarMenuItem{
 		{Label: "Files", Mode: SidebarModeFileTree, Hotkey: "Cmd+O", Available: true},
 		{Label: "Branches", Mode: SidebarModeBranches, Hotkey: "Cmd+B", Available: m.gitAvail},
+		{Label: "AI", Mode: SidebarModeAI, Hotkey: "", Available: m.aiAvail},
 		{Label: "Recent History", Mode: SidebarModeRecentHistory, Hotkey: "", Available: false},
 		{Label: "Local Changes", Mode: SidebarModeLocalChanges, Hotkey: "", Available: false},
 		{Label: "Worktrees", Mode: SidebarModeWorktrees, Hotkey: "", Available: m.gitAvail},
 	}
 }
 
-// SetGitAvailable updates git availability and rebuilds items
-func (m *SidebarMenuContent) SetGitAvailable(avail bool) {
-	m.gitAvail = avail
+// SetAvailability updates availability flags and rebuilds items
+func (m *SidebarMenuContent) SetAvailability(gitAvailable bool, aiAvailable bool) {
+	m.gitAvail = gitAvailable
+	m.aiAvail = aiAvailable
 	m.buildItems()
 }
 

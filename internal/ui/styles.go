@@ -57,6 +57,12 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	colors["syntax-unknown"] = resolve(theme.SyntaxUnknown, tcell.ColorRed)
 	colors["syntax-variable"] = resolve(theme.SyntaxVariable, colors["foreground"])
 	colors["syntax-parameter"] = resolve(theme.SyntaxParameter, colors["foreground"])
+	colors["ai-reasoning-foreground"] = resolve(theme.AIReasoningForeground, colors["syntax-comment"])
+	colors["ai-user-foreground"] = resolve(theme.AIUserForeground, tcell.NewRGBColor(89, 194, 255)) // #59C2FF
+	colors["ai-assistant-foreground"] = resolve(theme.AIAssistantForeground, colors["foreground"])
+	colors["ai-thinking-foreground"] = resolve(theme.AIThinkingForeground, colors["syntax-comment"])
+	colors["ai-status-online-foreground"] = resolve(theme.AIStatusOnlineForeground, tcell.NewRGBColor(127, 217, 98)) // #7FD962
+	colors["ai-header-foreground"] = resolve(theme.AIHeaderForeground, tcell.NewRGBColor(230, 180, 80))              // #E6B450
 	colors["branch-foreground"] = resolve(theme.BranchForeground, colors["statusline-foreground"])
 	colors["branch-background"] = resolve(theme.BranchBackground, colors["statusline-background"])
 
@@ -86,6 +92,8 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	colors["sidebar-hidden-foreground"] = resolve(theme.SidebarHiddenForeground, colors["line-number-foreground"])
 	colors["sidebar-ignored-foreground"] = resolve(theme.SidebarIgnoredForeground, colors["line-number-foreground"])
 	colors["sidebar-indicator-foreground"] = resolve(theme.SidebarIndicatorForeground, tcell.ColorYellow)
+	colors["sidebar-status-online-foreground"] = resolve(theme.SidebarStatusOnlineForeground, tcell.ColorGreen)
+	colors["sidebar-status-offline-foreground"] = resolve(theme.SidebarStatusOfflineForeground, tcell.ColorRed)
 	colors["sidebar-hotkey-foreground"] = resolve(theme.SidebarHotkeyForeground, tcell.ColorBlue)
 	colors["sidebar-unavailable-foreground"] = resolve(theme.SidebarUnavailableForeground, colors["line-number-foreground"])
 	colors["box-border-foreground"] = resolve(theme.BoxBorderForeground, colors["statusline-foreground"])
@@ -117,6 +125,12 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	syntaxVariable := style(colors["syntax-variable"], colors["background"])
 	syntaxParameter := style(colors["syntax-parameter"], colors["background"])
 	tableBorder := style(tcell.ColorWhite, colors["background"])
+	aiReasoning := style(colors["ai-reasoning-foreground"], colors["sidebar-background"])
+	aiUser := style(colors["ai-user-foreground"], colors["sidebar-background"])
+	aiAssistant := style(colors["ai-assistant-foreground"], colors["sidebar-background"])
+	aiThinking := style(colors["ai-thinking-foreground"], colors["sidebar-background"])
+	aiStatusOnline := style(colors["ai-status-online-foreground"], colors["sidebar-background"])
+	aiHeader := style(colors["ai-header-foreground"], colors["sidebar-background"])
 	branch := style(colors["branch-foreground"], colors["branch-background"])
 	mainBranch := style(colors["main-branch-foreground"], colors["main-branch-background"])
 	layoutUS := style(colors["layout-us-foreground"], colors["statusline-background"])
@@ -137,6 +151,8 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	sidebarHidden := style(colors["sidebar-hidden-foreground"], colors["sidebar-background"])
 	sidebarIgnored := style(colors["sidebar-ignored-foreground"], colors["sidebar-background"])
 	sidebarIndicator := style(colors["sidebar-indicator-foreground"], colors["sidebar-background"])
+	sidebarStatusOnline := style(colors["sidebar-status-online-foreground"], colors["sidebar-background"])
+	sidebarStatusOffline := style(colors["sidebar-status-offline-foreground"], colors["sidebar-background"])
 	sidebarHotkey := style(colors["sidebar-hotkey-foreground"], colors["sidebar-background"])
 	sidebarUnavailable := style(colors["sidebar-unavailable-foreground"], colors["sidebar-background"])
 
@@ -168,6 +184,12 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 		SyntaxVariable:          syntaxVariable,
 		SyntaxParameter:         syntaxParameter,
 		TableBorder:             tableBorder,
+		AIReasoning:             aiReasoning,
+		AIUser:                  aiUser,
+		AIAssistant:             aiAssistant,
+		AIThinking:              aiThinking,
+		AIStatusOnline:          aiStatusOnline,
+		AIHeader:                aiHeader,
 		Branch:                  branch,
 		MainBranch:              mainBranch,
 		LayoutUS:                layoutUS,
@@ -195,6 +217,8 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 			Hotkey:             sidebarHotkey,
 			Unavailable:        sidebarUnavailable,
 			Current:            sidebarIndicator,
+			StatusOnline:       sidebarStatusOnline,
+			StatusOffline:      sidebarStatusOffline,
 		},
 	}
 }

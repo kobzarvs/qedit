@@ -45,9 +45,31 @@ func New(opts Options) *Editor {
 			opts.SidebarMaxWidth,
 			opts.SidebarCloseOnSelect,
 		),
+		aiThinkingLevels:        append([]string(nil), opts.AIThinkingLevels...),
+		aiThinkingLevelsByModel: copyStringSliceMap(opts.AIThinkingLevelsByModel),
 	}
 	e.SetStyles(defaultEditorStyles())
 	return e
+}
+
+func copyStringSliceMap(src map[string][]string) map[string][]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string][]string, len(src))
+	for k, v := range src {
+		key := strings.ToLower(strings.TrimSpace(k))
+		if key == "" {
+			continue
+		}
+		if v == nil {
+			dst[key] = nil
+			continue
+		}
+		copySlice := append([]string(nil), v...)
+		dst[key] = copySlice
+	}
+	return dst
 }
 func (e *Editor) OpenFile(path string) error {
 	data, err := os.ReadFile(path)
@@ -224,6 +246,9 @@ func (e *Editor) SetLSPGotoFunc(fn LSPGotoFunc) {
 }
 func (e *Editor) SetHighlightRangeFunc(fn HighlightRangeFunc) {
 	e.highlightRangeFunc = fn
+}
+func (e *Editor) SetAIMarkdownHighlightFunc(fn MarkdownHighlightFunc) {
+	e.aiMarkdownHighlight = fn
 }
 func (e *Editor) SetStatusMessage(msg string) {
 	e.setStatus(msg)

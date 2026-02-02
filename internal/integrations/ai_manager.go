@@ -9,10 +9,10 @@ import (
 
 // AIManagerAdapter adapts ai.Manager to editor.AIManager interface.
 type AIManagerAdapter struct {
-	mgr          *ai.Manager
-	events       chan editor.AIEvent
-	eventsOnce   sync.Once
-	closeOnce    sync.Once
+	mgr        *ai.Manager
+	events     chan editor.AIEvent
+	eventsOnce sync.Once
+	closeOnce  sync.Once
 }
 
 // NewAIManager creates a new AI manager adapter.
@@ -47,14 +47,12 @@ func (a *AIManagerAdapter) ListProviders() []editor.AIProviderInfo {
 	providers := a.mgr.List()
 	result := make([]editor.AIProviderInfo, len(providers))
 	for i, p := range providers {
-		status := 0 // offline
-		if p.IsRunning() {
-			status = 2 // online
-		}
+		status := int(p.Status())
+		available := status != int(ai.StatusOffline)
 		result[i] = editor.AIProviderInfo{
 			Name:        p.Name(),
 			DisplayName: p.DisplayName(),
-			Available:   p.Available(),
+			Available:   available,
 			Status:      status,
 			ModelName:   p.CurrentModel(),
 		}
@@ -66,20 +64,20 @@ func (a *AIManagerAdapter) ListAvailableProviders() []editor.AIProviderInfo {
 	if a == nil || a.mgr == nil {
 		return nil
 	}
-	providers := a.mgr.ListAvailable()
-	result := make([]editor.AIProviderInfo, len(providers))
-	for i, p := range providers {
-		status := 0 // offline
-		if p.IsRunning() {
-			status = 2 // online
+	providers := a.mgr.List()
+	result := make([]editor.AIProviderInfo, 0, len(providers))
+	for _, p := range providers {
+		status := int(p.Status())
+		if status == int(ai.StatusOffline) {
+			continue
 		}
-		result[i] = editor.AIProviderInfo{
+		result = append(result, editor.AIProviderInfo{
 			Name:        p.Name(),
 			DisplayName: p.DisplayName(),
-			Available:   p.Available(),
+			Available:   true,
 			Status:      status,
 			ModelName:   p.CurrentModel(),
-		}
+		})
 	}
 	return result
 }
@@ -121,12 +119,13 @@ func (a *AIManagerAdapter) Send(ctx editor.AIContext, prompt string) error {
 		return nil
 	}
 	aiCtx := ai.EditorContext{
-		FilePath:    ctx.FilePath,
-		Content:     ctx.Content,
-		IsSelection: ctx.IsSelection,
-		CursorRow:   ctx.CursorRow,
-		CursorCol:   ctx.CursorCol,
-		Language:    ctx.Language,
+		FilePath:       ctx.FilePath,
+		Content:        ctx.Content,
+		IsSelection:    ctx.IsSelection,
+		CursorRow:      ctx.CursorRow,
+		CursorCol:      ctx.CursorCol,
+		Language:       ctx.Language,
+		ReasoningLevel: ctx.ReasoningLevel,
 	}
 	return a.mgr.Send(aiCtx, prompt)
 }

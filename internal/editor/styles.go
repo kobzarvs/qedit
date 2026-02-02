@@ -29,6 +29,12 @@ type EditorStyles struct {
 	SyntaxVariable          Style
 	SyntaxParameter         Style
 	TableBorder             Style
+	AIReasoning             Style
+	AIUser                  Style
+	AIAssistant             Style
+	AIThinking              Style
+	AIStatusOnline          Style
+	AIHeader                Style
 	Branch                  Style
 	MainBranch              Style
 	LayoutUS                Style
@@ -75,6 +81,12 @@ func (e *Editor) SetStyles(s EditorStyles) {
 	e.styleSyntaxVariable = s.SyntaxVariable
 	e.styleSyntaxParameter = s.SyntaxParameter
 	e.styleTableBorder = s.TableBorder
+	e.styleAIReasoning = s.AIReasoning
+	e.styleAIUser = s.AIUser
+	e.styleAIAssistant = s.AIAssistant
+	e.styleAIThinking = s.AIThinking
+	e.styleAIStatusOnline = s.AIStatusOnline
+	e.styleAIHeader = s.AIHeader
 	e.styleBranch = s.Branch
 	e.styleMainBranch = s.MainBranch
 	e.styleLayoutUS = s.LayoutUS

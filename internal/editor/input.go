@@ -19,6 +19,10 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 	// Track last key combination for display
 	e.lastKeyCombo = keyStringDisplay(ev)
 
+	if handled, quit := e.handleGlobalFocusHotkeys(ev); handled {
+		return quit
+	}
+
 	// Handle sidebar if focused
 	if e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused {
 		return e.handleSidebarKey(ev)
@@ -44,6 +48,30 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 		return e.handleNormal(ev)
 	}
 }
+
+func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
+	if ev.Modifiers()&ModAlt == 0 || ev.Key() != KeyRune {
+		return false, false
+	}
+
+	r := ev.Rune()
+	if r != '1' && r != '2' && r != '3' {
+		return false, false
+	}
+
+	key := keyStringForMap(ev, e.keymap.normal)
+	action, ok := e.keymap.normal[key]
+	if !ok {
+		return false, false
+	}
+
+	switch action {
+	case actionToggleSidebar, actionAIPanel, actionToggleSidebarFocus, actionToggleAIPanelFocus, actionFocusEditor:
+		return true, e.execAction(action)
+	default:
+		return false, false
+	}
+}
 func (e *Editor) HandleMouse(ev EventMouse) {
 	// Intercept mouse events when modal is open
 	if e.keybindingsHelpActive {
@@ -55,6 +83,13 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 			e.keybindingsHelpScroll++
 		}
 		return
+	}
+
+	if ev.Buttons() == WheelUp || ev.Buttons() == WheelDown {
+		x, y := ev.Position()
+		if e.scrollAIPanelIfHovered(ev.Buttons(), x, y) {
+			return
+		}
 	}
 
 	if ev.Buttons() == WheelUp {
@@ -73,6 +108,78 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 	} else if ev.Buttons() == Button1 {
 		e.handleMouseClick(ev)
 	}
+}
+
+func (e *Editor) scrollAIPanelIfHovered(buttons MouseButton, x, y int) bool {
+	if e.aiPanel == nil || !e.aiPanel.Visible {
+		return false
+	}
+	if e.viewWidth <= 0 || e.viewHeight <= 0 {
+		return false
+	}
+	if y < 0 || y >= e.viewHeight {
+		return false
+	}
+
+	aiPanelX, ok := e.aiPanelX()
+	if !ok {
+		return false
+	}
+	if x < aiPanelX {
+		return false
+	}
+
+	switch buttons {
+	case WheelUp:
+		e.aiPanel.ScrollUp(1)
+		return true
+	case WheelDown:
+		e.aiPanel.ScrollDown(1)
+		return true
+	}
+
+	return false
+}
+
+func (e *Editor) aiPanelX() (int, bool) {
+	w := e.viewWidth
+	if w <= 0 {
+		return 0, false
+	}
+	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Maximized {
+		return 0, true
+	}
+
+	sidebarWidth := 0
+	if e.sidebar != nil && e.sidebar.Visible {
+		sidebarWidth = e.sidebar.CalculateWidth(w)
+	} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
+		sidebarWidth = w / 4
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if sidebarWidth > w/2 {
+			sidebarWidth = w / 2
+		}
+	}
+
+	aiPanelWidth := e.aiPanel.Width
+	if aiPanelWidth < 30 {
+		aiPanelWidth = 30
+	}
+	remaining := w - sidebarWidth
+	if remaining <= 0 {
+		return 0, false
+	}
+	maxAIPanelWidth := remaining / 2
+	if aiPanelWidth > maxAIPanelWidth {
+		aiPanelWidth = maxAIPanelWidth
+	}
+	if aiPanelWidth <= 0 {
+		return 0, false
+	}
+
+	return w - aiPanelWidth, true
 }
 func (e *Editor) scrollLeft(amount int) {
 	e.scrollX -= amount
@@ -126,6 +233,30 @@ func (e *Editor) maxVisibleLineWidth() int {
 }
 func (e *Editor) handleMouseClick(ev EventMouse) {
 	x, y := ev.Position()
+	if e.aiPanel != nil && e.aiPanel.Visible {
+		aiX, ok := e.aiPanelX()
+		if ok && x >= aiX {
+			e.aiPanel.Focused = true
+			if e.sidebar != nil {
+				e.sidebar.Focused = false
+			}
+			if e.aiPanel.Maximized {
+				return
+			}
+			return
+		}
+	}
+	if e.aiPanel != nil {
+		e.aiPanel.Focused = false
+	}
+	if e.sidebar != nil && e.sidebar.Visible {
+		sidebarWidth := e.sidebar.CalculateWidth(e.viewWidth)
+		if x < sidebarWidth {
+			e.sidebar.Focused = true
+			return
+		}
+		e.sidebar.Focused = false
+	}
 
 	// Convert screen Y to line number
 	row := y + e.scroll
@@ -788,13 +919,17 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 				return false
 			}
 			e.cmdAutoCompleteActive = true
-			e.cmdAutoCompleteIndex = 0
+			e.cmdAutoCompleteIndex = -1
 			e.cmdAutoCompleteCols = 1 // Will be recalculated on render
 		} else {
 			// Tab moves to next item (down in column, then next column top)
-			e.cmdAutoCompleteIndex++
-			if e.cmdAutoCompleteIndex >= len(e.cmdAutoCompleteItems) {
+			if e.cmdAutoCompleteIndex < 0 {
 				e.cmdAutoCompleteIndex = 0
+			} else {
+				e.cmdAutoCompleteIndex++
+				if e.cmdAutoCompleteIndex >= len(e.cmdAutoCompleteItems) {
+					e.cmdAutoCompleteIndex = 0
+				}
 			}
 		}
 		e.updateCmdFromAutocomplete()
@@ -802,9 +937,13 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 	case KeyBacktab:
 		if e.cmdAutoCompleteActive {
 			// Shift+Tab moves to previous item (up in column, then prev column bottom)
-			e.cmdAutoCompleteIndex--
 			if e.cmdAutoCompleteIndex < 0 {
 				e.cmdAutoCompleteIndex = len(e.cmdAutoCompleteItems) - 1
+			} else {
+				e.cmdAutoCompleteIndex--
+				if e.cmdAutoCompleteIndex < 0 {
+					e.cmdAutoCompleteIndex = len(e.cmdAutoCompleteItems) - 1
+				}
 			}
 			e.updateCmdFromAutocomplete()
 		}
@@ -1018,7 +1157,7 @@ func filterCommands(prefix string) []CommandInfo {
 func (e *Editor) closeAutoComplete() {
 	e.cmdAutoCompleteActive = false
 	e.cmdAutoCompleteItems = nil
-	e.cmdAutoCompleteIndex = 0
+	e.cmdAutoCompleteIndex = -1
 	e.cmdAutoCompleteCols = 0
 	e.cmdAutoCompleteColGroups = nil
 }
@@ -1027,6 +1166,10 @@ func (e *Editor) closeAutoComplete() {
 func (e *Editor) cmdAutoCompleteUp() {
 	n := len(e.cmdAutoCompleteItems)
 	if n == 0 {
+		return
+	}
+	if e.cmdAutoCompleteIndex < 0 {
+		e.cmdAutoCompleteIndex = n - 1
 		return
 	}
 	e.cmdAutoCompleteIndex--
@@ -1039,6 +1182,10 @@ func (e *Editor) cmdAutoCompleteUp() {
 func (e *Editor) cmdAutoCompleteDown() {
 	n := len(e.cmdAutoCompleteItems)
 	if n == 0 {
+		return
+	}
+	if e.cmdAutoCompleteIndex < 0 {
+		e.cmdAutoCompleteIndex = 0
 		return
 	}
 	e.cmdAutoCompleteIndex++
@@ -1099,6 +1246,10 @@ func (e *Editor) cmdAutoCompleteLeft() {
 	if n == 0 {
 		return
 	}
+	if e.cmdAutoCompleteIndex < 0 {
+		e.cmdAutoCompleteIndex = 0
+		return
+	}
 	cols := len(e.cmdAutoCompleteColGroups)
 	if cols <= 1 {
 		return
@@ -1134,6 +1285,10 @@ func (e *Editor) cmdAutoCompleteRight() {
 	if n == 0 {
 		return
 	}
+	if e.cmdAutoCompleteIndex < 0 {
+		e.cmdAutoCompleteIndex = 0
+		return
+	}
 	cols := len(e.cmdAutoCompleteColGroups)
 	if cols <= 1 {
 		return
@@ -1165,11 +1320,21 @@ func (e *Editor) cmdAutoCompleteRight() {
 
 // updateCmdFromAutocomplete updates the command line with the selected autocomplete item
 func (e *Editor) updateCmdFromAutocomplete() {
-	if len(e.cmdAutoCompleteItems) > 0 && e.cmdAutoCompleteIndex < len(e.cmdAutoCompleteItems) {
-		selected := e.cmdAutoCompleteItems[e.cmdAutoCompleteIndex]
-		e.cmd = []rune(selected.Name)
-		e.cmdCursor = len(e.cmd)
+	if len(e.cmdAutoCompleteItems) == 0 || e.cmdAutoCompleteIndex < 0 || e.cmdAutoCompleteIndex >= len(e.cmdAutoCompleteItems) {
+		return
 	}
+	selected := e.cmdAutoCompleteItems[e.cmdAutoCompleteIndex]
+	e.cmd = []rune(commandInsertText(selected.Name))
+	e.cmdCursor = len(e.cmd)
+}
+
+func commandInsertText(name string) string {
+	idx := strings.Index(name, "<")
+	if idx == -1 {
+		return name
+	}
+	base := strings.TrimRight(name[:idx], " ")
+	return base + " "
 }
 
 func (e *Editor) handleSelectionMove(ev EventKey) bool {
@@ -1324,7 +1489,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 
 	viewHeight := e.viewHeight - 1 // subtract header
 	action := e.sidebar.HandleKey(ev, viewHeight)
-	logger.Debug("handleSidebarKey", "action", action.Action, "branch", action.Branch, "mode", action.Mode)
+	logger.Debug("handleSidebarKey", "action", action.Action, "branch", action.Branch, "mode", action.Mode, "provider", action.Provider, "model", action.Model)
 
 	switch action.Action {
 	case SidebarActionClose:
@@ -1335,7 +1500,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionBackToMenu:
 		logger.Debug("sidebar action: back to menu")
 		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetGitAvailable(e.isGitRepo())
+			e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
 			e.sidebar.SetContent(e.sidebar.MenuContent)
 		}
 		return false
@@ -1371,6 +1536,16 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 			e.setStatus("FileTree: not implemented yet")
 		}
 		return false
+
+	case SidebarActionOpenAIModels:
+		logger.Debug("sidebar action: open AI models", "provider", action.Provider)
+		e.openSidebarAIModels(action.Provider)
+		return false
+
+	case SidebarActionSetAIModel:
+		logger.Debug("sidebar action: set AI model", "model", action.Model)
+		e.selectSidebarAIModel(action.Model)
+		return false
 	}
 
 	return false // continue running, don't quit
@@ -1386,6 +1561,9 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 
 	case SidebarModeBranches:
 		e.openSidebarBranches()
+
+	case SidebarModeAI:
+		e.openSidebarAIProviders()
 
 	case SidebarModeFileTree:
 		e.setStatus("FileTree: not implemented yet")
@@ -1418,9 +1596,9 @@ func (e *Editor) openSidebar() {
 	// Initialize menu content if not exists
 	if e.sidebar.MenuContent == nil {
 		logger.Debug("openSidebar: creating menu content", "gitRepo", e.isGitRepo())
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
 	} else {
-		e.sidebar.MenuContent.SetGitAvailable(e.isGitRepo())
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
 	}
 
 	e.sidebar.Open(e.sidebar.MenuContent)
@@ -1437,7 +1615,7 @@ func (e *Editor) openSidebarBranches() {
 	if !e.isGitRepo() {
 		e.setStatus("not a git repository")
 		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetGitAvailable(false)
+			e.sidebar.MenuContent.SetAvailability(false, e.aiManager != nil)
 		}
 		return
 	}
@@ -1450,9 +1628,9 @@ func (e *Editor) openSidebarBranches() {
 
 	// Initialize menu content for later "back" navigation
 	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
 	} else {
-		e.sidebar.MenuContent.SetGitAvailable(e.isGitRepo())
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
 	}
 
 	// Request branches - app will call ShowSidebarBranches
@@ -1460,6 +1638,102 @@ func (e *Editor) openSidebarBranches() {
 	e.setStatus("loading branches...")
 	e.branchPickerRequested = true
 	logger.Debug("openSidebarBranches: branch request set")
+}
+
+// openSidebarAIProviders opens the sidebar in AI provider mode.
+func (e *Editor) openSidebarAIProviders() {
+	logger.Debug("openSidebarAIProviders called")
+	if e.sidebar == nil {
+		logger.Warn("openSidebarAIProviders: sidebar is nil")
+		return
+	}
+
+	if e.aiManager == nil {
+		e.setStatus("AI not configured")
+		e.sidebar.Open(NewSidebarLoadingContent("AI", "AI not configured"))
+		return
+	}
+
+	// Close refs picker if open (mutual exclusion)
+	if e.refsPickerActive {
+		logger.Debug("openSidebarAIProviders: closing refs picker")
+		e.closeRefsPicker(false)
+	}
+
+	if e.sidebar.MenuContent == nil {
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+	} else {
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+	}
+
+	providers := e.aiManager.ListProviders()
+	content := NewSidebarAIProvidersContent(providers, e.aiManager.ActiveName())
+	if len(providers) == 0 {
+		e.setStatus("AI: no providers configured")
+	}
+	e.sidebar.Open(content)
+}
+
+// openSidebarAIModels opens the sidebar for models of a provider.
+func (e *Editor) openSidebarAIModels(provider string) {
+	if e.sidebar == nil {
+		return
+	}
+	if e.aiManager == nil {
+		e.setStatus("AI not configured")
+		return
+	}
+	if provider == "" {
+		return
+	}
+
+	if err := e.aiManager.SetActive(provider); err != nil {
+		e.setStatus("AI: " + err.Error())
+		return
+	}
+	e.saveAIState()
+	// Sync panel state after switching provider
+	e.refreshAIPanelProviderState()
+
+	providerLabel := provider
+	if e.aiPanel != nil && e.aiPanel.ProviderName != "" {
+		providerLabel = e.aiPanel.ProviderName
+	}
+
+	models, err := e.aiManager.ListModels()
+	if err != nil {
+		e.setStatus("AI: " + err.Error())
+		return
+	}
+	if len(models) == 0 {
+		e.setStatus("AI: no models available")
+		return
+	}
+
+	content := NewSidebarAIModelsContent(provider, providerLabel, models, e.aiManager.CurrentModel())
+	e.sidebar.SetContent(content)
+	e.sidebar.Visible = true
+	e.sidebar.Focused = true
+}
+
+func (e *Editor) selectSidebarAIModel(model string) {
+	if e.aiManager == nil {
+		e.setStatus("AI not configured")
+		return
+	}
+	if model == "" {
+		return
+	}
+	if err := e.aiManager.SetModel(model); err != nil {
+		e.setStatus("AI: " + err.Error())
+		return
+	}
+	e.saveAIState()
+	e.syncAIPanelProviderState()
+	e.setStatus("AI model: " + model)
+	if content, ok := e.sidebar.Content.(*SidebarAIModelsContent); ok {
+		content.SetCurrentModel(model)
+	}
 }
 
 // closeSidebar closes the sidebar
@@ -1479,13 +1753,47 @@ func (e *Editor) toggleSidebar() {
 		return
 	}
 	if e.sidebar.Visible {
-		if e.sidebar.Focused {
-			e.closeSidebar()
-		} else {
-			e.sidebar.Focused = true
-		}
+		e.closeSidebar()
 	} else {
 		e.openSidebar()
+	}
+}
+
+func (e *Editor) toggleSidebarFocus() {
+	if e.sidebar == nil {
+		return
+	}
+	if !e.sidebar.Visible {
+		e.openSidebar()
+		return
+	}
+	e.sidebar.Focused = !e.sidebar.Focused
+	if e.sidebar.Focused && e.aiPanel != nil {
+		e.aiPanel.Focused = false
+	}
+}
+
+func (e *Editor) toggleAIPanelFocus() {
+	if e.aiPanel == nil {
+		e.aiPanel = NewAIPanel()
+	}
+	if !e.aiPanel.Visible {
+		e.aiPanel.Open()
+		e.syncAIPanelProviderState()
+	} else {
+		e.aiPanel.Focused = !e.aiPanel.Focused
+	}
+	if e.aiPanel.Focused && e.sidebar != nil {
+		e.sidebar.Focused = false
+	}
+}
+
+func (e *Editor) focusEditor() {
+	if e.sidebar != nil {
+		e.sidebar.Focused = false
+	}
+	if e.aiPanel != nil {
+		e.aiPanel.Focused = false
 	}
 }
 
@@ -1609,6 +1917,19 @@ func keyString(ev EventKey) string {
 			return "alt+left"
 		case KeyRight:
 			return "alt+right"
+		}
+		if ev.Key() == KeyRune {
+			r := ev.Rune()
+			if ev.Modifiers()&ModShift != 0 {
+				if r == ' ' {
+					return "alt+shift+space"
+				}
+				return "alt+shift+" + strings.ToLower(string(r))
+			}
+			if r == ' ' {
+				return "alt+space"
+			}
+			return "alt+" + strings.ToLower(string(r))
 		}
 	}
 	if ev.Modifiers()&ModCtrl != 0 {

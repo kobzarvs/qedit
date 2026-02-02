@@ -16,6 +16,7 @@ const (
 	SidebarModeMenu                      // main menu for mode selection
 	SidebarModeFileTree                  // file tree (future)
 	SidebarModeBranches                  // git branch selection (v1)
+	SidebarModeAI                        // AI providers/models
 	SidebarModeRecentHistory             // line-by-line history (future)
 	SidebarModeLocalChanges              // local changes history (future)
 	SidebarModeWorktrees                 // git worktrees (future)
@@ -33,28 +34,34 @@ const (
 	SidebarActionRefresh                      // refresh current mode
 	SidebarActionFocusEditor                  // return focus to editor
 	SidebarActionSwitchMode                   // switch to different mode
+	SidebarActionOpenAIModels                 // open AI models list for provider
+	SidebarActionSetAIModel                   // set AI model
 )
 
 // SidebarActionData contains action and associated data
 type SidebarActionData struct {
-	Action SidebarAction
-	Path   string      // for OpenFile
-	Branch string      // for CheckoutBranch
-	Mode   SidebarMode // for SwitchMode
+	Action   SidebarAction
+	Path     string      // for OpenFile
+	Branch   string      // for CheckoutBranch
+	Mode     SidebarMode // for SwitchMode
+	Provider string      // for AI provider selection
+	Model    string      // for AI model selection
 }
 
 // SidebarItem represents an item in the sidebar list
 type SidebarItem struct {
-	Label     string
-	Path      string // optional, for file paths
-	IsDir     bool
-	IsHidden  bool
-	IsIgnored bool
-	IsCurrent bool // e.g., current branch
-	Icon      rune // optional icon character
-	Hotkey    string
-	Available bool
-	Mode      SidebarMode // for menu items
+	Label      string
+	Path       string // optional, for file paths
+	IsDir      bool
+	IsHidden   bool
+	IsIgnored  bool
+	IsCurrent  bool // e.g., current branch
+	Icon       rune // optional icon character
+	Hotkey     string
+	Available  bool
+	Mode       SidebarMode // for menu items
+	ShowStatus bool
+	Status     AIProviderStatus
 }
 
 // SidebarContent interface - each mode implements this
@@ -101,6 +108,8 @@ type SidebarStyles struct {
 	Hotkey             Style // hotkey hints in menu
 	Unavailable        Style // greyed out items
 	Current            Style // current branch marker
+	StatusOnline       Style // provider online
+	StatusOffline      Style // provider offline
 }
 
 // Sidebar is the main sidebar container
@@ -418,8 +427,6 @@ func (s *Sidebar) HandleKey(ev EventKey, viewHeight int) SidebarActionData {
 		// Esc/q always closes sidebar
 		return SidebarActionData{Action: SidebarActionClose}
 
-	case r == '`':
-		return SidebarActionData{Action: SidebarActionFocusEditor}
 	}
 
 	return SidebarActionData{Action: SidebarActionNone}
@@ -519,19 +526,43 @@ func (s *Sidebar) Render(screen Screen, styles SidebarStyles, x, y, w, h int) {
 			screen.SetContent(c, row, ' ', nil, bgStyle)
 		}
 
-		// Draw indicator (only '*' for current item, e.g. current branch)
+		// Draw indicator (status dot or current marker)
 		col := x
-		if item.IsCurrent {
-			screen.SetContent(col, row, '*', nil, textStyle)
+		indicator := rune(0)
+		indicatorStyle := textStyle
+		if item.Icon != 0 {
+			indicator = item.Icon
+			if item.ShowStatus {
+				switch item.Status {
+				case AIProviderStatusOnline:
+					indicatorStyle = styles.StatusOnline
+				default:
+					indicatorStyle = styles.StatusOffline
+				}
+			}
+		} else if item.IsCurrent {
+			indicator = '*'
+			indicatorStyle = styles.Current
+		}
+		if indicator != 0 {
+			if isSelected {
+				indicatorStyle = indicatorStyle.Background(selBg)
+			}
+			screen.SetContent(col, row, indicator, nil, indicatorStyle)
 		}
 		col++
+		gapCols := 0
+		if indicator != 0 && item.ShowStatus {
+			gapCols = 1
+			col++
+		}
 
 		// Draw label
 		label := item.Label
 		hotkeyWidth := stringWidth(item.Hotkey)
-		maxLabelWidth := contentWidth - 2 // indicator + right margin
+		maxLabelWidth := contentWidth - 2 - gapCols // left margin + right margin + optional status gap
 		if hotkeyWidth > 0 {
-			maxLabelWidth = contentWidth - 2 - hotkeyWidth - 1
+			maxLabelWidth = contentWidth - 2 - gapCols - hotkeyWidth - 1
 		}
 		if maxLabelWidth < 0 {
 			maxLabelWidth = 0

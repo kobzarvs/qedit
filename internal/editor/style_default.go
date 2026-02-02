@@ -51,6 +51,7 @@ func defaultEditorStyles() EditorStyles {
 		SyntaxVariable:          base,
 		SyntaxParameter:         base,
 		TableBorder:             base,
+		AIReasoning:             base,
 		Branch:                  base,
 		MainBranch:              base,
 		LayoutUS:                base,
@@ -78,6 +79,8 @@ func defaultEditorStyles() EditorStyles {
 			Hotkey:             base,
 			Unavailable:        base,
 			Current:            base,
+			StatusOnline:       base,
+			StatusOffline:      base,
 		},
 	}
 }

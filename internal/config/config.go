@@ -28,68 +28,82 @@ type EditorOptions struct {
 }
 
 type Theme struct {
-	Theme                        string `toml:"theme"`
-	Foreground                   string `toml:"foreground"`
-	Background                   string `toml:"background"`
-	StatuslineForeground         string `toml:"statusline-foreground"`
-	StatuslineBackground         string `toml:"statusline-background"`
-	StatuslineWarningForeground  string `toml:"statusline-warning-foreground"`
-	StatuslineWarningBackground  string `toml:"statusline-warning-background"`
-	MergeLocalBackground         string `toml:"merge-local-background"`
-	MergeRemoteBackground        string `toml:"merge-remote-background"`
-	MergeHeaderForeground        string `toml:"merge-header-foreground"`
-	MergeHeaderBackground        string `toml:"merge-header-background"`
-	CommandlineForeground        string `toml:"commandline-foreground"`
-	CommandlineBackground        string `toml:"commandline-background"`
-	LineNumberForeground         string `toml:"line-number-foreground"`
-	LineNumberActiveForeground   string `toml:"line-number-active-foreground"`
-	SelectionForeground          string `toml:"selection-foreground"`
-	SelectionBackground          string `toml:"selection-background"`
-	SearchMatchForeground        string `toml:"search-foreground"`
-	SearchMatchBackground        string `toml:"search-background"`
-	SyntaxKeyword                string `toml:"syntax-keyword"`
-	SyntaxString                 string `toml:"syntax-string"`
-	SyntaxComment                string `toml:"syntax-comment"`
-	SyntaxType                   string `toml:"syntax-type"`
-	SyntaxFunction               string `toml:"syntax-function"`
-	SyntaxNumber                 string `toml:"syntax-number"`
-	SyntaxConstant               string `toml:"syntax-constant"`
-	SyntaxOperator               string `toml:"syntax-operator"`
-	SyntaxPunctuation            string `toml:"syntax-punctuation"`
-	SyntaxField                  string `toml:"syntax-field"`
-	SyntaxBuiltin                string `toml:"syntax-builtin"`
-	SyntaxUnknown                string `toml:"syntax-unknown"`
-	SyntaxVariable               string `toml:"syntax-variable"`
-	SyntaxParameter              string `toml:"syntax-parameter"`
-	BranchForeground             string `toml:"branch-foreground"`
-	BranchBackground             string `toml:"branch-background"`
-	MainBranchForeground         string `toml:"main-branch-foreground"`
-	MainBranchBackground         string `toml:"main-branch-background"`
-	AutocompleteBackground       string `toml:"autocomplete-background"`
-	AutocompleteHotkey           string `toml:"autocomplete-hotkey"`
-	AutocompleteDescription      string `toml:"autocomplete-description"`
-	AutocompleteGroup            string `toml:"autocomplete-group"`
-	SidebarForeground            string `toml:"sidebar-foreground"`
-	SidebarBackground            string `toml:"sidebar-background"`
-	SidebarDirForeground         string `toml:"sidebar-dir-foreground"`
-	SidebarSelectedForeground    string `toml:"sidebar-selected-foreground"`
-	SidebarSelectedBackground    string `toml:"sidebar-selected-background"`
-	SidebarHeaderForeground      string `toml:"sidebar-header-foreground"`
-	SidebarHeaderBackground      string `toml:"sidebar-header-background"`
-	SidebarBorderForeground      string `toml:"sidebar-border-foreground"`
-	SidebarHiddenForeground      string `toml:"sidebar-hidden-foreground"`
-	SidebarIgnoredForeground     string `toml:"sidebar-ignored-foreground"`
-	SidebarIndicatorForeground   string `toml:"sidebar-indicator-foreground"`
-	SidebarHotkeyForeground      string `toml:"sidebar-hotkey-foreground"`
-	SidebarUnavailableForeground string `toml:"sidebar-unavailable-foreground"`
-	BoxBorderForeground          string `toml:"box-border-foreground"`
-	BoxBorderBackground          string `toml:"box-border-background"`
+	Theme                          string `toml:"theme"`
+	Foreground                     string `toml:"foreground"`
+	Background                     string `toml:"background"`
+	StatuslineForeground           string `toml:"statusline-foreground"`
+	StatuslineBackground           string `toml:"statusline-background"`
+	StatuslineWarningForeground    string `toml:"statusline-warning-foreground"`
+	StatuslineWarningBackground    string `toml:"statusline-warning-background"`
+	MergeLocalBackground           string `toml:"merge-local-background"`
+	MergeRemoteBackground          string `toml:"merge-remote-background"`
+	MergeHeaderForeground          string `toml:"merge-header-foreground"`
+	MergeHeaderBackground          string `toml:"merge-header-background"`
+	CommandlineForeground          string `toml:"commandline-foreground"`
+	CommandlineBackground          string `toml:"commandline-background"`
+	LineNumberForeground           string `toml:"line-number-foreground"`
+	LineNumberActiveForeground     string `toml:"line-number-active-foreground"`
+	SelectionForeground            string `toml:"selection-foreground"`
+	SelectionBackground            string `toml:"selection-background"`
+	SearchMatchForeground          string `toml:"search-foreground"`
+	SearchMatchBackground          string `toml:"search-background"`
+	SyntaxKeyword                  string `toml:"syntax-keyword"`
+	SyntaxString                   string `toml:"syntax-string"`
+	SyntaxComment                  string `toml:"syntax-comment"`
+	SyntaxType                     string `toml:"syntax-type"`
+	SyntaxFunction                 string `toml:"syntax-function"`
+	SyntaxNumber                   string `toml:"syntax-number"`
+	SyntaxConstant                 string `toml:"syntax-constant"`
+	SyntaxOperator                 string `toml:"syntax-operator"`
+	SyntaxPunctuation              string `toml:"syntax-punctuation"`
+	SyntaxField                    string `toml:"syntax-field"`
+	SyntaxBuiltin                  string `toml:"syntax-builtin"`
+	SyntaxUnknown                  string `toml:"syntax-unknown"`
+	SyntaxVariable                 string `toml:"syntax-variable"`
+	SyntaxParameter                string `toml:"syntax-parameter"`
+	AIReasoningForeground          string `toml:"ai-reasoning-foreground"`
+	AIUserForeground               string `toml:"ai-user-foreground"`
+	AIAssistantForeground          string `toml:"ai-assistant-foreground"`
+	AIThinkingForeground           string `toml:"ai-thinking-foreground"`
+	AIStatusOnlineForeground       string `toml:"ai-status-online-foreground"`
+	AIHeaderForeground             string `toml:"ai-header-foreground"`
+	BranchForeground               string `toml:"branch-foreground"`
+	BranchBackground               string `toml:"branch-background"`
+	MainBranchForeground           string `toml:"main-branch-foreground"`
+	MainBranchBackground           string `toml:"main-branch-background"`
+	AutocompleteBackground         string `toml:"autocomplete-background"`
+	AutocompleteHotkey             string `toml:"autocomplete-hotkey"`
+	AutocompleteDescription        string `toml:"autocomplete-description"`
+	AutocompleteGroup              string `toml:"autocomplete-group"`
+	SidebarForeground              string `toml:"sidebar-foreground"`
+	SidebarBackground              string `toml:"sidebar-background"`
+	SidebarDirForeground           string `toml:"sidebar-dir-foreground"`
+	SidebarSelectedForeground      string `toml:"sidebar-selected-foreground"`
+	SidebarSelectedBackground      string `toml:"sidebar-selected-background"`
+	SidebarHeaderForeground        string `toml:"sidebar-header-foreground"`
+	SidebarHeaderBackground        string `toml:"sidebar-header-background"`
+	SidebarBorderForeground        string `toml:"sidebar-border-foreground"`
+	SidebarHiddenForeground        string `toml:"sidebar-hidden-foreground"`
+	SidebarIgnoredForeground       string `toml:"sidebar-ignored-foreground"`
+	SidebarIndicatorForeground     string `toml:"sidebar-indicator-foreground"`
+	SidebarStatusOnlineForeground  string `toml:"sidebar-status-online-foreground"`
+	SidebarStatusOfflineForeground string `toml:"sidebar-status-offline-foreground"`
+	SidebarHotkeyForeground        string `toml:"sidebar-hotkey-foreground"`
+	SidebarUnavailableForeground   string `toml:"sidebar-unavailable-foreground"`
+	BoxBorderForeground            string `toml:"box-border-foreground"`
+	BoxBorderBackground            string `toml:"box-border-background"`
 }
 
 type Config struct {
 	Editor EditorOptions `toml:"editor"`
 	Theme  Theme         `toml:"theme"`
 	Keymap Keymap        `toml:"keymap"`
+	AI     AIOptions     `toml:"ai"`
+}
+
+type AIOptions struct {
+	ThinkingLevels        []string            `toml:"thinking-levels"`
+	ThinkingLevelsByModel map[string][]string `toml:"thinking-levels-by-model"`
 }
 
 func Default() Config {
@@ -108,54 +122,62 @@ func Default() Config {
 			AutoReloadMaxRetries:  10,
 		},
 		Theme: Theme{
-			Theme:                        "",
-			Foreground:                   "#B3B1AD",
-			Background:                   "#0A0E14",
-			StatuslineForeground:         "#B3B1AD",
-			StatuslineBackground:         "#0F1419",
-			StatuslineWarningForeground:  "#FFD700",
-			StatuslineWarningBackground:  "#0F1419",
-			MergeLocalBackground:         "#3A1E1E",
-			MergeRemoteBackground:        "#1E3A24",
-			MergeHeaderForeground:        "#FFD700",
-			MergeHeaderBackground:        "#0F1419",
-			CommandlineForeground:        "#B3B1AD",
-			CommandlineBackground:        "#0F1419",
-			LineNumberForeground:         "#3E4B59",
-			LineNumberActiveForeground:   "#B3B1AD",
-			SelectionForeground:          "#B3B1AD",
-			SelectionBackground:          "#27425A",
-			SearchMatchForeground:        "#000000",
-			SearchMatchBackground:        "#FFD700",
-			SyntaxKeyword:                "#FFA759",
-			SyntaxString:                 "#BAE67E",
-			SyntaxComment:                "#5C6773",
-			SyntaxType:                   "#5CCFE6",
-			SyntaxFunction:               "#FFD173",
-			SyntaxNumber:                 "#D4BFFF",
-			SyntaxConstant:               "#FFDD8E",
-			SyntaxOperator:               "#F29668",
-			SyntaxPunctuation:            "#C0C0C0",
-			SyntaxField:                  "#E6B673",
-			SyntaxBuiltin:                "#73D0FF",
-			SyntaxUnknown:                "#FF0000",
-			SyntaxVariable:               "#B3B1AD",
-			SyntaxParameter:              "#B3B1AD",
-			SidebarForeground:            "#B3B1AD",
-			SidebarBackground:            "#0A0E14",
-			SidebarDirForeground:         "#59C2FF",
-			SidebarSelectedForeground:    "#0A0E14",
-			SidebarSelectedBackground:    "#E6B450",
-			SidebarHeaderForeground:      "#B3B1AD",
-			SidebarHeaderBackground:      "#0F1419",
-			SidebarBorderForeground:      "#3E4B59",
-			SidebarHiddenForeground:      "#3E4B59",
-			SidebarIgnoredForeground:     "#3E4B59",
-			SidebarIndicatorForeground:   "#E6B450",
-			SidebarHotkeyForeground:      "#59C2FF",
-			SidebarUnavailableForeground: "#3E4B59",
-			BoxBorderForeground:          "",
-			BoxBorderBackground:          "",
+			Theme:                          "",
+			Foreground:                     "#B3B1AD",
+			Background:                     "#0A0E14",
+			StatuslineForeground:           "#B3B1AD",
+			StatuslineBackground:           "#0F1419",
+			StatuslineWarningForeground:    "#FFD700",
+			StatuslineWarningBackground:    "#0F1419",
+			MergeLocalBackground:           "#3A1E1E",
+			MergeRemoteBackground:          "#1E3A24",
+			MergeHeaderForeground:          "#FFD700",
+			MergeHeaderBackground:          "#0F1419",
+			CommandlineForeground:          "#B3B1AD",
+			CommandlineBackground:          "#0F1419",
+			LineNumberForeground:           "#3E4B59",
+			LineNumberActiveForeground:     "#B3B1AD",
+			SelectionForeground:            "#B3B1AD",
+			SelectionBackground:            "#27425A",
+			SearchMatchForeground:          "#000000",
+			SearchMatchBackground:          "#FFD700",
+			SyntaxKeyword:                  "#FFA759",
+			SyntaxString:                   "#BAE67E",
+			SyntaxComment:                  "#5C6773",
+			SyntaxType:                     "#5CCFE6",
+			SyntaxFunction:                 "#FFD173",
+			SyntaxNumber:                   "#D4BFFF",
+			SyntaxConstant:                 "#FFDD8E",
+			SyntaxOperator:                 "#F29668",
+			SyntaxPunctuation:              "#C0C0C0",
+			SyntaxField:                    "#E6B673",
+			SyntaxBuiltin:                  "#73D0FF",
+			SyntaxUnknown:                  "#FF0000",
+			SyntaxVariable:                 "#B3B1AD",
+			SyntaxParameter:                "#B3B1AD",
+			AIReasoningForeground:          "#5C6773",
+			AIUserForeground:               "#59C2FF",
+			AIAssistantForeground:          "#B3B1AD",
+			AIThinkingForeground:           "#898989",
+			AIStatusOnlineForeground:       "#7FD962",
+			AIHeaderForeground:             "#E6B450",
+			SidebarForeground:              "#B3B1AD",
+			SidebarBackground:              "#0A0E14",
+			SidebarDirForeground:           "#59C2FF",
+			SidebarSelectedForeground:      "#0A0E14",
+			SidebarSelectedBackground:      "#E6B450",
+			SidebarHeaderForeground:        "#B3B1AD",
+			SidebarHeaderBackground:        "#0F1419",
+			SidebarBorderForeground:        "#3E4B59",
+			SidebarHiddenForeground:        "#3E4B59",
+			SidebarIgnoredForeground:       "#3E4B59",
+			SidebarIndicatorForeground:     "#E6B450",
+			SidebarStatusOnlineForeground:  "#7FD962",
+			SidebarStatusOfflineForeground: "#E06C75",
+			SidebarHotkeyForeground:        "#59C2FF",
+			SidebarUnavailableForeground:   "#3E4B59",
+			BoxBorderForeground:            "",
+			BoxBorderBackground:            "",
 		},
 		Keymap: Keymap{
 			Normal: map[string]string{
@@ -177,13 +199,17 @@ func Default() Config {
 				"cmd+down":      "move_line_down",
 				"cmd+l":         "toggle_line_numbers",
 				"cmd+b":         "branch_picker",
-				"`":             "toggle_sidebar",
+				"alt+1":         "toggle_sidebar",
+				"alt+2":         "focus_editor",
+				"alt+3":         "ai_panel",
 				"cmd+y":         "delete_line",
 				"del":           "delete_char",
 				"cmd+backspace": "delete_word_left",
 				"cmd+del":       "delete_word_right",
 				"ctrl+home":     "file_start",
 				"ctrl+end":      "file_end",
+				"ctrl+o":        "ai_toggle_reason",
+				"ctrl+t":        "ai_toggle_thinking",
 				"ctrl+y":        "scroll_up",
 				"ctrl+e":        "scroll_down",
 				"pgup":          "page_up",
@@ -263,9 +289,8 @@ func Default() Config {
 				"cmd+s": "save",
 
 				// AI integration
-				"cmd+shift+i": "ai_panel",
-				"cmd+i":       "ai_send",
-				"M":           "merge_mode",
+				"cmd+i": "ai_send",
+				"M":     "merge_mode",
 			},
 			Insert: map[string]string{
 				"esc":           "enter_normal",
@@ -283,6 +308,9 @@ func Default() Config {
 				"cmd+down":      "move_line_down",
 				"cmd+l":         "toggle_line_numbers",
 				"cmd+b":         "branch_picker",
+				"alt+1":         "toggle_sidebar",
+				"alt+2":         "focus_editor",
+				"alt+3":         "ai_panel",
 				"cmd+y":         "delete_line",
 				"del":           "delete_char",
 				"cmd+backspace": "delete_word_left",
@@ -290,6 +318,8 @@ func Default() Config {
 				"cmd+enter":     "insert_line_below",
 				"ctrl+home":     "file_start",
 				"ctrl+end":      "file_end",
+				"ctrl+o":        "ai_toggle_reason",
+				"ctrl+t":        "ai_toggle_thinking",
 				"ctrl+y":        "scroll_up",
 				"ctrl+e":        "scroll_down",
 				"pgup":          "page_up",
@@ -304,6 +334,9 @@ func Default() Config {
 				// File operations
 				"cmd+s": "save",
 			},
+		},
+		AI: AIOptions{
+			ThinkingLevels: []string{"auto", "low", "medium", "high", "on", "off"},
 		},
 	}
 }
@@ -384,6 +417,12 @@ func Load() (Config, error) {
 		mergeTheme(&cfg.Theme, theme)
 	}
 	mergeTheme(&cfg.Theme, userCfg.Theme)
+	if md.IsDefined("ai", "thinking-levels") {
+		cfg.AI.ThinkingLevels = userCfg.AI.ThinkingLevels
+	}
+	if md.IsDefined("ai", "thinking-levels-by-model") {
+		cfg.AI.ThinkingLevelsByModel = userCfg.AI.ThinkingLevelsByModel
+	}
 	if userCfg.Keymap.Normal != nil {
 		for k, v := range userCfg.Keymap.Normal {
 			cfg.Keymap.Normal[k] = v
@@ -495,6 +534,24 @@ func mergeTheme(dst *Theme, src Theme) {
 	if src.SyntaxParameter != "" {
 		dst.SyntaxParameter = src.SyntaxParameter
 	}
+	if src.AIReasoningForeground != "" {
+		dst.AIReasoningForeground = src.AIReasoningForeground
+	}
+	if src.AIUserForeground != "" {
+		dst.AIUserForeground = src.AIUserForeground
+	}
+	if src.AIAssistantForeground != "" {
+		dst.AIAssistantForeground = src.AIAssistantForeground
+	}
+	if src.AIThinkingForeground != "" {
+		dst.AIThinkingForeground = src.AIThinkingForeground
+	}
+	if src.AIStatusOnlineForeground != "" {
+		dst.AIStatusOnlineForeground = src.AIStatusOnlineForeground
+	}
+	if src.AIHeaderForeground != "" {
+		dst.AIHeaderForeground = src.AIHeaderForeground
+	}
 	if src.BranchForeground != "" {
 		dst.BranchForeground = src.BranchForeground
 	}
@@ -551,6 +608,12 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.SidebarIndicatorForeground != "" {
 		dst.SidebarIndicatorForeground = src.SidebarIndicatorForeground
+	}
+	if src.SidebarStatusOnlineForeground != "" {
+		dst.SidebarStatusOnlineForeground = src.SidebarStatusOnlineForeground
+	}
+	if src.SidebarStatusOfflineForeground != "" {
+		dst.SidebarStatusOfflineForeground = src.SidebarStatusOfflineForeground
 	}
 	if src.SidebarHotkeyForeground != "" {
 		dst.SidebarHotkeyForeground = src.SidebarHotkeyForeground

@@ -16,11 +16,11 @@ type FileState struct {
 	ScrollX   int    `json:"scroll_x"`
 	Mode      string `json:"mode"` // "normal", "insert"
 	// Selection state
-	SelectionActive bool `json:"selection_active,omitempty"`
-	SelectionStartRow int `json:"selection_start_row,omitempty"`
-	SelectionStartCol int `json:"selection_start_col,omitempty"`
-	SelectionEndRow   int `json:"selection_end_row,omitempty"`
-	SelectionEndCol   int `json:"selection_end_col,omitempty"`
+	SelectionActive   bool `json:"selection_active,omitempty"`
+	SelectionStartRow int  `json:"selection_start_row,omitempty"`
+	SelectionStartCol int  `json:"selection_start_col,omitempty"`
+	SelectionEndRow   int  `json:"selection_end_row,omitempty"`
+	SelectionEndCol   int  `json:"selection_end_col,omitempty"`
 }
 
 // RepoInfo stores repository-specific information
@@ -28,15 +28,23 @@ type RepoInfo struct {
 	MainBranch string `json:"main_branch,omitempty"`
 }
 
+// AIState stores persisted AI provider/model selection.
+type AIState struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
+}
+
 // Session stores the complete editor session state
 type Session struct {
-	Files       map[string]FileState `json:"files"`
-	Repos       map[string]RepoInfo  `json:"repos,omitempty"` // keyed by repo root path
-	ActiveFile  string               `json:"active_file,omitempty"`
+	Files      map[string]FileState `json:"files"`
+	Repos      map[string]RepoInfo  `json:"repos,omitempty"` // keyed by repo root path
+	ActiveFile string               `json:"active_file,omitempty"`
+	AI         AIState              `json:"ai,omitempty"`
 	// Future: Tabs, Windows, Panels
 	// Tabs        []TabState           `json:"tabs,omitempty"`
 	// Windows     []WindowState        `json:"windows,omitempty"`
-	LastSaved   time.Time            `json:"last_saved"`
+	LastSaved time.Time `json:"last_saved"`
 }
 
 // Manager handles session persistence
@@ -176,6 +184,25 @@ func (m *Manager) GetRepoInfo(repoRoot string) (RepoInfo, bool) {
 	defer m.mu.RUnlock()
 	info, ok := m.session.Repos[repoRoot]
 	return info, ok
+}
+
+// GetAIState returns persisted AI selection.
+func (m *Manager) GetAIState() (AIState, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	state := m.session.AI
+	if state.Provider == "" && state.Model == "" && state.Thinking == "" {
+		return AIState{}, false
+	}
+	return state, true
+}
+
+// SetAIState stores AI selection.
+func (m *Manager) SetAIState(state AIState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.session.AI = state
+	m.dirty = true
 }
 
 // SetRepoMainBranch saves the main branch for a repository

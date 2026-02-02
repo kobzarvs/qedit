@@ -33,31 +33,39 @@ func (e *Editor) Render(s Screen) {
 
 	// Calculate sidebar width (refs picker or new sidebar, mutually exclusive)
 	sidebarWidth := 0
-	if e.sidebar != nil && e.sidebar.Visible {
-		sidebarWidth = e.sidebar.CalculateWidth(w)
-	} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
-		sidebarWidth = w / 4
-		if sidebarWidth < 20 {
-			sidebarWidth = 20
-		}
-		if sidebarWidth > w/2 {
-			sidebarWidth = w / 2
+	aiPanelMaximized := e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Maximized
+	if !aiPanelMaximized {
+		if e.sidebar != nil && e.sidebar.Visible {
+			sidebarWidth = e.sidebar.CalculateWidth(w)
+		} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
+			sidebarWidth = w / 4
+			if sidebarWidth < 20 {
+				sidebarWidth = 20
+			}
+			if sidebarWidth > w/2 {
+				sidebarWidth = w / 2
+			}
 		}
 	}
 
 	// Calculate AI panel width (right sidebar)
 	aiPanelWidth := 0
 	if e.aiPanel != nil && e.aiPanel.Visible {
-		aiPanelWidth = e.aiPanel.Width
-		if aiPanelWidth < 30 {
-			aiPanelWidth = 30
-		}
-		// Limit AI panel to 50% of remaining width after left sidebar
-		maxAIPanelWidth := (w - sidebarWidth) / 2
-		if aiPanelWidth > maxAIPanelWidth {
-			aiPanelWidth = maxAIPanelWidth
+		if aiPanelMaximized {
+			aiPanelWidth = w
+		} else {
+			aiPanelWidth = e.aiPanel.Width
+			if aiPanelWidth < 30 {
+				aiPanelWidth = 30
+			}
+			// Limit AI panel to 50% of remaining width after left sidebar
+			maxAIPanelWidth := (w - sidebarWidth) / 2
+			if aiPanelWidth > maxAIPanelWidth {
+				aiPanelWidth = maxAIPanelWidth
+			}
 		}
 	}
+	e.aiInputCursorVisible = false
 
 	editorX := sidebarWidth
 	editorWidth := w - sidebarWidth - aiPanelWidth
@@ -72,25 +80,32 @@ func (e *Editor) Render(s Screen) {
 	s.Clear()
 
 	// Draw editor content (offset by sidebar)
-	for y := 0; y < viewHeight; y++ {
-		lineIdx := e.scroll + y
-		if lineIdx >= e.LineCount() {
-			clearLineAt(s, editorX, y, editorWidth, e.styleMain)
-			continue
+	if editorWidth > 0 {
+		for y := 0; y < viewHeight; y++ {
+			lineIdx := e.scroll + y
+			if lineIdx >= e.LineCount() {
+				clearLineAt(s, editorX, y, editorWidth, e.styleMain)
+				continue
+			}
+			e.drawLineWithGutterAt(s, editorX, y, editorWidth, gutterWidth, lineIdx)
 		}
-		e.drawLineWithGutterAt(s, editorX, y, editorWidth, gutterWidth, lineIdx)
 	}
 
 	// Draw sidebar (new sidebar takes priority over refs picker)
-	if e.sidebar != nil && e.sidebar.Visible && sidebarWidth > 0 {
-		e.sidebar.Render(s, e.sidebarStyles, 0, 0, sidebarWidth, viewHeight)
-	} else if e.refsPickerActive && sidebarWidth > 0 {
-		e.renderRefsSidebar(s, sidebarWidth, viewHeight)
+	if !aiPanelMaximized {
+		if e.sidebar != nil && e.sidebar.Visible && sidebarWidth > 0 {
+			e.sidebar.Render(s, e.sidebarStyles, 0, 0, sidebarWidth, viewHeight)
+		} else if e.refsPickerActive && sidebarWidth > 0 {
+			e.renderRefsSidebar(s, sidebarWidth, viewHeight)
+		}
 	}
 
 	// Draw AI panel (right sidebar)
 	if e.aiPanel != nil && e.aiPanel.Visible && aiPanelWidth > 0 {
 		aiPanelX := w - aiPanelWidth
+		if aiPanelMaximized {
+			aiPanelX = 0
+		}
 		e.renderAIPanel(s, aiPanelX, 0, aiPanelWidth, viewHeight)
 	}
 
@@ -113,26 +128,38 @@ func (e *Editor) Render(s Screen) {
 	}
 	cursorVisible := true
 	if e.mode != ModeCommand && e.mode != ModeSearch && e.mode != ModeBranchPicker {
-		cy = e.cursor.Row - e.scroll
-		if cy < 0 || cy >= viewHeight {
-			cursorVisible = false
-		}
-		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-			cx = editorX + gutterWidth + visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.tabWidth) - e.scrollX
-		}
-		if cx < editorX+gutterWidth {
-			cx = editorX + gutterWidth
-		}
-		// Limit cursor to editor area (before AI panel)
-		maxCursorX := w - aiPanelWidth - 1
-		if maxCursorX < editorX+gutterWidth {
-			maxCursorX = editorX + gutterWidth
-		}
-		if cx > maxCursorX {
-			cx = maxCursorX
-		}
-		if cx >= w {
-			cx = w - 1
+		if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused {
+			if e.aiInputCursorVisible {
+				cx = e.aiInputCursorX
+				cy = e.aiInputCursorY
+				if cy < 0 || cy >= viewHeight {
+					cursorVisible = false
+				}
+			} else {
+				cursorVisible = false
+			}
+		} else {
+			cy = e.cursor.Row - e.scroll
+			if cy < 0 || cy >= viewHeight {
+				cursorVisible = false
+			}
+			if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
+				cx = editorX + gutterWidth + visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.tabWidth) - e.scrollX
+			}
+			if cx < editorX+gutterWidth {
+				cx = editorX + gutterWidth
+			}
+			// Limit cursor to editor area (before AI panel)
+			maxCursorX := w - aiPanelWidth - 1
+			if maxCursorX < editorX+gutterWidth {
+				maxCursorX = editorX + gutterWidth
+			}
+			if cx > maxCursorX {
+				cx = maxCursorX
+			}
+			if cx >= w {
+				cx = w - 1
+			}
 		}
 	}
 
@@ -161,14 +188,13 @@ func (e *Editor) Render(s Screen) {
 		e.renderTopStatusMessage(s, w)
 	}
 	sidebarFocused := e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
-	aiPanelFocused := e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused
-	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || sidebarFocused || aiPanelFocused || !cursorVisible {
+	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || sidebarFocused || !cursorVisible {
 		s.HideCursor()
 		s.Show()
 		return
 	}
 	cursorStyle := CursorStyleSteadyBlock
-	if e.mode == ModeInsert || e.mode == ModeSearch || e.mode == ModeCommand {
+	if e.mode == ModeInsert || e.mode == ModeSearch || e.mode == ModeCommand || (e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused) {
 		cursorStyle = CursorStyleSteadyBar
 	}
 	s.SetCursorStyle(cursorStyle)
@@ -1611,6 +1637,8 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"undo": "History", "redo": "History",
 		// Other
 		"quit": "Other", "branch_picker": "Other", "toggle_line_numbers": "Other",
+		// AI
+		"ai_panel": "AI", "ai_send": "AI", "ai_toggle_reason": "AI", "ai_toggle_thinking": "AI", "ai_apply": "AI", "ai_reject": "AI",
 	}
 
 	// Action descriptions
@@ -1642,6 +1670,12 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"replace_char": "Replace char (r)", "delete_line": "Delete line",
 		"branch_picker": "Branch picker", "insert_line_above": "Insert line above",
 		"toggle_line_numbers": "Toggle line numbers",
+		"ai_panel":            "Toggle AI panel",
+		"ai_send":             "Send to AI",
+		"ai_toggle_reason":    "Toggle AI reasoning",
+		"ai_toggle_thinking":  "Cycle AI thinking level",
+		"ai_apply":            "Apply AI edit",
+		"ai_reject":           "Reject AI edit",
 	}
 
 	// Build bindings list grouped

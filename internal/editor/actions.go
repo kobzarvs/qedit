@@ -50,6 +50,12 @@ func (e *Editor) execAction(action string) bool {
 		e.openSidebarBranches()
 	case actionToggleSidebar:
 		e.toggleSidebar()
+	case actionToggleSidebarFocus:
+		e.toggleSidebarFocus()
+	case actionToggleAIPanelFocus:
+		e.toggleAIPanelFocus()
+	case actionFocusEditor:
+		e.focusEditor()
 	case actionEnterInsert:
 		e.mode = ModeInsert
 		e.saveLineState()
@@ -63,6 +69,10 @@ func (e *Editor) execAction(action string) bool {
 	case actionMergeMode:
 		return e.enterMergeMode()
 	case actionQuit:
+		if e.aiEditBufferPath != "" {
+			e.cancelAIEdit()
+			return false
+		}
 		return true
 	case actionBackspace:
 		e.backspace()
@@ -251,10 +261,15 @@ func (e *Editor) execAction(action string) bool {
 
 	// File operations
 	case actionSave:
+		aiEditSave := e.aiEditBufferPath != "" && e.filename == e.aiEditBufferPath
 		if err := e.Save(""); err != nil {
 			e.setStatus(err.Error())
 		} else {
-			e.setStatus("saved " + e.filename)
+			if aiEditSave {
+				e.setStatus("AI conversation updated")
+			} else {
+				e.setStatus("saved " + e.filename)
+			}
 		}
 		return false
 
@@ -263,13 +278,26 @@ func (e *Editor) execAction(action string) bool {
 		e.toggleAIPanel()
 		return false
 	case actionAISend:
+		if e.aiPanel != nil && e.aiPanel.Visible {
+			e.aiPanel.Close()
+			return false
+		}
 		e.sendToAI()
+		return false
+	case actionAIToggleReason:
+		e.toggleAIReasoning()
+		return false
+	case actionAIToggleThinking:
+		e.toggleAIThinkingLevel()
 		return false
 	case actionAIApply:
 		e.applyAIEdit()
 		return false
 	case actionAIReject:
 		e.rejectAIEdit()
+		return false
+	case actionAIEdit:
+		e.editAIConversation()
 		return false
 	}
 	if !e.selectMode {
@@ -378,6 +406,15 @@ func (e *Editor) execCommand(cmd string) bool {
 				e.setStatus("sidebar width set to " + args[0])
 			}
 		}
+		return false
+	case "sidebar-focus":
+		e.toggleSidebarFocus()
+		return false
+	case "ai-focus":
+		e.toggleAIPanelFocus()
+		return false
+	case "focus-editor":
+		e.focusEditor()
 		return false
 	case "autoreload", "auto-reload", "auto-reload-on-changes":
 		if len(args) == 0 {
@@ -500,10 +537,72 @@ func (e *Editor) handleAICommand(args []string) bool {
 			e.setStatus("AI: " + err.Error())
 			return false
 		}
+		e.saveAIState()
 		e.setStatus("AI model: " + model)
 		if e.aiPanel != nil {
 			e.aiPanel.ModelName = model
+			e.syncAIPanelProviderState()
 		}
+		return false
+
+	case "thinking":
+		if e.aiPanel == nil {
+			e.aiPanel = NewAIPanel()
+		}
+		if len(args) >= 2 && args[1] == "list" {
+			model := e.aiManager.CurrentModel()
+			levels := e.aiThinkingLevelsForModel(model)
+			label := "AI thinking levels"
+			if model != "" {
+				label += " (" + model + ")"
+			}
+			if len(levels) == 0 {
+				e.setStatus(label + ": any")
+				return false
+			}
+			e.setStatus(label + ": " + strings.Join(levels, ", "))
+			return false
+		}
+		if len(args) < 2 {
+			level := e.aiPanel.ThinkingLevel
+			if level == "" {
+				level = "auto"
+			}
+			e.setStatus("AI thinking: " + level)
+			return false
+		}
+		level := args[1]
+		if !e.aiPanel.SetThinkingLevel(level) {
+			e.setStatus("AI: invalid thinking level")
+			return false
+		}
+		e.saveAIState()
+		e.setStatus("AI thinking: " + e.aiPanel.ThinkingLevel)
+		return false
+
+	case "max":
+		if e.aiPanel == nil {
+			e.aiPanel = NewAIPanel()
+		}
+		if len(args) > 1 {
+			switch strings.ToLower(args[1]) {
+			case "on", "true", "1":
+				if !e.aiPanel.Maximized {
+					e.toggleAIPanelMaximize()
+				}
+				return false
+			case "off", "false", "0":
+				if e.aiPanel.Maximized {
+					e.toggleAIPanelMaximize()
+				}
+				return false
+			}
+		}
+		e.toggleAIPanelMaximize()
+		return false
+
+	case "edit":
+		e.editAIConversation()
 		return false
 
 	default:
@@ -513,10 +612,12 @@ func (e *Editor) handleAICommand(args []string) bool {
 			e.setStatus("AI: " + err.Error())
 			return false
 		}
+		e.saveAIState()
 		e.setStatus("AI provider: " + provider)
 		if e.aiPanel != nil {
 			e.aiPanel.ProviderName = provider
 			e.aiPanel.ModelName = e.aiManager.CurrentModel()
+			e.refreshAIPanelProviderState()
 		}
 		return false
 	}
@@ -571,6 +672,9 @@ func (e *Editor) Save(path string) error {
 	data := []byte(e.Content())
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err
+	}
+	if e.aiEditBufferPath != "" && path == e.aiEditBufferPath {
+		_ = e.saveAIEdit()
 	}
 	e.filename = path
 	e.savePoint = len(e.undo)

@@ -35,6 +35,8 @@ type FileState struct {
 type SessionStore interface {
 	GetFileState(path string) (FileState, bool)
 	SetFileState(path string, state FileState)
+	GetAIState() (AIState, bool)
+	SetAIState(state AIState)
 	Stop()
 }
 
@@ -45,6 +47,13 @@ type AIProviderInfo struct {
 	Available   bool
 	Status      int // 0=offline, 1=connecting, 2=online, 3=error
 	ModelName   string
+}
+
+// AIState stores persisted AI selection.
+type AIState struct {
+	Provider string
+	Model    string
+	Thinking string
 }
 
 // AIModelInfo contains information about an AI model.
@@ -78,17 +87,18 @@ type AIManager interface {
 
 // AIContext contains context for AI requests.
 type AIContext struct {
-	FilePath    string
-	Content     string
-	IsSelection bool
-	CursorRow   int
-	CursorCol   int
-	Language    string
+	FilePath       string
+	Content        string
+	IsSelection    bool
+	CursorRow      int
+	CursorCol      int
+	Language       string
+	ReasoningLevel string
 }
 
 // AIEvent represents an event from an AI provider.
 type AIEvent struct {
-	Kind  string // "text", "edit", "error", "done"
+	Kind  string // "text", "reasoning", "reasoning_done", "edit", "error", "done"
 	Text  string
 	Error error
 }
@@ -131,4 +141,6 @@ func (e *Editor) SetAIManager(m AIManager) {
 	if e.aiPanel == nil {
 		e.aiPanel = NewAIPanel()
 	}
+	e.restoreAIState()
+	e.syncAIPanelProviderState()
 }

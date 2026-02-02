@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -100,22 +101,54 @@ func (a *App) Run() error {
 
 	highlightMaxBytes := cfg.Editor.HighlightMaxBytes
 	ed := editor.New(editor.Options{
-		TabWidth:             cfg.Editor.TabWidth,
-		LineNumbers:          cfg.Editor.LineNumbers,
-		GitBranchSymbol:      cfg.Editor.GitBranchSymbol,
-		SidebarWidth:         cfg.Editor.SidebarWidth,
-		SidebarMinWidth:      cfg.Editor.SidebarMinWidth,
-		SidebarMaxWidth:      cfg.Editor.SidebarMaxWidth,
-		SidebarCloseOnSelect: cfg.Editor.SidebarCloseOnSelect,
-		AutoReloadOnChanges:  cfg.Editor.AutoReloadOnChanges,
-		KeymapNormal:         cfg.Keymap.Normal,
-		KeymapInsert:         cfg.Keymap.Insert,
-		CmdHistoryPath:       cmdHistoryPath,
-		SearchHistoryPath:    searchHistoryPath,
-		SessionStore:         sessionStore,
+		TabWidth:                cfg.Editor.TabWidth,
+		LineNumbers:             cfg.Editor.LineNumbers,
+		GitBranchSymbol:         cfg.Editor.GitBranchSymbol,
+		SidebarWidth:            cfg.Editor.SidebarWidth,
+		SidebarMinWidth:         cfg.Editor.SidebarMinWidth,
+		SidebarMaxWidth:         cfg.Editor.SidebarMaxWidth,
+		SidebarCloseOnSelect:    cfg.Editor.SidebarCloseOnSelect,
+		AutoReloadOnChanges:     cfg.Editor.AutoReloadOnChanges,
+		KeymapNormal:            cfg.Keymap.Normal,
+		KeymapInsert:            cfg.Keymap.Insert,
+		CmdHistoryPath:          cmdHistoryPath,
+		SearchHistoryPath:       searchHistoryPath,
+		SessionStore:            sessionStore,
+		AIThinkingLevels:        cfg.AI.ThinkingLevels,
+		AIThinkingLevelsByModel: cfg.AI.ThinkingLevelsByModel,
 	})
 	defer ed.Shutdown()
 	ed.SetStyles(ui.StylesFromConfig(cfg))
+	ed.SetAIMarkdownHighlightFunc(func(text string) map[int][]editor.HighlightSpan {
+		if text == "" {
+			return nil
+		}
+		if highlightMaxBytes > 0 && int64(len(text)) > highlightMaxBytes {
+			return nil
+		}
+		const aiPath = "__ai__.md"
+		if ok := ts.ParseSync(aiPath, "markdown", text); !ok {
+			return nil
+		}
+		lineCount := strings.Count(text, "\n") + 1
+		spans := ts.Highlights(aiPath, 0, lineCount-1)
+		if spans == nil {
+			return nil
+		}
+		out := make(map[int][]editor.HighlightSpan, len(spans))
+		for line, lineSpans := range spans {
+			dst := make([]editor.HighlightSpan, len(lineSpans))
+			for i, span := range lineSpans {
+				dst[i] = editor.HighlightSpan{
+					StartCol: span.StartCol,
+					EndCol:   span.EndCol,
+					Kind:     span.Kind,
+				}
+			}
+			out[line] = dst
+		}
+		return out
+	})
 	ed.SetAutoReloadConfigHook(func(enabled bool) error {
 		if err := config.UpdateEditorAutoReloadOnChanges(enabled); err != nil {
 			return err
@@ -138,7 +171,12 @@ func (a *App) Run() error {
 
 	// Register preset API providers (Ollama, LM Studio, etc.)
 	for _, preset := range providers.GetPresets() {
-		provider := providers.NewOpenAIAPIProvider(preset)
+		var provider ai.Provider
+		if preset.Name == "lmstudio" {
+			provider = providers.NewLMStudioProvider(preset)
+		} else {
+			provider = providers.NewOpenAIAPIProvider(preset)
+		}
 		aiMgr.Register(provider)
 	}
 
@@ -687,18 +725,26 @@ func (a *App) Run() error {
 			ed.SetGitBranch(gitinfo.Branch(gitPath))
 		}
 		if highlightExpected && !ed.HasHighlights() {
-			continue
+			if openPath == ed.Filename() {
+				continue
+			}
+			highlightExpected = false
 		}
 
-		// Process AI events (non-blocking)
+		// Process AI events (non-blocking, drain backlog)
 		if aiAdapter != nil {
-			select {
-			case aiEvent, ok := <-aiAdapter.Events():
-				if ok {
+			const maxAIEventsPerTick = 512
+		drainAI:
+			for i := 0; i < maxAIEventsPerTick; i++ {
+				select {
+				case aiEvent, ok := <-aiAdapter.Events():
+					if !ok {
+						break drainAI
+					}
 					ed.ProcessAIEvent(aiEvent)
+				default:
+					break drainAI
 				}
-			default:
-				// No event available, continue
 			}
 		}
 

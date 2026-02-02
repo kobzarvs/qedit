@@ -57,6 +57,24 @@ func (s *SessionStore) SetFileState(path string, state editor.FileState) {
 	})
 }
 
+func (s *SessionStore) GetAIState() (editor.AIState, bool) {
+	if s == nil || s.mgr == nil {
+		return editor.AIState{}, false
+	}
+	state, ok := s.mgr.GetAIState()
+	if !ok {
+		return editor.AIState{}, false
+	}
+	return editor.AIState{Provider: state.Provider, Model: state.Model, Thinking: state.Thinking}, true
+}
+
+func (s *SessionStore) SetAIState(state editor.AIState) {
+	if s == nil || s.mgr == nil {
+		return
+	}
+	s.mgr.SetAIState(session.AIState{Provider: state.Provider, Model: state.Model, Thinking: state.Thinking})
+}
+
 func (s *SessionStore) Stop() {
 	if s == nil || s.mgr == nil {
 		return
