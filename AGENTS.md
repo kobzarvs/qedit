@@ -45,3 +45,7 @@ the change in your PR description. Keep binary assets in `assets/` and avoid
 adding large, uncompressed files to the repo.
 When introducing new theme color keys, update both `config/theme/ayu.toml` and
 `~/.config/qedit/theme/ayu.toml`.
+When adding new commands or shortcuts, update both `config/config.toml` and
+`~/.config/qedit/config.toml`.
+When adding support for new file types, update both `config/languages.toml` and
+`~/.config/qedit/languages.toml`.
