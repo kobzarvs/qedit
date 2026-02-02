@@ -388,14 +388,20 @@ func wrapInputLines(input []rune, cursor int, width int) ([]string, int, int) {
 	cursorCol := 0
 
 	for i, r := range input {
+		if i == cursor {
+			cursorLine = lineIdx
+			cursorCol = col
+		}
+		if r == '\n' {
+			lines = append(lines, "")
+			lineIdx++
+			col = 0
+			continue
+		}
 		if col == width {
 			lines = append(lines, "")
 			lineIdx++
 			col = 0
-		}
-		if i == cursor {
-			cursorLine = lineIdx
-			cursorCol = col
 		}
 		lines[lineIdx] += string(r)
 		col++

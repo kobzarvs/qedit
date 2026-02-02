@@ -258,6 +258,19 @@ func (e *Editor) handleAIPanelKey(ev EventKey) bool {
 
 	key := ev.Key()
 	r := ev.Rune()
+	mods := ev.Modifiers()
+
+	// Shift+Enter (or terminals that encode it as Ctrl+Alt+M) inserts a newline.
+	if key == KeyEnter && mods&ModShift != 0 {
+		e.aiPanel.InsertRune('\n')
+		return false
+	}
+	if mods&ModAlt != 0 && mods&ModCtrl != 0 {
+		if key == KeyCtrlM || (key == KeyRune && (r == 'm' || r == 'M')) {
+			e.aiPanel.InsertRune('\n')
+			return false
+		}
+	}
 
 	// Handle provider/model selection popups first
 	if e.aiPanel.ProviderSelectActive {
