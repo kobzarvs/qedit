@@ -34,9 +34,9 @@ var Presets = map[string]OpenAIAPIConfig{
 	"lmstudio": {
 		Name:         "lmstudio",
 		DisplayName:  "LM Studio (local)",
-		BaseURL:      "http://localhost:1234/v1",
-		APIKey:       "", // Not required
-		DefaultModel: "", // Auto-select first loaded model
+		BaseURL:      "http://localhost:1234",
+		APIKey:       "$LM_API_TOKEN", // Optional
+		DefaultModel: "",              // Auto-select first loaded model
 		Timeout:      60 * time.Second,
 	},
 	"openai": {

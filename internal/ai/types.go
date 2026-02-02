@@ -10,22 +10,25 @@ const (
 
 // EditorContext contains information about the current editor state.
 type EditorContext struct {
-	FilePath    string // Path to the current file
-	Content     string // Entire file or selection content
-	IsSelection bool   // true if Content is a selection, false if entire file
-	CursorRow   int    // 0-based row
-	CursorCol   int    // 0-based column
-	Language    string // "go", "python", etc.
+	FilePath       string // Path to the current file
+	Content        string // Entire file or selection content
+	IsSelection    bool   // true if Content is a selection, false if entire file
+	CursorRow      int    // 0-based row
+	CursorCol      int    // 0-based column
+	Language       string // "go", "python", etc.
+	ReasoningLevel string // reasoning setting (off/low/medium/high/on)
 }
 
 // ResponseKind indicates the type of response.
 type ResponseKind string
 
 const (
-	ResponseKindText  ResponseKind = "text"  // Streaming text
-	ResponseKindEdit  ResponseKind = "edit"  // Proposed edit
-	ResponseKindError ResponseKind = "error" // Error occurred
-	ResponseKindDone  ResponseKind = "done"  // Stream completed
+	ResponseKindText          ResponseKind = "text"           // Streaming text
+	ResponseKindReasoning     ResponseKind = "reasoning"      // Streaming reasoning
+	ResponseKindReasoningDone ResponseKind = "reasoning_done" // Reasoning stream completed
+	ResponseKindEdit          ResponseKind = "edit"           // Proposed edit
+	ResponseKindError         ResponseKind = "error"          // Error occurred
+	ResponseKindDone          ResponseKind = "done"           // Stream completed
 )
 
 // AIResponse represents a response from an AI provider.

@@ -15,8 +15,9 @@ var (
 type Manager struct {
 	mu        sync.RWMutex
 	providers map[string]Provider
-	active    string       // Name of the active provider
+	active    string // Name of the active provider
 	events    chan AIResponse
+	forwarder map[string]*sync.Once
 }
 
 // NewManager creates a new AI manager.
@@ -24,6 +25,7 @@ func NewManager() *Manager {
 	return &Manager{
 		providers: make(map[string]Provider),
 		events:    make(chan AIResponse, 64),
+		forwarder: make(map[string]*sync.Once),
 	}
 }
 
@@ -32,6 +34,9 @@ func (m *Manager) Register(p Provider) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.providers[p.Name()] = p
+	if _, ok := m.forwarder[p.Name()]; !ok {
+		m.forwarder[p.Name()] = &sync.Once{}
+	}
 
 	// Set as active if it's the first provider
 	if m.active == "" {
@@ -48,6 +53,7 @@ func (m *Manager) Unregister(name string) {
 		p.Stop()
 		delete(m.providers, name)
 	}
+	delete(m.forwarder, name)
 
 	// Clear active if this was the active provider
 	if m.active == name {
@@ -138,8 +144,7 @@ func (m *Manager) Send(ctx EditorContext, prompt string) error {
 		}
 	}
 
-	// Forward responses to manager's event channel
-	go m.forwardResponses(p)
+	m.ensureForwarder(p)
 
 	return p.Send(ctx, prompt)
 }
@@ -158,8 +163,7 @@ func (m *Manager) SendWithHistory(ctx EditorContext, prompt string, history []Ch
 		}
 	}
 
-	// Forward responses to manager's event channel
-	go m.forwardResponses(p)
+	m.ensureForwarder(p)
 
 	return p.SendWithHistory(ctx, prompt, history)
 }
@@ -174,6 +178,23 @@ func (m *Manager) Cancel() {
 // Events returns the channel for receiving AI responses.
 func (m *Manager) Events() <-chan AIResponse {
 	return m.events
+}
+
+func (m *Manager) ensureForwarder(p Provider) {
+	if p == nil {
+		return
+	}
+	name := p.Name()
+	m.mu.Lock()
+	once, ok := m.forwarder[name]
+	if !ok {
+		once = &sync.Once{}
+		m.forwarder[name] = once
+	}
+	m.mu.Unlock()
+	once.Do(func() {
+		go m.forwardResponses(p)
+	})
 }
 
 // forwardResponses forwards responses from a provider to the manager's event channel.
