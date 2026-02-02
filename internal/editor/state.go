@@ -45,6 +45,8 @@ func New(opts Options) *Editor {
 			opts.SidebarMaxWidth,
 			opts.SidebarCloseOnSelect,
 		),
+		fileTreeShowHidden:      opts.FileTreeShowHidden,
+		fileTreeShowIgnored:     opts.FileTreeShowIgnored,
 		aiThinkingLevels:        append([]string(nil), opts.AIThinkingLevels...),
 		aiThinkingLevelsByModel: copyStringSliceMap(opts.AIThinkingLevelsByModel),
 	}

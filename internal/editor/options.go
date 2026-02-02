@@ -9,6 +9,8 @@ type Options struct {
 	SidebarMinWidth      int
 	SidebarMaxWidth      string
 	SidebarCloseOnSelect bool
+	FileTreeShowHidden   bool
+	FileTreeShowIgnored  bool
 	AutoReloadOnChanges  bool
 
 	KeymapNormal map[string]string

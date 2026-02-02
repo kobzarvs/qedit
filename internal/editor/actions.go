@@ -48,14 +48,26 @@ func (e *Editor) execAction(action string) bool {
 		e.toggleLineNumbers()
 	case actionBranchPicker:
 		e.openSidebarBranches()
+	case actionOpenFileTree:
+		e.openSidebarFileTree("")
 	case actionToggleSidebar:
 		e.toggleSidebar()
 	case actionToggleSidebarFocus:
 		e.toggleSidebarFocus()
+	case actionFocusSidebar:
+		e.focusSidebar()
+	case actionFocusPrevPane:
+		e.focusPrevPane()
+	case actionFocusNextPane:
+		e.focusNextPane()
 	case actionToggleAIPanelFocus:
 		e.toggleAIPanelFocus()
+	case actionFocusAIPanel:
+		e.focusAIPanel()
 	case actionFocusEditor:
 		e.focusEditor()
+	case actionFocusCommandLine:
+		e.focusCommandLine()
 	case actionEnterInsert:
 		e.mode = ModeInsert
 		e.saveLineState()
@@ -393,6 +405,13 @@ func (e *Editor) execCommand(cmd string) bool {
 		return false
 	case "sidebar":
 		e.toggleSidebar()
+		return false
+	case "tree":
+		path := ""
+		if len(args) > 0 {
+			path = strings.Join(args, " ")
+		}
+		e.openSidebarFileTree(path)
 		return false
 	case "sidew":
 		// :sidew - show current width, :sidew 30 - set width

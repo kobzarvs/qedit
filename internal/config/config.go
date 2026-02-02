@@ -21,6 +21,8 @@ type EditorOptions struct {
 	SidebarMinWidth       int    `toml:"sidebar-min-width"`
 	SidebarMaxWidth       string `toml:"sidebar-max-width"`
 	SidebarCloseOnSelect  bool   `toml:"sidebar-close-on-select"`
+	FileTreeShowHidden    bool   `toml:"file-tree-show-hidden"`
+	FileTreeShowIgnored   bool   `toml:"file-tree-show-ignored"`
 	HighlightMaxBytes     int64  `toml:"highlight-max-bytes"`
 	AutoReloadOnChanges   bool   `toml:"auto-reload-on-changes"`
 	AutoReloadStabilizeMS int    `toml:"auto-reload-stabilize-ms"`
@@ -116,6 +118,8 @@ func Default() Config {
 			SidebarMinWidth:       15,
 			SidebarMaxWidth:       "50",
 			SidebarCloseOnSelect:  false,
+			FileTreeShowHidden:    false,
+			FileTreeShowIgnored:   false,
 			HighlightMaxBytes:     8 << 20,
 			AutoReloadOnChanges:   true,
 			AutoReloadStabilizeMS: 300,
@@ -199,6 +203,11 @@ func Default() Config {
 				"cmd+down":      "move_line_down",
 				"cmd+l":         "toggle_line_numbers",
 				"cmd+b":         "branch_picker",
+				"cmd+o":         "open_file_tree",
+				"alt+left":      "focus_prev_pane",
+				"alt+right":     "focus_next_pane",
+				"alt+up":        "focus_editor",
+				"alt+down":      "focus_command",
 				"alt+1":         "toggle_sidebar",
 				"alt+2":         "focus_editor",
 				"alt+3":         "ai_panel",
@@ -308,6 +317,11 @@ func Default() Config {
 				"cmd+down":      "move_line_down",
 				"cmd+l":         "toggle_line_numbers",
 				"cmd+b":         "branch_picker",
+				"cmd+o":         "open_file_tree",
+				"alt+left":      "focus_prev_pane",
+				"alt+right":     "focus_next_pane",
+				"alt+up":        "focus_editor",
+				"alt+down":      "focus_command",
 				"alt+1":         "toggle_sidebar",
 				"alt+2":         "focus_editor",
 				"alt+3":         "ai_panel",
@@ -381,6 +395,12 @@ func Load() (Config, error) {
 	}
 	if md.IsDefined("editor", "sidebar-close-on-select") {
 		cfg.Editor.SidebarCloseOnSelect = userCfg.Editor.SidebarCloseOnSelect
+	}
+	if md.IsDefined("editor", "file-tree-show-hidden") {
+		cfg.Editor.FileTreeShowHidden = userCfg.Editor.FileTreeShowHidden
+	}
+	if md.IsDefined("editor", "file-tree-show-ignored") {
+		cfg.Editor.FileTreeShowIgnored = userCfg.Editor.FileTreeShowIgnored
 	}
 	if md.IsDefined("editor", "highlight-max-bytes") {
 		if userCfg.Editor.HighlightMaxBytes < 0 {

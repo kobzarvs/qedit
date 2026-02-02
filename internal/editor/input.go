@@ -50,12 +50,7 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 }
 
 func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
-	if ev.Modifiers()&ModAlt == 0 || ev.Key() != KeyRune {
-		return false, false
-	}
-
-	r := ev.Rune()
-	if r != '1' && r != '2' && r != '3' {
+	if ev.Modifiers()&ModAlt == 0 {
 		return false, false
 	}
 
@@ -66,7 +61,16 @@ func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
 	}
 
 	switch action {
-	case actionToggleSidebar, actionAIPanel, actionToggleSidebarFocus, actionToggleAIPanelFocus, actionFocusEditor:
+	case actionToggleSidebar,
+		actionAIPanel,
+		actionToggleSidebarFocus,
+		actionToggleAIPanelFocus,
+		actionFocusEditor,
+		actionFocusPrevPane,
+		actionFocusNextPane,
+		actionFocusSidebar,
+		actionFocusAIPanel,
+		actionFocusCommandLine:
 		return true, e.execAction(action)
 	default:
 		return false, false
@@ -1488,7 +1492,16 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	}
 
 	viewHeight := e.viewHeight - 1 // subtract header
+	var fileTreeContent *SidebarFileTreeContent
+	if content, ok := e.sidebar.Content.(*SidebarFileTreeContent); ok {
+		fileTreeContent = content
+	}
 	action := e.sidebar.HandleKey(ev, viewHeight)
+	if fileTreeContent != nil {
+		e.updateFileTreePreview(fileTreeContent, action)
+		e.fileTreeShowHidden = fileTreeContent.ShowHidden()
+		e.fileTreeShowIgnored = fileTreeContent.ShowIgnored()
+	}
 	logger.Debug("handleSidebarKey", "action", action.Action, "branch", action.Branch, "mode", action.Mode, "provider", action.Provider, "model", action.Model)
 
 	switch action.Action {
@@ -1532,8 +1545,13 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionOpenFile:
 		logger.Debug("sidebar action: open file", "path", action.Path)
 		if action.Path != "" {
-			// Signal that we want to open this file (future)
-			e.setStatus("FileTree: not implemented yet")
+			e.sidebarOpenFilePath = action.Path
+			e.clearFileTreePreview()
+			if e.sidebar.CloseOnSelect {
+				e.closeSidebar()
+			} else {
+				e.sidebar.Focused = false
+			}
 		}
 		return false
 
@@ -1553,6 +1571,9 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 
 // switchSidebarMode switches sidebar to the specified mode
 func (e *Editor) switchSidebarMode(mode SidebarMode) {
+	if mode != SidebarModeFileTree {
+		e.clearFileTreePreview()
+	}
 	switch mode {
 	case SidebarModeMenu:
 		if e.sidebar.MenuContent != nil {
@@ -1566,7 +1587,7 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 		e.openSidebarAIProviders()
 
 	case SidebarModeFileTree:
-		e.setStatus("FileTree: not implemented yet")
+		e.openSidebarFileTree("")
 
 	case SidebarModeRecentHistory:
 		e.setStatus("Recent History: not implemented yet")
@@ -1638,6 +1659,46 @@ func (e *Editor) openSidebarBranches() {
 	e.setStatus("loading branches...")
 	e.branchPickerRequested = true
 	logger.Debug("openSidebarBranches: branch request set")
+}
+
+// openSidebarFileTree opens the sidebar in file tree mode.
+func (e *Editor) openSidebarFileTree(path string) {
+	logger.Debug("openSidebarFileTree called", "path", path)
+	if e.sidebar == nil {
+		logger.Warn("openSidebarFileTree: sidebar is nil")
+		return
+	}
+
+	// Close refs picker if open (mutual exclusion)
+	if e.refsPickerActive {
+		logger.Debug("openSidebarFileTree: closing refs picker")
+		e.closeRefsPicker(false)
+	}
+
+	// Initialize menu content for later "back" navigation
+	if e.sidebar.MenuContent == nil {
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+	} else {
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+	}
+
+	startDir := strings.TrimSpace(path)
+	if startDir == "" {
+		if e.filename != "" {
+			startDir = filepath.Dir(e.filename)
+		} else if cwd, err := os.Getwd(); err == nil {
+			startDir = cwd
+		}
+	}
+	if startDir == "" {
+		startDir = "."
+	}
+	if info, err := os.Stat(startDir); err == nil && !info.IsDir() {
+		startDir = filepath.Dir(startDir)
+	}
+
+	content := NewSidebarFileTreeContent(startDir, e.fileTreeShowHidden, e.fileTreeShowIgnored)
+	e.sidebar.Open(content)
 }
 
 // openSidebarAIProviders opens the sidebar in AI provider mode.
@@ -1743,6 +1804,7 @@ func (e *Editor) closeSidebar() {
 		return
 	}
 	e.sidebar.Close()
+	e.clearFileTreePreview()
 }
 
 // toggleSidebar toggles the sidebar visibility
@@ -1771,6 +1833,40 @@ func (e *Editor) toggleSidebarFocus() {
 	if e.sidebar.Focused && e.aiPanel != nil {
 		e.aiPanel.Focused = false
 	}
+	if !e.sidebar.Focused {
+		e.clearFileTreePreview()
+	}
+}
+
+func (e *Editor) exitCommandLine() {
+	switch e.mode {
+	case ModeCommand:
+		e.mode = ModeNormal
+		e.cmd = e.cmd[:0]
+		e.cmdCursor = 0
+		e.cmdHistoryIndex = -1
+	case ModeSearch:
+		e.mode = ModeNormal
+		e.searchQuery = e.searchQuery[:0]
+		e.searchCursor = 0
+		e.searchMatches = nil
+		e.searchHistoryIndex = -1
+	}
+}
+
+func (e *Editor) focusSidebar() {
+	if e.sidebar == nil {
+		return
+	}
+	if !e.sidebar.Visible {
+		e.openSidebar()
+		return
+	}
+	e.sidebar.Focused = true
+	if e.aiPanel != nil {
+		e.aiPanel.Focused = false
+	}
+	e.exitCommandLine()
 }
 
 func (e *Editor) toggleAIPanelFocus() {
@@ -1788,6 +1884,22 @@ func (e *Editor) toggleAIPanelFocus() {
 	}
 }
 
+func (e *Editor) focusAIPanel() {
+	if e.aiPanel == nil {
+		e.aiPanel = NewAIPanel()
+	}
+	if !e.aiPanel.Visible {
+		e.aiPanel.Open()
+		e.syncAIPanelProviderState()
+	}
+	e.aiPanel.Focused = true
+	if e.sidebar != nil {
+		e.sidebar.Focused = false
+	}
+	e.clearFileTreePreview()
+	e.exitCommandLine()
+}
+
 func (e *Editor) focusEditor() {
 	if e.sidebar != nil {
 		e.sidebar.Focused = false
@@ -1795,6 +1907,130 @@ func (e *Editor) focusEditor() {
 	if e.aiPanel != nil {
 		e.aiPanel.Focused = false
 	}
+	e.clearFileTreePreview()
+	e.exitCommandLine()
+}
+
+func (e *Editor) focusCommandLine() {
+	if e.sidebar != nil {
+		e.sidebar.Focused = false
+	}
+	if e.aiPanel != nil {
+		e.aiPanel.Focused = false
+	}
+	e.clearFileTreePreview()
+	if e.mode == ModeCommand {
+		return
+	}
+	if e.mode == ModeSearch {
+		e.searchQuery = e.searchQuery[:0]
+		e.searchCursor = 0
+		e.searchMatches = nil
+		e.searchHistoryIndex = -1
+	}
+	e.mode = ModeCommand
+	e.cmd = e.cmd[:0]
+	e.cmdCursor = 0
+	e.cmdHistoryIndex = -1
+}
+
+type focusPane int
+
+const (
+	focusPaneSidebar focusPane = iota
+	focusPaneEditor
+	focusPaneAIPanel
+)
+
+func (e *Editor) focusablePanes() []focusPane {
+	panes := make([]focusPane, 0, 3)
+	if e.sidebar != nil && e.sidebar.Visible {
+		panes = append(panes, focusPaneSidebar)
+	}
+	panes = append(panes, focusPaneEditor)
+	if e.aiPanel != nil && e.aiPanel.Visible {
+		panes = append(panes, focusPaneAIPanel)
+	}
+	return panes
+}
+
+func (e *Editor) currentPane() focusPane {
+	if e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused {
+		return focusPaneSidebar
+	}
+	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused {
+		return focusPaneAIPanel
+	}
+	return focusPaneEditor
+}
+
+func (e *Editor) focusPane(target focusPane) {
+	switch target {
+	case focusPaneSidebar:
+		if e.sidebar == nil || !e.sidebar.Visible {
+			return
+		}
+		e.focusSidebar()
+	case focusPaneAIPanel:
+		if e.aiPanel == nil || !e.aiPanel.Visible {
+			return
+		}
+		e.focusAIPanel()
+	default:
+		e.focusEditor()
+	}
+}
+
+func (e *Editor) focusPrevPane() {
+	panes := e.focusablePanes()
+	if len(panes) < 2 {
+		return
+	}
+	current := e.currentPane()
+	idx := 0
+	found := false
+	for i, pane := range panes {
+		if pane == current {
+			idx = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		e.focusPane(panes[0])
+		return
+	}
+	idx--
+	if idx < 0 {
+		idx = len(panes) - 1
+	}
+	e.focusPane(panes[idx])
+}
+
+func (e *Editor) focusNextPane() {
+	panes := e.focusablePanes()
+	if len(panes) < 2 {
+		return
+	}
+	current := e.currentPane()
+	idx := 0
+	found := false
+	for i, pane := range panes {
+		if pane == current {
+			idx = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		e.focusPane(panes[0])
+		return
+	}
+	idx++
+	if idx >= len(panes) {
+		idx = 0
+	}
+	e.focusPane(panes[idx])
 }
 
 // ShowSidebarBranches shows branches in the sidebar
@@ -1832,6 +2068,16 @@ func (e *Editor) ConsumeSidebarBranchSelection() string {
 	selection := e.branchPickerSelection
 	e.branchPickerSelection = ""
 	return selection
+}
+
+// ConsumeSidebarOpenFile consumes the file path selected from sidebar.
+func (e *Editor) ConsumeSidebarOpenFile() (string, bool) {
+	if e.sidebarOpenFilePath == "" {
+		return "", false
+	}
+	path := e.sidebarOpenFilePath
+	e.sidebarOpenFilePath = ""
+	return path, true
 }
 
 // setPendingFindChar sets up pending char find (f/F/t/T)

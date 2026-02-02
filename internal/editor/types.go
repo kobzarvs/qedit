@@ -30,10 +30,16 @@ const (
 	actionMoveLineDown       = "move_line_down"
 	actionToggleLineNumbers  = "toggle_line_numbers"
 	actionBranchPicker       = "branch_picker"
+	actionOpenFileTree       = "open_file_tree"
 	actionToggleSidebar      = "toggle_sidebar"
 	actionToggleSidebarFocus = "toggle_sidebar_focus"
+	actionFocusSidebar       = "focus_sidebar"
+	actionFocusPrevPane      = "focus_prev_pane"
+	actionFocusNextPane      = "focus_next_pane"
 	actionToggleAIPanelFocus = "toggle_ai_panel_focus"
+	actionFocusAIPanel       = "focus_ai_panel"
 	actionFocusEditor        = "focus_editor"
+	actionFocusCommandLine   = "focus_command"
 	actionEnterInsert        = "enter_insert"
 	actionEnterNormal        = "enter_normal"
 	actionEnterCommand       = "enter_command"
@@ -168,6 +174,7 @@ var AvailableCommands = []CommandInfo{
 	{"ln rel", "relative line numbers", CmdGroupView},
 	{"merge", "merge mode", CmdGroupView},
 	{"auto-reload-on-changes", "auto reload on external changes", CmdGroupView},
+	{"tree", "open file tree", CmdGroupView},
 	// Edit
 	{"fmt", "format code", CmdGroupEdit},
 	// Sidebar
@@ -389,100 +396,111 @@ type Editor struct {
 	Selection
 	UndoManager
 	SearchState
-	scroll                       int
-	scrollX                      int // horizontal scroll offset (visual columns)
-	mode                         Mode
-	filename                     string
-	fileSnapshot                 fileSnapshot
-	diskContent                  string
-	externalChange               ExternalChange
-	autoReloadOnChanges          bool
-	autoReloadInProgress         bool
-	dirty                        bool
-	conflictBlocks               []conflictBlock
-	conflictBlocksDirty          bool
-	keymap                       keymapSet
-	cmd                          []rune
-	cmdCursor                    int      // cursor position within cmd
-	cmdHistory                   []string // command history
-	cmdHistoryIndex              int      // current position in history (-1 = not browsing)
-	cmdHistoryPrefix             string   // prefix for filtered history search
-	cmdHistoryPath               string   // command history file path
-	searchHistoryPath            string   // search history file path
-	statusMessage                string
-	tabWidth                     int
-	viewHeight                   int
-	viewWidth                    int
-	styleMain                    Style
-	styleStatus                  Style
-	styleStatusWarning           Style
-	styleMergeLocal              Style
-	styleMergeRemote             Style
-	styleMergeHeader             Style
-	styleCommand                 Style
-	styleLineNumber              Style
-	styleLineNumberActive        Style
-	styleSelection               Style
-	styleSearchMatch             Style
-	styleSyntaxKeyword           Style
-	styleSyntaxString            Style
-	styleSyntaxComment           Style
-	styleSyntaxType              Style
-	styleSyntaxFunction          Style
-	styleSyntaxNumber            Style
-	styleSyntaxConstant          Style
-	styleSyntaxOperator          Style
-	styleSyntaxPunctuation       Style
-	styleSyntaxField             Style
-	styleSyntaxBuiltin           Style
-	styleSyntaxUnknown           Style
-	styleSyntaxVariable          Style
-	styleSyntaxParameter         Style
-	styleTableBorder             Style
-	styleAIReasoning             Style
-	styleAIUser                  Style
-	styleAIAssistant             Style
-	styleAIThinking              Style
-	styleAIStatusOnline          Style
-	styleAIHeader                Style
-	styleBranch                  Style
-	styleMainBranch              Style
-	styleLayoutUS                Style
-	styleLayoutRU                Style
-	styleLayoutOther             Style
-	styleAutoComplete            Style
-	styleAutoCompleteHotkey      Style
-	styleAutoCompleteDescription Style
-	styleAutoCompleteGroup       Style
-	styleCommandCheckmark        Style
-	styleScrollIndicator         Style
-	styleBranchMarker            Style
-	styleFilterActive            Style
-	styleFilterInactive          Style
-	styleBoxBorder               Style
-	lineNumberMode               LineNumberMode
-	layoutName                   string
-	gitBranch                    string
-	gitMainBranch                string // detected main branch (main/master)
-	gitBranchSymbol              string
-	highlights                   map[int][]HighlightSpan
-	highlightStart               int
-	highlightEnd                 int
-	changeTick                   uint64
-	lastEdit                     TextEdit
-	branchPickerActive           bool
-	branchPickerItems            []string
-	branchPickerIndex            int
-	branchPickerRequested        bool
-	branchPickerSelection        string
-	sidebar                      *Sidebar
-	sidebarStyles                SidebarStyles
-	lastKeyCombo                 string
-	freeScroll                   bool
-	lastScrollTime               time.Time
-	systemClipboard              Clipboard
-	formatter                    Formatter
-	terminalZoomer               TerminalZoomer
+	scroll                        int
+	scrollX                       int // horizontal scroll offset (visual columns)
+	mode                          Mode
+	filename                      string
+	fileSnapshot                  fileSnapshot
+	diskContent                   string
+	externalChange                ExternalChange
+	autoReloadOnChanges           bool
+	autoReloadInProgress          bool
+	dirty                         bool
+	conflictBlocks                []conflictBlock
+	conflictBlocksDirty           bool
+	keymap                        keymapSet
+	cmd                           []rune
+	cmdCursor                     int      // cursor position within cmd
+	cmdHistory                    []string // command history
+	cmdHistoryIndex               int      // current position in history (-1 = not browsing)
+	cmdHistoryPrefix              string   // prefix for filtered history search
+	cmdHistoryPath                string   // command history file path
+	searchHistoryPath             string   // search history file path
+	statusMessage                 string
+	tabWidth                      int
+	viewHeight                    int
+	viewWidth                     int
+	styleMain                     Style
+	styleStatus                   Style
+	styleStatusWarning            Style
+	styleMergeLocal               Style
+	styleMergeRemote              Style
+	styleMergeHeader              Style
+	styleCommand                  Style
+	styleLineNumber               Style
+	styleLineNumberActive         Style
+	styleSelection                Style
+	styleSearchMatch              Style
+	styleSyntaxKeyword            Style
+	styleSyntaxString             Style
+	styleSyntaxComment            Style
+	styleSyntaxType               Style
+	styleSyntaxFunction           Style
+	styleSyntaxNumber             Style
+	styleSyntaxConstant           Style
+	styleSyntaxOperator           Style
+	styleSyntaxPunctuation        Style
+	styleSyntaxField              Style
+	styleSyntaxBuiltin            Style
+	styleSyntaxUnknown            Style
+	styleSyntaxVariable           Style
+	styleSyntaxParameter          Style
+	styleTableBorder              Style
+	styleAIReasoning              Style
+	styleAIUser                   Style
+	styleAIAssistant              Style
+	styleAIThinking               Style
+	styleAIStatusOnline           Style
+	styleAIHeader                 Style
+	styleBranch                   Style
+	styleMainBranch               Style
+	styleLayoutUS                 Style
+	styleLayoutRU                 Style
+	styleLayoutOther              Style
+	styleAutoComplete             Style
+	styleAutoCompleteHotkey       Style
+	styleAutoCompleteDescription  Style
+	styleAutoCompleteGroup        Style
+	styleCommandCheckmark         Style
+	styleScrollIndicator          Style
+	styleBranchMarker             Style
+	styleFilterActive             Style
+	styleFilterInactive           Style
+	styleBoxBorder                Style
+	lineNumberMode                LineNumberMode
+	layoutName                    string
+	gitBranch                     string
+	gitMainBranch                 string // detected main branch (main/master)
+	gitBranchSymbol               string
+	highlights                    map[int][]HighlightSpan
+	highlightStart                int
+	highlightEnd                  int
+	changeTick                    uint64
+	lastEdit                      TextEdit
+	branchPickerActive            bool
+	branchPickerItems             []string
+	branchPickerIndex             int
+	branchPickerRequested         bool
+	branchPickerSelection         string
+	sidebar                       *Sidebar
+	sidebarStyles                 SidebarStyles
+	fileTreeShowHidden            bool
+	fileTreeShowIgnored           bool
+	sidebarOpenFilePath           string
+	fileTreePreviewActive         bool
+	fileTreePreviewPath           string
+	fileTreePreviewText           *TextBuffer
+	fileTreePreviewScroll         int
+	fileTreePreviewScrollX        int
+	fileTreePreviewHighlights     map[int][]HighlightSpan
+	fileTreePreviewHighlightStart int
+	fileTreePreviewHighlightEnd   int
+	lastKeyCombo                  string
+	freeScroll                    bool
+	lastScrollTime                time.Time
+	systemClipboard               Clipboard
+	formatter                     Formatter
+	terminalZoomer                TerminalZoomer
 
 	// Helix-style state
 	clipboard                  [][]rune // yanked text (lines)

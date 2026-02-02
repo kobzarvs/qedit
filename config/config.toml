@@ -3,6 +3,8 @@ tab-width = 4
 line-numbers = "absolute"
 git-branch-symbol = ""
 highlight-max-bytes = 8388608 # 0 = no limit
+file-tree-show-hidden = false
+file-tree-show-ignored = false
 
 [theme]
 theme = "ayu"
@@ -26,6 +28,11 @@ end = "line_end"
 "cmd+down" = "move_line_down"
 "cmd+l" = "toggle_line_numbers"
 "cmd+b" = "branch_picker"
+"cmd+o" = "open_file_tree"
+"alt+left" = "focus_prev_pane"
+"alt+right" = "focus_next_pane"
+"alt+up" = "focus_editor"
+"alt+down" = "focus_command"
 "alt+1" = "toggle_sidebar"
 "alt+2" = "focus_editor"
 "alt+3" = "ai_panel"
@@ -67,6 +74,11 @@ end = "line_end"
 "cmd+down" = "move_line_down"
 "cmd+l" = "toggle_line_numbers"
 "cmd+b" = "branch_picker"
+"cmd+o" = "open_file_tree"
+"alt+left" = "focus_prev_pane"
+"alt+right" = "focus_next_pane"
+"alt+up" = "focus_editor"
+"alt+down" = "focus_command"
 "alt+1" = "toggle_sidebar"
 "alt+2" = "focus_editor"
 "alt+3" = "ai_panel"

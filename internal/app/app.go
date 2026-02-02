@@ -108,6 +108,8 @@ func (a *App) Run() error {
 		SidebarMinWidth:         cfg.Editor.SidebarMinWidth,
 		SidebarMaxWidth:         cfg.Editor.SidebarMaxWidth,
 		SidebarCloseOnSelect:    cfg.Editor.SidebarCloseOnSelect,
+		FileTreeShowHidden:      cfg.Editor.FileTreeShowHidden,
+		FileTreeShowIgnored:     cfg.Editor.FileTreeShowIgnored,
 		AutoReloadOnChanges:     cfg.Editor.AutoReloadOnChanges,
 		KeymapNormal:            cfg.Keymap.Normal,
 		KeymapInsert:            cfg.Keymap.Insert,
@@ -148,6 +150,44 @@ func (a *App) Run() error {
 			out[line] = dst
 		}
 		return out
+	})
+	ed.SetHighlightRangeFunc(func(path string, startLine, endLine int) map[int][]editor.HighlightSpan {
+		if path == "" || startLine < 0 || endLine < startLine {
+			return nil
+		}
+		if info, err := os.Stat(path); err != nil {
+			return nil
+		} else if highlightMaxBytes > 0 && info.Size() > highlightMaxBytes {
+			return nil
+		}
+		lang := langs.Match(path)
+		if lang == nil {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		if !ts.ParseSync(path, lang.Name, string(data)) {
+			return nil
+		}
+		spans := ts.Highlights(path, startLine, endLine)
+		if spans == nil {
+			return nil
+		}
+		editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
+		for line, lineSpans := range spans {
+			dst := make([]editor.HighlightSpan, len(lineSpans))
+			for i, span := range lineSpans {
+				dst[i] = editor.HighlightSpan{
+					StartCol: span.StartCol,
+					EndCol:   span.EndCol,
+					Kind:     span.Kind,
+				}
+			}
+			editorSpans[line] = dst
+		}
+		return editorSpans
 	})
 	ed.SetAutoReloadConfigHook(func(enabled bool) error {
 		if err := config.UpdateEditorAutoReloadOnChanges(enabled); err != nil {
@@ -254,9 +294,21 @@ func (a *App) Run() error {
 		autoReloadPending bool
 		autoReloadResults chan autoReloadResult
 	)
-	if openPath != "" {
-		absPath := openPath
-		if abs, err := filepath.Abs(openPath); err == nil {
+	resetFileWatcher := func(path string) {
+		if fileWatcher != nil {
+			_ = fileWatcher.Close()
+			fileWatcher = nil
+		}
+		fileEvents = nil
+		watchedPath = ""
+		pendingFileChange = false
+		lastFileEvent = time.Time{}
+
+		if path == "" {
+			return
+		}
+		absPath := path
+		if abs, err := filepath.Abs(path); err == nil {
 			absPath = abs
 		}
 		watchedPath = absPath
@@ -264,51 +316,56 @@ func (a *App) Run() error {
 		watcher, err := fsnotify.NewWatcher()
 		if err != nil {
 			logger.Warn("file watcher unavailable", "error", err)
-		} else if err := watcher.Add(watchedDir); err != nil {
+			return
+		}
+		if err := watcher.Add(watchedDir); err != nil {
 			_ = watcher.Close()
 			logger.Warn("file watcher disabled", "error", err)
-		} else {
-			fileWatcher = watcher
-			fileEvents = make(chan time.Time, 1)
-			go func() {
-				sendEvent := func(ts time.Time) {
-					select {
-					case fileEvents <- ts:
-						return
-					default:
-					}
-					select {
-					case <-fileEvents:
-					default:
-					}
-					select {
-					case fileEvents <- ts:
-					default:
-					}
-				}
-				for {
-					select {
-					case ev, ok := <-watcher.Events:
-						if !ok {
-							return
-						}
-						if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
-							continue
-						}
-						if filepath.Clean(ev.Name) != watchedPath {
-							continue
-						}
-						sendEvent(time.Now())
-						_ = s.PostEvent(tcell.NewEventInterrupt(nil))
-					case err, ok := <-watcher.Errors:
-						if !ok {
-							return
-						}
-						logger.Warn("file watcher error", "error", err)
-					}
-				}
-			}()
+			return
 		}
+		fileWatcher = watcher
+		fileEvents = make(chan time.Time, 1)
+		go func(w *fsnotify.Watcher, events chan time.Time) {
+			sendEvent := func(ts time.Time) {
+				select {
+				case events <- ts:
+					return
+				default:
+				}
+				select {
+				case <-events:
+				default:
+				}
+				select {
+				case events <- ts:
+				default:
+				}
+			}
+			for {
+				select {
+				case ev, ok := <-w.Events:
+					if !ok {
+						return
+					}
+					if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
+						continue
+					}
+					if filepath.Clean(ev.Name) != watchedPath {
+						continue
+					}
+					sendEvent(time.Now())
+					_ = s.PostEvent(tcell.NewEventInterrupt(nil))
+				case err, ok := <-w.Errors:
+					if !ok {
+						return
+					}
+					logger.Warn("file watcher error", "error", err)
+				}
+			}
+		}(watcher, fileEvents)
+	}
+	if openPath != "" {
+		resetFileWatcher(openPath)
 	}
 	if fileWatcher != nil {
 		defer func() { _ = fileWatcher.Close() }()
@@ -553,6 +610,112 @@ func (a *App) Run() error {
 			highlightExpected = false
 		}
 	}
+
+	openFileInEditor := func(path string) error {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return nil
+		}
+		absPath := path
+		if abs, err := filepath.Abs(path); err == nil {
+			absPath = abs
+		}
+		if openPath == absPath {
+			return nil
+		}
+		if err := ed.OpenFile(absPath); err != nil {
+			return err
+		}
+		openPath = absPath
+		gitPath = absPath
+		highlightEnabled = true
+		if highlightMaxBytes > 0 {
+			if info, err := os.Stat(absPath); err == nil && info.Size() > highlightMaxBytes {
+				highlightEnabled = false
+			}
+		}
+		content := ed.Content()
+		ls.OpenFile(absPath, content)
+		langName = ""
+		if highlightEnabled {
+			if lang := langs.Match(absPath); lang != nil {
+				langName = lang.Name
+			}
+		}
+		highlightExpected = highlightEnabled && langName != ""
+
+		lastChangeTick = ed.ChangeTick()
+		lastHighlightStart = -1
+		lastHighlightEnd = -1
+		if highlightEnabled && langName != "" {
+			if ts.ParseSync(absPath, langName, ed.Content()) {
+				_, h := s.Size()
+				viewHeight := h - 2
+				if viewHeight < 0 {
+					viewHeight = 0
+				}
+				end := viewHeight - 1
+				if end < 0 {
+					end = 0
+				}
+				lineCount := ed.LineCount()
+				if lineCount > 0 && end >= lineCount {
+					end = lineCount - 1
+				}
+				spans := ts.Highlights(absPath, 0, end)
+				if spans != nil {
+					editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
+					for line, lineSpans := range spans {
+						dst := make([]editor.HighlightSpan, len(lineSpans))
+						for i, span := range lineSpans {
+							dst[i] = editor.HighlightSpan{
+								StartCol: span.StartCol,
+								EndCol:   span.EndCol,
+								Kind:     span.Kind,
+							}
+						}
+						editorSpans[line] = dst
+					}
+					ed.SetHighlights(0, end, editorSpans)
+					lastHighlightStart = 0
+					lastHighlightEnd = end
+				}
+			} else {
+				highlightExpected = false
+				ed.SetHighlights(-1, -1, nil)
+			}
+		} else {
+			ed.SetHighlights(-1, -1, nil)
+		}
+
+		resetFileWatcher(absPath)
+		if autoReloadResults == nil {
+			autoReloadResults = make(chan autoReloadResult, 1)
+		}
+		ed.SetGitBranch(gitinfo.Branch(gitPath))
+		ed.SetGitMainBranch("")
+		gitRoot := gitinfo.Root(gitPath)
+		if gitRoot != "" {
+			sm := sessionMgr
+			var mainBranch string
+			if sm != nil {
+				if repoInfo, ok := sm.GetRepoInfo(gitRoot); ok && repoInfo.MainBranch != "" {
+					mainBranch = repoInfo.MainBranch
+				}
+			}
+			if mainBranch == "" {
+				mainBranch = gitinfo.MainBranch(gitPath)
+				if mainBranch != "" && sm != nil {
+					sm.SetRepoMainBranch(gitRoot, mainBranch)
+				}
+			}
+			if mainBranch != "" {
+				ed.SetGitMainBranch(mainBranch)
+			}
+		}
+		lastGitCheck = time.Now()
+		return nil
+	}
 	screen := ui.WrapScreen(s)
 	ed.Render(screen)
 	for {
@@ -610,6 +773,11 @@ func (a *App) Run() error {
 			} else {
 				ed.SetGitBranch(branch)
 				ed.SetStatusMessage("checked out " + branch)
+			}
+		}
+		if path, ok := ed.ConsumeSidebarOpenFile(); ok {
+			if err := openFileInEditor(path); err != nil {
+				ed.SetStatusMessage(err.Error())
 			}
 		}
 		if fileWatcher != nil {

@@ -4,32 +4,41 @@
 Режим файлового дерева для левого сайдбара.
 Flat-list навигация по директориям с возможностью быстрого просмотра файлов.
 
-**Зависимость**: требует реализации `Left Sidebar` (feature__left-sidebar__plan.md)
+**Зависимость**: требует `Left Sidebar` (feature__left-sidebar__plan.md). В коде сайдбар уже реализован (`internal/editor/sidebar.go`), поэтому FileTree должен быть реализован как `SidebarContent`.
 
 ---
 
 ## Ключевые решения
-- **Хоткей**: `Cmd+O` - открыть sidebar в режиме FileTree
-- **Dotfiles**: по умолчанию скрыты, `a` или `.` показывает
-- **Gitignore**: в git-репо скрываем gitignored файлы, `h` показывает
-- **Preview mode**: `v` - auto-update при движении курсора
+- **Хоткей**: `Cmd+O` открывает sidebar сразу в режиме FileTree. Нужен новый action (`open_file_tree`) и бинды в дефолтном keymap + `config.toml`.
+- **Dotfiles**: по умолчанию скрыты, `a` или `.` показывает.
+- **Gitignore**: в git-репо скрываем gitignored файлы, `h` показывает.
+- **Preview mode**: `v` — auto-update при смене выделения. Так как навигация обрабатывается контейнером Sidebar, обновление превью нужно делать на уровне `Editor.handleSidebarKey` после `Sidebar.HandleKey`.
+- **Esc vs menu**: в FileTree `esc` возвращает в меню (override), `q` закрывает сайдбар (поведение контейнера по умолчанию).
 
 ---
 
 ## 1. Data Structures
 
-### File Tree State (Editor struct)
+### SidebarFileTreeContent (new, implements SidebarContent)
 ```go
-// File tree mode state
-fileTreeDir            string
-fileTreeProjectRoot    string
-fileTreeShowHidden     bool   // toggle with 'a' or '.'
-fileTreeShowIgnored    bool   // toggle with 'h'
-fileTreeGitRoot        string
-fileTreeIgnorePatterns []gitignorePattern
-fileTreePreviewMode    bool
-fileTreeSelectedPath   string // for app.go to consume
+type SidebarFileTreeContent struct {
+    dir            string
+    projectRoot    string
+    showHidden     bool
+    showIgnored    bool
+    gitRoot        string
+    ignorePatterns []gitignorePattern
+    previewMode    bool
+    items          []SidebarItem
+    index          int
+}
 ```
+
+### Editor integration
+```go
+sidebarOpenFilePath string // set on SidebarActionOpenFile
+```
+`ConsumeSidebarOpenFile() (string, bool)` — для app.go (аналогично `ConsumeSidebarBranchSelection`).
 
 ### gitignore.go (new file)
 ```go
@@ -44,7 +53,7 @@ type gitignorePattern struct {
 
 ## 2. Configuration
 
-### EditorOptions (config.go)
+### EditorOptions (config.go / options.go)
 ```go
 // File tree specific (sidebar width is in Left Sidebar feature)
 FileTreeShowHidden  bool `toml:"file-tree-show-hidden"`  // default false
@@ -58,6 +67,11 @@ file-tree-show-hidden = false   # dotfiles
 file-tree-show-ignored = false  # gitignored files
 ```
 
+### Где обновлять
+- `internal/config/config.go`: поля + дефолты + `Load()` (через `md.IsDefined`).
+- `internal/editor/options.go`: новые поля в `Options`.
+- `internal/app/app.go`: прокинуть поля в `editor.New(...)`.
+
 ---
 
 ## 3. Key Bindings
@@ -65,124 +79,138 @@ file-tree-show-ignored = false  # gitignored files
 ### Global
 | Key | Action |
 |-----|--------|
-| `Cmd+O` | Open sidebar → FileTree mode |
+| `Cmd+O` | Open sidebar → FileTree mode (new action `open_file_tree`) |
+| `Alt+1` | Toggle sidebar menu (existing) |
 
 ### In FileTree Mode (sidebar focused)
 | Key | Action |
 |-----|--------|
 | `up/k` | Move up (from Sidebar) |
 | `down/j` | Move down (from Sidebar) |
-| `home/gg` | First item (from Sidebar) |
+| `home/g` | First item (Sidebar handles single `g`, no `gg`) |
 | `end/G` | Last item (from Sidebar) |
 | `pgup/pgdn` | Page navigation (from Sidebar) |
-| `enter/l/right` | Open file or enter directory |
+| `enter` | Open file or enter directory |
+| `right/l` | Open file or enter directory (handled in FileTree content) |
 | `backspace/left` | Go to parent directory |
 | `Cmd+Home` | Go to project root |
 | `v` | Toggle preview mode |
 | `a` or `.` | Toggle dotfiles (hidden) |
-| `h` | Toggle gitignored files |
-| `esc` | Back to sidebar menu |
+| `h` | Toggle gitignored files (override sidebar default back) |
+| `esc` | Back to sidebar menu (override sidebar close) |
 | `q` | Close sidebar |
 
 ---
 
 ## 4. Implementation Steps
 
-### Step 1: Config
-**File**: `internal/config/config.go`
-- Add `FileTreeShowHidden bool` (default false)
-- Add `FileTreeShowIgnored bool` (default false)
-- Add merge logic in `Load()`
+### Step 1: Config + Keymap
+- **Files**: `internal/config/config.go`, `internal/editor/options.go`, `internal/app/app.go`, `config/config.toml`
+- Add `file-tree-show-hidden/ignored` options with defaults.
+- Add new action `open_file_tree` and bind `cmd+o` in default keymaps and in sample `config.toml`.
 
 ### Step 2: Gitignore Parsing
 **File**: `internal/editor/gitignore.go` (new)
 - `type gitignorePattern struct`
-- `findGitRoot(dir string) string` - walk up to find .git
+- `findGitRoot(dir string) string` - walk up to find `.git`
 - `loadGitignore(gitRoot string) []gitignorePattern`
 - `matchesGitignore(patterns, path, isDir) bool`
 - Support: `*.ext`, `dir/`, `!negation`, `**/glob`
 
-### Step 3: File Tree State
-**File**: `internal/editor/editor.go`
-- Add file tree state fields to Editor struct
-- Initialize `fileTreeShowHidden/Ignored` from config in `New()`
+### Step 3: File Tree Content
+**File**: `internal/editor/sidebar_filetree.go` (new)
+- `type SidebarFileTreeContent struct` implements `SidebarContent`
+- `NewSidebarFileTreeContent(dir, projectRoot string, showHidden, showIgnored bool)`
+- `Items()`, `Title()`, `Index()`, `SetIndex()`, `Refresh()`
+- `Mode()` returns `SidebarModeFileTree`
 
 ### Step 4: File Listing
-**File**: `internal/editor/filetree.go` (new)
-- `(e *Editor) fileTreeOpen()` - activate FileTree mode
-- `(e *Editor) fileTreeLoadDir(dir string) error`
+**File**: `internal/editor/sidebar_filetree.go`
+- `loadDir(dir string) error`
   - Read directory
   - Mark items: IsDir, IsHidden (starts with `.`), IsIgnored
   - Filter based on show flags
   - Sort: ".." first, then dirs, then files (case-insensitive)
-  - Convert to `[]SidebarItem`
-  - Set `sidebar.Items`, `sidebar.Title` (truncated path)
+  - Convert to `[]SidebarItem` and store in content
+  - `.git` всегда скрыт
 
-### Step 5: Path Truncation
-**File**: `internal/editor/filetree.go`
-- `truncatePath(path, maxWidth) string`
-- Format: `"/first/.../last"` when too long
+### Step 5: Path Truncation (Header)
+Контейнер `Sidebar.Render` уже обрезает `Title()` по ширине простым cut.
+Если нужен формат `"/first/.../last"`:
+- Добавить `truncatePath(path, maxWidth)` в filetree
+- При открытии/обновлении брать ширину `e.sidebar.CalculateWidth(e.viewWidth)` и сохранять в `content.title`
+- На ресайзе потребуется `Refresh()` или повторное обновление заголовка
 
 ### Step 6: Navigation
-**File**: `internal/editor/filetree.go`
-- `(e *Editor) fileTreeEnter()` - open file or enter dir
-- `(e *Editor) fileTreeGoUp()` - parent directory
-- `(e *Editor) fileTreeGoToProjectRoot()` - Cmd+Home
-- `(e *Editor) fileTreeToggleHidden()` - 'a' or '.'
-- `(e *Editor) fileTreeToggleIgnored()` - 'h'
+**File**: `internal/editor/sidebar_filetree.go`
+- `enter()` — открывает файл или заходит в директорию
+- `goUp()` — parent directory
+- `goToProjectRoot()` — Cmd+Home
+- `toggleHidden()` — `a` or `.`
+- `toggleIgnored()` — `h`
+- `OnEnter()` возвращает `SidebarActionOpenFile` для файлов (path в `ActionData`)
 
 ### Step 7: Key Handling
-**File**: `internal/editor/filetree.go`
-- `(e *Editor) handleFileTreeKey(ev) bool`
-- Handle mode-specific keys: enter, backspace, v, a, h, Cmd+Home
-- Return false for unhandled → falls through to sidebar common
+**File**: `internal/editor/sidebar_filetree.go`
+- `HandleKey(ev)` перехватывает только mode-specific keys и не трогает `j/k` (пусть скролл/selection остаются у контейнера):
+  - `left/backspace` → `goUp()`
+  - `right/l` → `enter()`
+  - `a` / `.` → toggle hidden
+  - `h` → toggle ignored
+  - `v` → toggle preview
+  - `Cmd+Home` → go to project root
+  - `Esc` → `SidebarActionBackToMenu` (override стандартного close)
 
 ### Step 8: Preview Mode
-**File**: `internal/editor/filetree.go`
-- `(e *Editor) fileTreeTogglePreview()`
-- `(e *Editor) fileTreePreviewCurrent()`
-- Auto-update on cursor move when preview active
-- Render preview in editor area (read-only, with syntax)
+Так как `Sidebar` сам двигает selection, контент не знает о каждом `MoveUp/Down`.
+Обновление превью делается в `Editor.handleSidebarKey`:
+- после `action := e.sidebar.HandleKey(...)`
+- если текущий контент — FileTree и `previewMode == true` → `fileTreePreviewCurrent()`
+- не вызывать при `SidebarActionClose/BackToMenu/SwitchMode`
 
 ### Step 9: Editor Integration
-**File**: `internal/editor/editor.go`
-- In `handleNormal()`: `Cmd+O` → `fileTreeOpen()`
-- In sidebar key routing: if mode == FileTree → `handleFileTreeKey()`
-- On sidebar Enter action: call `fileTreeEnter()`
-- `ConsumeFileTreeSelection() (string, bool)` for app.go
+**Files**: `internal/editor/types.go`, `internal/editor/actions.go`, `internal/editor/input.go`
+- Добавить action `open_file_tree` и команду `:tree`
+- `switchSidebarMode` для `SidebarModeFileTree` вызывает `openSidebarFileTree()`
+- `openSidebarFileTree(dir string)`:
+  - закрывает refs picker (mutual exclusion)
+  - создает `SidebarFileTreeContent` (dir = cwd или dir текущего файла)
+  - `sidebar.MenuContent` обновляется для возврата в меню
+  - `sidebar.Open(content)`
+- `handleSidebarKey`: при `SidebarActionOpenFile` сохраняет `sidebarOpenFilePath` и закрывает/снимает фокус в зависимости от `sidebar.CloseOnSelect`
 
 ### Step 10: App Integration
 **File**: `internal/app/app.go`
-- Set `fileTreeProjectRoot` when opening file
-- On `ConsumeFileTreeSelection()`: open selected file
+- Добавить `ed.ConsumeSidebarOpenFile()`:
+  - открывать файл как при старте (OpenFile + LSP + highlight + watcher)
+  - обновлять `gitPath`
+- Определить `projectRoot` для FileTree:
+  - приоритет: git root (если есть) → cwd → dir текущего файла
 
 ### Step 11: Commands
-**File**: `internal/editor/editor.go`
-- `:tree` - toggle FileTree mode
-- `:tree path` - open at specific path
+**File**: `internal/editor/actions.go`
+- `:tree` — открыть FileTree от cwd/dir файла
+- `:tree <path>` — открыть FileTree от указанного пути
 
 ---
 
 ## 5. File Listing Rules
 
-1. `".."` always first (unless at "/")
-2. Directories sorted alphabetically (case-insensitive)
-3. Files sorted alphabetically (case-insensitive)
-4. Directories before files
-5. Dotfiles filtered when `fileTreeShowHidden = false`
-6. Gitignored filtered when `fileTreeShowIgnored = false`
-7. `.git` always hidden
+1. `".."` всегда первым (если не `/`)
+2. Директории сортируются по алфавиту (case-insensitive)
+3. Файлы сортируются по алфавиту (case-insensitive)
+4. Директории выше файлов
+5. Dotfiles скрыты, если `showHidden = false`
+6. Gitignored скрыты, если `showIgnored = false`
+7. `.git` всегда скрыт
+
+При показе hidden/ignored элементы рендерятся с `SidebarStyles.Hidden/Ignored`.
 
 ---
 
-## 6. Path Truncation
+## 6. Path Truncation (Optional)
 
-When path > sidebarWidth - 2:
-```
-/Users/diver/projects/myproject/src/components
-→ /Users/.../components
-```
-
+Если нужен формат `"/first/.../last"`, используем:
 ```go
 func truncatePath(path string, maxWidth int) string {
     if len(path) <= maxWidth {
@@ -199,7 +227,6 @@ func truncatePath(path string, maxWidth int) string {
     last := parts[len(parts)-1]
     result := first + "/.../" + last
     if len(result) > maxWidth {
-        // truncate last
         avail := maxWidth - len(first) - 5
         if avail > 3 {
             result = first + "/.../" + last[:avail-3] + "..."
@@ -217,18 +244,22 @@ func truncatePath(path string, maxWidth int) string {
 
 | File | Changes |
 |------|---------|
-| `internal/config/config.go` | FileTreeShowHidden/Ignored |
+| `internal/config/config.go` | FileTreeShowHidden/Ignored, keymap default |
+| `internal/editor/options.go` | новые поля опций |
 | `internal/editor/gitignore.go` | **NEW** - gitignore parsing |
-| `internal/editor/filetree.go` | **NEW** - FileTree mode logic |
-| `internal/editor/editor.go` | FileTree state, key routing |
-| `internal/app/app.go` | Project root, file open |
+| `internal/editor/sidebar_filetree.go` | **NEW** - FileTree mode content |
+| `internal/editor/input.go` | open/switch FileTree, handle SidebarActionOpenFile |
+| `internal/editor/actions.go` | `open_file_tree`, `:tree` |
+| `internal/editor/types.go` | action + command list |
+| `internal/app/app.go` | ConsumeSidebarOpenFile |
+| `config/config.toml` | дефолтные бинды |
 
 ---
 
 ## 8. Verification
 
 1. `make build` - компиляция
-2. `make test` - тесты для gitignore.go, filetree.go
+2. `make test` - тесты для `gitignore.go`, `sidebar_filetree.go`
 3. `make lint` - линтер
 4. Manual testing:
    - `Cmd+O` opens FileTree mode
@@ -236,9 +267,5 @@ func truncatePath(path string, maxWidth int) string {
    - `v` enables preview, auto-updates on move
    - `a` shows/hides dotfiles
    - `h` shows/hides gitignored (in git repo)
-   - Dimmed style for hidden/ignored when shown
-   - `backspace` goes to parent
-   - `Cmd+Home` returns to project root
-   - Path truncation works for long paths
-   - `:tree /path` opens at path
-   - Select file → opens in editor
+   - `backspace/left` goes to parent
+   - `esc` returns to menu, `q` closes

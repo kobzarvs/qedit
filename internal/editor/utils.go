@@ -424,6 +424,24 @@ func (e *Editor) gutterWidth() int {
 	return 1 + digits + 1 + diffWidth
 }
 
+func previewGutterWidth(lineCount int, mode LineNumberMode) int {
+	if mode == LineNumberOff {
+		return 0
+	}
+	if mode == LineNumberRelative {
+		mode = LineNumberAbsolute
+	}
+	maxLine := lineCount
+	if maxLine < 1 {
+		maxLine = 1
+	}
+	digits := len(strconv.Itoa(maxLine))
+	if digits < 2 {
+		digits = 2
+	}
+	return 1 + digits + 1
+}
+
 // fuzzyMatch checks if pattern matches text (simple substring for now)
 func fuzzyMatch(pattern, text string) bool {
 	if pattern == "" {
