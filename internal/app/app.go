@@ -196,6 +196,13 @@ func (a *App) Run() error {
 		cfg.Editor.AutoReloadOnChanges = enabled
 		return nil
 	})
+	ed.SetSidebarWidthConfigHook(func(width string) error {
+		if err := config.UpdateEditorSidebarWidth(width); err != nil {
+			return err
+		}
+		cfg.Editor.SidebarWidth = width
+		return nil
+	})
 	ed.SetFormatter(integrations.GoFormatter{})
 	if runtime.GOOS == "darwin" {
 		ed.SetClipboard(integrations.MacClipboard{})
@@ -492,6 +499,7 @@ func (a *App) Run() error {
 
 	// Determine main branch (from session cache or git)
 	gitRoot := gitinfo.Root(gitPath)
+	ed.SetGitRoot(gitRoot)
 	if gitRoot != "" {
 		sm := sessionMgr
 		var mainBranch string
@@ -695,6 +703,7 @@ func (a *App) Run() error {
 		ed.SetGitBranch(gitinfo.Branch(gitPath))
 		ed.SetGitMainBranch("")
 		gitRoot := gitinfo.Root(gitPath)
+		ed.SetGitRoot(gitRoot)
 		if gitRoot != "" {
 			sm := sessionMgr
 			var mainBranch string
@@ -776,8 +785,15 @@ func (a *App) Run() error {
 			}
 		}
 		if path, ok := ed.ConsumeSidebarOpenFile(); ok {
-			if err := openFileInEditor(path); err != nil {
+			err := openFileInEditor(path)
+			if err != nil {
 				ed.SetStatusMessage(err.Error())
+			}
+			ed.ApplyPendingGitDiffJump()
+			if locPath, line, col, ok := ed.ConsumePendingOpenLocation(); ok {
+				if err == nil && (locPath == "" || locPath == path) {
+					ed.JumpToLocation(line, col)
+				}
 			}
 		}
 		if fileWatcher != nil {

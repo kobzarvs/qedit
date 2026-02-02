@@ -18,7 +18,7 @@ const (
 	SidebarModeBranches                  // git branch selection (v1)
 	SidebarModeAI                        // AI providers/models
 	SidebarModeRecentHistory             // line-by-line history (future)
-	SidebarModeLocalChanges              // local changes history (future)
+	SidebarModeLocalChanges              // git changes
 	SidebarModeWorktrees                 // git worktrees (future)
 )
 
@@ -50,18 +50,27 @@ type SidebarActionData struct {
 
 // SidebarItem represents an item in the sidebar list
 type SidebarItem struct {
-	Label      string
-	Path       string // optional, for file paths
-	IsDir      bool
-	IsHidden   bool
-	IsIgnored  bool
-	IsCurrent  bool // e.g., current branch
-	Icon       rune // optional icon character
-	Hotkey     string
-	Available  bool
-	Mode       SidebarMode // for menu items
-	ShowStatus bool
-	Status     AIProviderStatus
+	Label         string
+	Path          string // optional, for file paths
+	IsDir         bool
+	IsHidden      bool
+	IsIgnored     bool
+	IsCurrent     bool // e.g., current branch
+	Icon          rune // optional icon character
+	IconStyle     Style
+	Hotkey        string
+	MatchIndices  []int
+	RightSegments []SidebarTextSegment
+	Available     bool
+	Mode          SidebarMode // for menu items
+	ShowStatus    bool
+	Status        AIProviderStatus
+}
+
+// SidebarTextSegment represents a styled text segment (used for right-aligned info).
+type SidebarTextSegment struct {
+	Text  string
+	Style Style
 }
 
 // SidebarContent interface - each mode implements this
@@ -110,6 +119,11 @@ type SidebarStyles struct {
 	Current            Style // current branch marker
 	StatusOnline       Style // provider online
 	StatusOffline      Style // provider offline
+	DiffAdd            Style // diff additions (+)
+	DiffDel            Style // diff deletions (-)
+	SearchMatch        Style // match highlight
+	SearchMatchFile    Style // match highlight for files
+	SearchMatchDir     Style // match highlight for dirs
 }
 
 // Sidebar is the main sidebar container
@@ -532,7 +546,9 @@ func (s *Sidebar) Render(screen Screen, styles SidebarStyles, x, y, w, h int) {
 		indicatorStyle := textStyle
 		if item.Icon != 0 {
 			indicator = item.Icon
-			if item.ShowStatus {
+			if item.IconStyle != nil {
+				indicatorStyle = item.IconStyle
+			} else if item.ShowStatus {
 				switch item.Status {
 				case AIProviderStatusOnline:
 					indicatorStyle = styles.StatusOnline
@@ -559,43 +575,92 @@ func (s *Sidebar) Render(screen Screen, styles SidebarStyles, x, y, w, h int) {
 
 		// Draw label
 		label := item.Label
-		hotkeyWidth := stringWidth(item.Hotkey)
+		rightWidth := 0
+		if len(item.RightSegments) > 0 {
+			for _, seg := range item.RightSegments {
+				rightWidth += stringWidth(seg.Text)
+			}
+		} else {
+			rightWidth = stringWidth(item.Hotkey)
+		}
 		maxLabelWidth := contentWidth - 2 - gapCols // left margin + right margin + optional status gap
-		if hotkeyWidth > 0 {
-			maxLabelWidth = contentWidth - 2 - gapCols - hotkeyWidth - 1
+		if rightWidth > 0 {
+			maxLabelWidth = contentWidth - 2 - gapCols - rightWidth - 1
 		}
 		if maxLabelWidth < 0 {
 			maxLabelWidth = 0
 		}
 		label = truncateToWidth(label, maxLabelWidth)
-
-		for _, r := range label {
+		labelRunes := []rune(label)
+		matchIdx := 0
+		for i, r := range labelRunes {
 			if col >= x+contentWidth-1 {
 				break
 			}
-			screen.SetContent(col, row, r, nil, textStyle)
+			runeStyle := textStyle
+			if matchIdx < len(item.MatchIndices) && item.MatchIndices[matchIdx] == i {
+				matchStyle := styles.SearchMatch
+				if item.IsDir {
+					if styles.SearchMatchDir != nil {
+						matchStyle = styles.SearchMatchDir
+					}
+				} else if styles.SearchMatchFile != nil {
+					matchStyle = styles.SearchMatchFile
+				}
+				if matchStyle != nil {
+					runeStyle = matchStyle
+				}
+				matchIdx++
+			}
+			screen.SetContent(col, row, r, nil, runeStyle)
 			col += runeWidth(r)
 		}
 
-		// Draw hotkey (right-aligned)
-		if hotkeyWidth > 0 {
-			hotkeyX := x + contentWidth - hotkeyWidth - 1
-			if hotkeyX > col {
-				// Hotkey style: keep hotkey color but use selected background if selected
-				hotkeyStyle := styles.Hotkey
-				if !item.Available {
-					hotkeyStyle = styles.Unavailable
-				}
-				if isSelected {
-					hotkeyStyle = hotkeyStyle.Background(selBg)
-				}
-				hotkeyCol := hotkeyX
-				for _, r := range item.Hotkey {
-					if hotkeyCol >= x+contentWidth {
-						break
+		// Draw right-aligned info (hotkey or segments)
+		if rightWidth > 0 {
+			rightX := x + contentWidth - rightWidth - 1
+			if rightX > col {
+				if len(item.RightSegments) > 0 {
+					rightCol := rightX
+					for _, seg := range item.RightSegments {
+						if rightCol >= x+contentWidth {
+							break
+						}
+						segStyle := seg.Style
+						if segStyle == nil {
+							segStyle = styles.Hotkey
+						}
+						if !item.Available {
+							segStyle = styles.Unavailable
+						}
+						if isSelected {
+							segStyle = segStyle.Background(selBg)
+						}
+						for _, r := range seg.Text {
+							if rightCol >= x+contentWidth {
+								break
+							}
+							screen.SetContent(rightCol, row, r, nil, segStyle)
+							rightCol += runeWidth(r)
+						}
 					}
-					screen.SetContent(hotkeyCol, row, r, nil, hotkeyStyle)
-					hotkeyCol += runeWidth(r)
+				} else {
+					// Hotkey style: keep hotkey color but use selected background if selected
+					hotkeyStyle := styles.Hotkey
+					if !item.Available {
+						hotkeyStyle = styles.Unavailable
+					}
+					if isSelected {
+						hotkeyStyle = hotkeyStyle.Background(selBg)
+					}
+					hotkeyCol := rightX
+					for _, r := range item.Hotkey {
+						if hotkeyCol >= x+contentWidth {
+							break
+						}
+						screen.SetContent(hotkeyCol, row, r, nil, hotkeyStyle)
+						hotkeyCol += runeWidth(r)
+					}
 				}
 			}
 		}

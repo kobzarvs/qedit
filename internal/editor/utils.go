@@ -406,7 +406,7 @@ func (e *Editor) toggleLineNumbers() {
 }
 func (e *Editor) gutterWidth() int {
 	diffWidth := 0
-	if e.hasConflictBlocks() {
+	if e.hasConflictBlocks() || e.gitDiffGutterActive() {
 		diffWidth = 1
 	}
 	if e.lineNumberMode == LineNumberOff {

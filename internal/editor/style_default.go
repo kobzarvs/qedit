@@ -66,6 +66,7 @@ func defaultEditorStyles() EditorStyles {
 		FilterActive:            base,
 		FilterInactive:          base,
 		BoxBorder:               base,
+		NotificationFade:        []Style{base},
 		Sidebar: SidebarStyles{
 			Base:               base,
 			Dir:                base,
@@ -81,6 +82,11 @@ func defaultEditorStyles() EditorStyles {
 			Current:            base,
 			StatusOnline:       base,
 			StatusOffline:      base,
+			DiffAdd:            base,
+			DiffDel:            base,
+			SearchMatch:        base,
+			SearchMatchFile:    base,
+			SearchMatchDir:     base,
 		},
 	}
 }

@@ -43,6 +43,12 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	colors["selection-background"] = resolve(theme.SelectionBackground, colors["background"])
 	colors["search-foreground"] = resolve(theme.SearchMatchForeground, tcell.ColorBlack)
 	colors["search-background"] = resolve(theme.SearchMatchBackground, tcell.ColorYellow)
+	colors["sidebar-filter-file-foreground"] = resolve(theme.SidebarFilterFileForeground, colors["search-foreground"])
+	colors["sidebar-filter-dir-foreground"] = resolve(theme.SidebarFilterDirForeground, colors["sidebar-dir-foreground"])
+	colors["notification-foreground"] = resolve(theme.NotificationForeground, colors["search-foreground"])
+	colors["notification-background"] = resolve(theme.NotificationBackground, colors["search-background"])
+	colors["notification-fade-foreground"] = resolve(theme.NotificationFadeForeground, colors["statusline-foreground"])
+	colors["notification-fade-background"] = resolve(theme.NotificationFadeBackground, colors["statusline-background"])
 	colors["syntax-keyword"] = resolve(theme.SyntaxKeyword, colors["foreground"])
 	colors["syntax-string"] = resolve(theme.SyntaxString, colors["foreground"])
 	colors["syntax-comment"] = resolve(theme.SyntaxComment, colors["foreground"])
@@ -96,6 +102,8 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	colors["sidebar-status-offline-foreground"] = resolve(theme.SidebarStatusOfflineForeground, tcell.ColorRed)
 	colors["sidebar-hotkey-foreground"] = resolve(theme.SidebarHotkeyForeground, tcell.ColorBlue)
 	colors["sidebar-unavailable-foreground"] = resolve(theme.SidebarUnavailableForeground, colors["line-number-foreground"])
+	colors["sidebar-diff-add-foreground"] = resolve(theme.SidebarDiffAddForeground, colors["sidebar-status-online-foreground"])
+	colors["sidebar-diff-del-foreground"] = resolve(theme.SidebarDiffDelForeground, colors["sidebar-status-offline-foreground"])
 	colors["box-border-foreground"] = resolve(theme.BoxBorderForeground, colors["statusline-foreground"])
 	colors["box-border-background"] = resolve(theme.BoxBorderBackground, colors["statusline-background"])
 
@@ -143,6 +151,14 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	scrollIndicator := style(colors["line-number-active-foreground"], colors["background"])
 	boxBorder := style(colors["box-border-foreground"], colors["box-border-background"])
 
+	notificationFade := buildFadeStyles(
+		colors["notification-foreground"],
+		colors["notification-background"],
+		colors["notification-fade-foreground"],
+		colors["notification-fade-background"],
+		notificationFadeSteps,
+	)
+
 	sidebarBase := style(colors["sidebar-foreground"], colors["sidebar-background"])
 	sidebarDir := style(colors["sidebar-dir-foreground"], colors["sidebar-background"])
 	sidebarSelected := style(colors["sidebar-selected-foreground"], colors["sidebar-selected-background"])
@@ -155,6 +171,10 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	sidebarStatusOffline := style(colors["sidebar-status-offline-foreground"], colors["sidebar-background"])
 	sidebarHotkey := style(colors["sidebar-hotkey-foreground"], colors["sidebar-background"])
 	sidebarUnavailable := style(colors["sidebar-unavailable-foreground"], colors["sidebar-background"])
+	sidebarDiffAdd := style(colors["sidebar-diff-add-foreground"], colors["sidebar-background"])
+	sidebarDiffDel := style(colors["sidebar-diff-del-foreground"], colors["sidebar-background"])
+	sidebarFilterFile := style(colors["sidebar-filter-file-foreground"], colors["search-background"])
+	sidebarFilterDir := style(colors["sidebar-filter-dir-foreground"], colors["search-background"])
 
 	return editor.EditorStyles{
 		Main:                    main,
@@ -204,6 +224,7 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 		FilterActive:            selection,
 		FilterInactive:          command,
 		BoxBorder:               boxBorder,
+		NotificationFade:        notificationFade,
 		Sidebar: editor.SidebarStyles{
 			Base:               sidebarBase,
 			Dir:                sidebarDir,
@@ -219,12 +240,54 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 			Current:            sidebarIndicator,
 			StatusOnline:       sidebarStatusOnline,
 			StatusOffline:      sidebarStatusOffline,
+			DiffAdd:            sidebarDiffAdd,
+			DiffDel:            sidebarDiffDel,
+			SearchMatch:        searchMatch,
+			SearchMatchFile:    sidebarFilterFile,
+			SearchMatchDir:     sidebarFilterDir,
 		},
 	}
 }
 
 func style(fg, bg tcell.Color) editor.Style {
 	return wrapStyle(tcell.StyleDefault.Foreground(fg).Background(bg))
+}
+
+const notificationFadeSteps = 6
+
+func buildFadeStyles(fgStart, bgStart, fgEnd, bgEnd tcell.Color, steps int) []editor.Style {
+	if steps < 2 {
+		steps = 2
+	}
+	styles := make([]editor.Style, steps)
+	for i := 0; i < steps; i++ {
+		t := float64(i) / float64(steps-1)
+		fg := blendColor(fgStart, fgEnd, t)
+		bg := blendColor(bgStart, bgEnd, t)
+		styles[i] = wrapStyle(tcell.StyleDefault.Foreground(fg).Background(bg))
+	}
+	return styles
+}
+
+func blendColor(a, b tcell.Color, t float64) tcell.Color {
+	if t <= 0 {
+		return a
+	}
+	if t >= 1 {
+		return b
+	}
+	if a == tcell.ColorDefault || b == tcell.ColorDefault {
+		if t < 0.5 {
+			return a
+		}
+		return b
+	}
+	ar, ag, ab := a.RGB()
+	br, bg, bb := b.RGB()
+	r := int32(float64(ar) + (float64(br)-float64(ar))*t)
+	g := int32(float64(ag) + (float64(bg)-float64(ag))*t)
+	bl := int32(float64(ab) + (float64(bb)-float64(ab))*t)
+	return tcell.NewRGBColor(r, g, bl)
 }
 
 func parseColor(name string, fallback tcell.Color) tcell.Color {

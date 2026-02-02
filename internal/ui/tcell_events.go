@@ -130,6 +130,30 @@ func toEditorKey(key tcell.Key) editor.Key {
 		return editor.KeyCtrlY
 	case tcell.KeyCtrlZ:
 		return editor.KeyCtrlZ
+	case tcell.KeyF1:
+		return editor.KeyF1
+	case tcell.KeyF2:
+		return editor.KeyF2
+	case tcell.KeyF3:
+		return editor.KeyF3
+	case tcell.KeyF4:
+		return editor.KeyF4
+	case tcell.KeyF5:
+		return editor.KeyF5
+	case tcell.KeyF6:
+		return editor.KeyF6
+	case tcell.KeyF7:
+		return editor.KeyF7
+	case tcell.KeyF8:
+		return editor.KeyF8
+	case tcell.KeyF9:
+		return editor.KeyF9
+	case tcell.KeyF10:
+		return editor.KeyF10
+	case tcell.KeyF11:
+		return editor.KeyF11
+	case tcell.KeyF12:
+		return editor.KeyF12
 	default:
 		return editor.KeyUnknown
 	}

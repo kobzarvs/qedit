@@ -1491,6 +1491,15 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 		return false
 	}
 
+	if ev.Key() == KeyRune && ev.Rune() == ':' {
+		e.sidebar.Focused = false
+		e.mode = ModeCommand
+		e.cmd = e.cmd[:0]
+		e.cmdCursor = 0
+		e.cmdHistoryIndex = -1
+		return false
+	}
+
 	viewHeight := e.viewHeight - 1 // subtract header
 	var fileTreeContent *SidebarFileTreeContent
 	if content, ok := e.sidebar.Content.(*SidebarFileTreeContent); ok {
@@ -1499,8 +1508,19 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	action := e.sidebar.HandleKey(ev, viewHeight)
 	if fileTreeContent != nil {
 		e.updateFileTreePreview(fileTreeContent, action)
+		e.updateFileTreeStatus(fileTreeContent, action)
 		e.fileTreeShowHidden = fileTreeContent.ShowHidden()
 		e.fileTreeShowIgnored = fileTreeContent.ShowIgnored()
+		switch ev.Key() {
+		case KeyF2:
+			e.Notify(fileTreeContent.filterModeLabel())
+		case KeyF3:
+			if fileTreeContent.PreviewEnabled() {
+				e.Notify("Files: preview on")
+			} else {
+				e.Notify("Files: preview off")
+			}
+		}
 	}
 	logger.Debug("handleSidebarKey", "action", action.Action, "branch", action.Branch, "mode", action.Mode, "provider", action.Provider, "model", action.Model)
 
@@ -1545,6 +1565,10 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionOpenFile:
 		logger.Debug("sidebar action: open file", "path", action.Path)
 		if action.Path != "" {
+			if fileTreeContent != nil && isBinaryFile(action.Path) {
+				e.Notify("Files: binary preview only")
+				return false
+			}
 			e.sidebarOpenFilePath = action.Path
 			e.clearFileTreePreview()
 			if e.sidebar.CloseOnSelect {
@@ -1593,7 +1617,7 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 		e.setStatus("Recent History: not implemented yet")
 
 	case SidebarModeLocalChanges:
-		e.setStatus("Local Changes: not implemented yet")
+		e.openSidebarGitChanges()
 
 	case SidebarModeWorktrees:
 		e.setStatus("Worktrees: not implemented yet")
@@ -1698,6 +1722,43 @@ func (e *Editor) openSidebarFileTree(path string) {
 	}
 
 	content := NewSidebarFileTreeContent(startDir, e.fileTreeShowHidden, e.fileTreeShowIgnored)
+	e.sidebar.Open(content)
+}
+
+// openSidebarGitChanges opens the sidebar in git changes mode.
+func (e *Editor) openSidebarGitChanges() {
+	logger.Debug("openSidebarGitChanges called")
+	if e.sidebar == nil {
+		logger.Warn("openSidebarGitChanges: sidebar is nil")
+		return
+	}
+	if !e.isGitRepo() {
+		e.setStatus("not a git repository")
+		if e.sidebar.MenuContent != nil {
+			e.sidebar.MenuContent.SetAvailability(false, e.aiManager != nil)
+		}
+		return
+	}
+
+	// Close refs picker if open (mutual exclusion)
+	if e.refsPickerActive {
+		logger.Debug("openSidebarGitChanges: closing refs picker")
+		e.closeRefsPicker(false)
+	}
+
+	// Initialize menu content for later "back" navigation
+	if e.sidebar.MenuContent == nil {
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+	} else {
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+	}
+
+	if err := e.refreshGitChangesIfStale(2 * time.Second); err != nil {
+		logger.Error("openSidebarGitChanges: refresh failed", "error", err)
+		e.setStatus(err.Error())
+	}
+
+	content := NewSidebarGitChangesContent(e)
 	e.sidebar.Open(content)
 }
 
@@ -2139,6 +2200,29 @@ func keyString(ev EventKey) string {
 	if ev.Key() == KeyUnknown {
 		return ""
 	}
+	// Handle function keys with optional modifiers.
+	if ev.Key() >= KeyF1 && ev.Key() <= KeyF12 {
+		keyNum := int(ev.Key()-KeyF1) + 1
+		base := fmt.Sprintf("f%d", keyNum)
+		var parts []string
+		if ev.Modifiers()&ModMeta != 0 {
+			parts = append(parts, "cmd")
+		}
+		if ev.Modifiers()&ModCtrl != 0 {
+			parts = append(parts, "ctrl")
+		}
+		if ev.Modifiers()&ModShift != 0 {
+			parts = append(parts, "shift")
+		}
+		if ev.Modifiers()&ModAlt != 0 {
+			parts = append(parts, "alt")
+		}
+		if len(parts) == 0 {
+			return base
+		}
+		parts = append(parts, base)
+		return strings.Join(parts, "+")
+	}
 	// Handle alt+shift+arrow combinations first
 	if ev.Modifiers()&ModAlt != 0 && ev.Modifiers()&ModShift != 0 {
 		switch ev.Key() {
@@ -2398,6 +2482,30 @@ func keyStringDisplay(ev EventKey) string {
 			keyName = "Y"
 		case KeyCtrlZ:
 			keyName = "Z"
+		case KeyF1:
+			keyName = "F1"
+		case KeyF2:
+			keyName = "F2"
+		case KeyF3:
+			keyName = "F3"
+		case KeyF4:
+			keyName = "F4"
+		case KeyF5:
+			keyName = "F5"
+		case KeyF6:
+			keyName = "F6"
+		case KeyF7:
+			keyName = "F7"
+		case KeyF8:
+			keyName = "F8"
+		case KeyF9:
+			keyName = "F9"
+		case KeyF10:
+			keyName = "F10"
+		case KeyF11:
+			keyName = "F11"
+		case KeyF12:
+			keyName = "F12"
 		default:
 			keyName = fmt.Sprintf("KEY%d", ev.Key())
 		}

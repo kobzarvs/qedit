@@ -162,14 +162,21 @@ func matchesGitignore(patterns []gitignorePattern, relPath string, isDir bool) b
 		if p.IsDir && !isDir {
 			continue
 		}
-		if p.regex == nil {
-			continue
-		}
 		target := relPath
 		if p.matchBase {
 			target = path.Base(relPath)
 		}
-		if p.regex.MatchString(target) {
+		if p.regex == nil {
+			if p.matchBase && plainPatternMatch(p.Pattern, target) {
+				if p.Negation {
+					matched = false
+				} else {
+					matched = true
+				}
+			}
+			continue
+		}
+		if p.regex.MatchString(target) || (p.matchBase && plainPatternMatch(p.Pattern, target)) {
 			if p.Negation {
 				matched = false
 			} else {
@@ -178,4 +185,14 @@ func matchesGitignore(patterns []gitignorePattern, relPath string, isDir bool) b
 		}
 	}
 	return matched
+}
+
+func plainPatternMatch(pattern, target string) bool {
+	if pattern == "" || target == "" {
+		return false
+	}
+	if strings.ContainsAny(pattern, "*?[]") {
+		return false
+	}
+	return pattern == target
 }

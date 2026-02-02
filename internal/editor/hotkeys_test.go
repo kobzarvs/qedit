@@ -124,6 +124,30 @@ func eventForKeyString(t *testing.T, key string) EventKey {
 	}
 
 	switch base {
+	case "f1":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF1, 0, mod))
+	case "f2":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF2, 0, mod))
+	case "f3":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF3, 0, mod))
+	case "f4":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF4, 0, mod))
+	case "f5":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF5, 0, mod))
+	case "f6":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF6, 0, mod))
+	case "f7":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF7, 0, mod))
+	case "f8":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF8, 0, mod))
+	case "f9":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF9, 0, mod))
+	case "f10":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF10, 0, mod))
+	case "f11":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF11, 0, mod))
+	case "f12":
+		return wrapKey(tcell.NewEventKey(tcell.KeyF12, 0, mod))
 	case "left":
 		return wrapKey(tcell.NewEventKey(tcell.KeyLeft, 0, mod))
 	case "right":

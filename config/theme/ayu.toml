@@ -30,6 +30,16 @@ selection-background = "#27425A"
 search-foreground = "#000000"
 search-background = "#FFD700"
 
+# sidebar filter
+sidebar-filter-file-foreground = "search-foreground"
+sidebar-filter-dir-foreground = "sidebar-dir-foreground"
+
+# notification
+notification-foreground = "search-foreground"
+notification-background = "search-background"
+notification-fade-foreground = "statusline-foreground"
+notification-fade-background = "statusline-background"
+
 # syntax
 syntax-keyword = "#47A2ED" # "#77B9E2" #"#FFA759"
 syntax-string = "#BAE67E"
@@ -72,8 +82,8 @@ sidebar-background = "transparent"
 sidebar-dir-foreground = "#59C2FF"
 sidebar-selected-foreground = "#0A0E14"
 sidebar-selected-background = "#555555"
-sidebar-header-foreground = "#B3B1AD"
-sidebar-header-background = "#0F1419"
+sidebar-header-foreground = "#E6E1CF"
+sidebar-header-background = "#1B222A"
 sidebar-border-foreground = "#3E4B59"
 sidebar-hidden-foreground = "#3E4B59"
 sidebar-ignored-foreground = "#3E4B59"
@@ -82,6 +92,8 @@ sidebar-status-online-foreground = "#7FD962"
 sidebar-status-offline-foreground = "#E06C75"
 sidebar-hotkey-foreground = "#59C2FF"
 sidebar-unavailable-foreground = "#3E4B59"
+sidebar-diff-add-foreground = "#7FD962"
+sidebar-diff-del-foreground = "#E06C75"
 
 # box border
 box-border-foreground = "statusline-foreground"

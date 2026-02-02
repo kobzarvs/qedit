@@ -247,6 +247,12 @@ func (e *Editor) execAction(action string) bool {
 	case actionSearchPrev:
 		e.searchPrev()
 
+	// Git
+	case actionGitNextChange:
+		e.gotoGitChange(true)
+	case actionGitPrevChange:
+		e.gotoGitChange(false)
+
 	// Special
 	case actionInsertLineAbove:
 		e.insertLineAboveCursor()
@@ -421,6 +427,12 @@ func (e *Editor) execCommand(cmd string) bool {
 			}
 		} else {
 			if e.sidebar != nil {
+				if e.sidebarWidthConfigHook != nil {
+					if err := e.sidebarWidthConfigHook(args[0]); err != nil {
+						e.setStatus("config write failed: " + err.Error())
+						return false
+					}
+				}
 				e.sidebar.WidthConfig = args[0]
 				e.setStatus("sidebar width set to " + args[0])
 			}

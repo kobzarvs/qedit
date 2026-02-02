@@ -84,18 +84,24 @@ func testStyles() EditorStyles {
 		BranchMarker:            main,
 		FilterActive:            selection,
 		FilterInactive:          command,
+		NotificationFade:        []Style{searchMatch},
 		Sidebar: SidebarStyles{
-			Base:        main,
-			Dir:         main,
-			Selected:    selection,
-			Header:      main,
-			Border:      main,
-			Hidden:      main,
-			Ignored:     main,
-			Indicator:   main,
-			Hotkey:      main,
-			Unavailable: main,
-			Current:     main,
+			Base:            main,
+			Dir:             main,
+			Selected:        selection,
+			Header:          main,
+			Border:          main,
+			Hidden:          main,
+			Ignored:         main,
+			Indicator:       main,
+			Hotkey:          main,
+			Unavailable:     main,
+			Current:         main,
+			DiffAdd:         main,
+			DiffDel:         main,
+			SearchMatch:     searchMatch,
+			SearchMatchFile: searchMatch,
+			SearchMatchDir:  searchMatch,
 		},
 	}
 }
@@ -300,6 +306,30 @@ func toEditorKey(key tcell.Key) Key {
 		return KeyCtrlY
 	case tcell.KeyCtrlZ:
 		return KeyCtrlZ
+	case tcell.KeyF1:
+		return KeyF1
+	case tcell.KeyF2:
+		return KeyF2
+	case tcell.KeyF3:
+		return KeyF3
+	case tcell.KeyF4:
+		return KeyF4
+	case tcell.KeyF5:
+		return KeyF5
+	case tcell.KeyF6:
+		return KeyF6
+	case tcell.KeyF7:
+		return KeyF7
+	case tcell.KeyF8:
+		return KeyF8
+	case tcell.KeyF9:
+		return KeyF9
+	case tcell.KeyF10:
+		return KeyF10
+	case tcell.KeyF11:
+		return KeyF11
+	case tcell.KeyF12:
+		return KeyF12
 	default:
 		return KeyUnknown
 	}

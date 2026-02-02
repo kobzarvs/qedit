@@ -115,6 +115,10 @@ const (
 	actionSearchNext     = "search_next"     // n - next match
 	actionSearchPrev     = "search_prev"     // N - previous match
 
+	// Git
+	actionGitNextChange = "git_next_change" // F3 - next git change
+	actionGitPrevChange = "git_prev_change" // Shift+F3 - previous git change
+
 	// Special
 	actionInsertLineAbove = "insert_line_above" // Shift+Enter - insert indented line above cursor
 
@@ -417,6 +421,8 @@ type Editor struct {
 	cmdHistoryPath                string   // command history file path
 	searchHistoryPath             string   // search history file path
 	statusMessage                 string
+	notificationMessage           string
+	notificationStarted           time.Time
 	tabWidth                      int
 	viewHeight                    int
 	viewWidth                     int
@@ -467,11 +473,20 @@ type Editor struct {
 	styleFilterActive             Style
 	styleFilterInactive           Style
 	styleBoxBorder                Style
+	styleNotificationBright       Style
+	notificationFadeStyles        []Style
 	lineNumberMode                LineNumberMode
 	layoutName                    string
 	gitBranch                     string
 	gitMainBranch                 string // detected main branch (main/master)
 	gitBranchSymbol               string
+	gitRoot                       string
+	gitChanges                    []GitFileChange
+	gitChangeHunks                []GitChangeHunk
+	gitDiffHighlight              *GitChangeHunk
+	pendingGitDiffJump            bool
+	gitChangesUpdated             time.Time
+	gitChangesVersion             uint64
 	highlights                    map[int][]HighlightSpan
 	highlightStart                int
 	highlightEnd                  int
@@ -487,11 +502,16 @@ type Editor struct {
 	fileTreeShowHidden            bool
 	fileTreeShowIgnored           bool
 	sidebarOpenFilePath           string
+	pendingOpenLocation           bool
+	pendingOpenPath               string
+	pendingOpenLine               int
+	pendingOpenCol                int
 	fileTreePreviewActive         bool
 	fileTreePreviewPath           string
 	fileTreePreviewText           *TextBuffer
 	fileTreePreviewScroll         int
 	fileTreePreviewScrollX        int
+	fileTreePreviewBinary         bool
 	fileTreePreviewHighlights     map[int][]HighlightSpan
 	fileTreePreviewHighlightStart int
 	fileTreePreviewHighlightEnd   int
@@ -554,7 +574,8 @@ type Editor struct {
 	// Test hook for keymap coverage.
 	actionHook func(action string)
 
-	autoReloadConfigHook func(enabled bool) error
+	autoReloadConfigHook   func(enabled bool) error
+	sidebarWidthConfigHook func(width string) error
 
 	// Command autocomplete state
 	cmdAutoCompleteActive    bool

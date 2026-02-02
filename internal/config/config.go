@@ -49,6 +49,12 @@ type Theme struct {
 	SelectionBackground            string `toml:"selection-background"`
 	SearchMatchForeground          string `toml:"search-foreground"`
 	SearchMatchBackground          string `toml:"search-background"`
+	SidebarFilterFileForeground    string `toml:"sidebar-filter-file-foreground"`
+	SidebarFilterDirForeground     string `toml:"sidebar-filter-dir-foreground"`
+	NotificationForeground         string `toml:"notification-foreground"`
+	NotificationBackground         string `toml:"notification-background"`
+	NotificationFadeForeground     string `toml:"notification-fade-foreground"`
+	NotificationFadeBackground     string `toml:"notification-fade-background"`
 	SyntaxKeyword                  string `toml:"syntax-keyword"`
 	SyntaxString                   string `toml:"syntax-string"`
 	SyntaxComment                  string `toml:"syntax-comment"`
@@ -92,6 +98,8 @@ type Theme struct {
 	SidebarStatusOfflineForeground string `toml:"sidebar-status-offline-foreground"`
 	SidebarHotkeyForeground        string `toml:"sidebar-hotkey-foreground"`
 	SidebarUnavailableForeground   string `toml:"sidebar-unavailable-foreground"`
+	SidebarDiffAddForeground       string `toml:"sidebar-diff-add-foreground"`
+	SidebarDiffDelForeground       string `toml:"sidebar-diff-del-foreground"`
 	BoxBorderForeground            string `toml:"box-border-foreground"`
 	BoxBorderBackground            string `toml:"box-border-background"`
 }
@@ -145,6 +153,12 @@ func Default() Config {
 			SelectionBackground:            "#27425A",
 			SearchMatchForeground:          "#000000",
 			SearchMatchBackground:          "#FFD700",
+			SidebarFilterFileForeground:    "#000000",
+			SidebarFilterDirForeground:     "#59C2FF",
+			NotificationForeground:         "#000000",
+			NotificationBackground:         "#FFD700",
+			NotificationFadeForeground:     "#B3B1AD",
+			NotificationFadeBackground:     "#0F1419",
 			SyntaxKeyword:                  "#FFA759",
 			SyntaxString:                   "#BAE67E",
 			SyntaxComment:                  "#5C6773",
@@ -180,6 +194,8 @@ func Default() Config {
 			SidebarStatusOfflineForeground: "#E06C75",
 			SidebarHotkeyForeground:        "#59C2FF",
 			SidebarUnavailableForeground:   "#3E4B59",
+			SidebarDiffAddForeground:       "#7FD962",
+			SidebarDiffDelForeground:       "#E06C75",
 			BoxBorderForeground:            "",
 			BoxBorderBackground:            "",
 		},
@@ -233,6 +249,8 @@ func Default() Config {
 				"shift+tab":     "unindent",
 				"cmd+a":         "select_all",
 				"cmd+g":         "goto_line_prompt",
+				"f3":            "git_next_change",
+				"shift+f3":      "git_prev_change",
 
 				// Helix-style motions
 				"w": "word_forward",
@@ -343,6 +361,8 @@ func Default() Config {
 				"tab":           "indent",
 				"shift+tab":     "unindent",
 				"cmd+a":         "select_all",
+				"f3":            "git_next_change",
+				"shift+f3":      "git_prev_change",
 				"shift+enter":   "insert_line_above",
 
 				// File operations
@@ -512,6 +532,24 @@ func mergeTheme(dst *Theme, src Theme) {
 	if src.SearchMatchBackground != "" {
 		dst.SearchMatchBackground = src.SearchMatchBackground
 	}
+	if src.SidebarFilterFileForeground != "" {
+		dst.SidebarFilterFileForeground = src.SidebarFilterFileForeground
+	}
+	if src.SidebarFilterDirForeground != "" {
+		dst.SidebarFilterDirForeground = src.SidebarFilterDirForeground
+	}
+	if src.NotificationForeground != "" {
+		dst.NotificationForeground = src.NotificationForeground
+	}
+	if src.NotificationBackground != "" {
+		dst.NotificationBackground = src.NotificationBackground
+	}
+	if src.NotificationFadeForeground != "" {
+		dst.NotificationFadeForeground = src.NotificationFadeForeground
+	}
+	if src.NotificationFadeBackground != "" {
+		dst.NotificationFadeBackground = src.NotificationFadeBackground
+	}
 	if src.SyntaxKeyword != "" {
 		dst.SyntaxKeyword = src.SyntaxKeyword
 	}
@@ -641,6 +679,12 @@ func mergeTheme(dst *Theme, src Theme) {
 	if src.SidebarUnavailableForeground != "" {
 		dst.SidebarUnavailableForeground = src.SidebarUnavailableForeground
 	}
+	if src.SidebarDiffAddForeground != "" {
+		dst.SidebarDiffAddForeground = src.SidebarDiffAddForeground
+	}
+	if src.SidebarDiffDelForeground != "" {
+		dst.SidebarDiffDelForeground = src.SidebarDiffDelForeground
+	}
 	if src.BoxBorderForeground != "" {
 		dst.BoxBorderForeground = src.BoxBorderForeground
 	}
@@ -699,6 +743,36 @@ func UpdateEditorAutoReloadOnChanges(enabled bool) error {
 		cfg["editor"] = section
 	}
 	section["auto-reload-on-changes"] = enabled
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
+}
+
+// UpdateEditorSidebarWidth persists sidebar-width in config.
+func UpdateEditorSidebarWidth(width string) error {
+	path, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg := map[string]interface{}{}
+	if data, err := os.ReadFile(path); err == nil {
+		if _, err := toml.Decode(string(data), &cfg); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	section, ok := cfg["editor"].(map[string]interface{})
+	if !ok || section == nil {
+		section = map[string]interface{}{}
+		cfg["editor"] = section
+	}
+	section["sidebar-width"] = width
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

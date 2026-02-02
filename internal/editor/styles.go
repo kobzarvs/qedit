@@ -49,6 +49,7 @@ type EditorStyles struct {
 	FilterActive            Style
 	FilterInactive          Style
 	BoxBorder               Style
+	NotificationFade        []Style
 	Sidebar                 SidebarStyles
 }
 
@@ -101,5 +102,11 @@ func (e *Editor) SetStyles(s EditorStyles) {
 	e.styleFilterActive = s.FilterActive
 	e.styleFilterInactive = s.FilterInactive
 	e.styleBoxBorder = s.BoxBorder
+	e.notificationFadeStyles = s.NotificationFade
+	if len(s.NotificationFade) > 0 {
+		e.styleNotificationBright = s.NotificationFade[0]
+	} else {
+		e.styleNotificationBright = s.Status
+	}
 	e.sidebarStyles = s.Sidebar
 }

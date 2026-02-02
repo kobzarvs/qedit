@@ -254,6 +254,7 @@ func (e *Editor) SetAIMarkdownHighlightFunc(fn MarkdownHighlightFunc) {
 }
 func (e *Editor) SetStatusMessage(msg string) {
 	e.setStatus(msg)
+	e.Notify(msg)
 }
 func (e *Editor) ChangeTick() uint64 {
 	return e.changeTick

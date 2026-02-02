@@ -83,6 +83,8 @@ func TestSidebarSelectionKeepsForegrounds(t *testing.T) {
 		Hotkey:             hotkey,
 		Unavailable:        base,
 		Current:            base,
+		DiffAdd:            base,
+		DiffDel:            base,
 	}
 
 	sidebar.Render(screen, styles, 0, 0, 20, 4)

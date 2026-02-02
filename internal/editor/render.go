@@ -15,7 +15,9 @@ func (e *Editor) Render(s Screen) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	showTopMessage := e.showTopStatusMessage(w)
+	now := time.Now()
+	notificationActive := e.notificationActive(now)
+	showTopMessage := e.showTopStatusMessage(w) || notificationActive
 
 	statusY := h - 2
 	cmdY := h - 1
@@ -189,7 +191,11 @@ func (e *Editor) Render(s Screen) {
 		e.renderKeybindingsHelp(s, w, viewHeight)
 	}
 	if showTopMessage {
-		e.renderTopStatusMessage(s, w)
+		if notificationActive {
+			e.renderNotification(s, w, now)
+		} else {
+			e.renderTopStatusMessage(s, w)
+		}
 	}
 	sidebarFocused := e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
 	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || sidebarFocused || !cursorVisible {
@@ -231,6 +237,24 @@ func (e *Editor) renderTopStatusMessage(s Screen, w int) {
 	if e.externalChange != ExternalChangeNone || e.autoReloadInProgress {
 		style = e.styleStatusWarning
 	}
+	for x := 0; x < w; x++ {
+		r := ' '
+		if x < len(msgRunes) {
+			r = msgRunes[x]
+		}
+		s.SetContent(x, 0, r, nil, style)
+	}
+}
+
+func (e *Editor) renderNotification(s Screen, w int, now time.Time) {
+	if w <= 0 || e.notificationMessage == "" {
+		return
+	}
+	msgRunes := []rune(e.notificationMessage)
+	if len(msgRunes) > w {
+		msgRunes = msgRunes[:w]
+	}
+	style := e.notificationStyle(now)
 	for x := 0; x < w; x++ {
 		r := ' '
 		if x < len(msgRunes) {
@@ -965,8 +989,11 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 		return
 	}
 	kind, _ := e.conflictLineInfo(lineIdx)
+	if kind == conflictNone {
+		kind = e.gitDiffLineKind(lineIdx)
+	}
 	diffWidth := 0
-	if e.hasConflictBlocks() {
+	if e.hasConflictBlocks() || e.gitDiffGutterActive() {
 		diffWidth = 1
 	}
 	numWidth := gutterWidth - diffWidth
@@ -1697,6 +1724,8 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		// Search
 		"search_forward": "Search", "search_backward": "Search", "search_next": "Search", "search_prev": "Search",
 		"find_char": "Search", "find_char_backward": "Search", "till_char": "Search", "till_char_backward": "Search",
+		// Git
+		"git_next_change": "Git", "git_prev_change": "Git",
 		// Modes
 		"enter_insert": "Modes", "enter_command": "Modes", "goto_mode": "Modes", "match_mode": "Modes",
 		"view_mode": "Modes", "space_mode": "Modes", "merge_mode": "Modes",
@@ -1734,6 +1763,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"till_char": "Till char (t)", "till_char_backward": "Till char back (T)",
 		"search_forward": "Search /", "search_backward": "Search ?",
 		"search_next": "Next match (n)", "search_prev": "Prev match (N)",
+		"git_next_change": "Next git change", "git_prev_change": "Prev git change",
 		"replace_char": "Replace char (r)", "delete_line": "Delete line",
 		"branch_picker": "Branch picker", "insert_line_above": "Insert line above",
 		"toggle_line_numbers": "Toggle line numbers",
@@ -1758,6 +1788,12 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		}
 		allBindings = append(allBindings, keybinding{key, action, desc, group})
 	}
+	allBindings = append(allBindings, keybinding{
+		key:    "space-?",
+		action: "show_keybindings",
+		desc:   "Show all keybindings",
+		group:  "Help",
+	})
 
 	// Sort by group, then action, then key (stable order)
 	sort.Slice(allBindings, func(i, j int) bool {
