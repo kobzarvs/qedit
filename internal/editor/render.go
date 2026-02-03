@@ -1734,6 +1734,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"find_char": "Search", "find_char_backward": "Search", "till_char": "Search", "till_char_backward": "Search",
 		// Git
 		"git_next_change": "Git", "git_prev_change": "Git",
+		"worktree_menu": "Git", "worktree_new": "Git", "worktree_switch": "Git", "worktree_remove": "Git", "worktree_refresh": "Git",
 		// Modes
 		"enter_insert": "Modes", "enter_command": "Modes", "goto_mode": "Modes", "match_mode": "Modes",
 		"view_mode": "Modes", "space_mode": "Modes", "merge_mode": "Modes",
@@ -1772,6 +1773,8 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"search_forward": "Search /", "search_backward": "Search ?",
 		"search_next": "Next match (n)", "search_prev": "Prev match (N)",
 		"git_next_change": "Next git change", "git_prev_change": "Prev git change",
+		"worktree_menu": "Worktree menu", "worktree_new": "New worktree", "worktree_switch": "Switch worktree",
+		"worktree_remove": "Remove worktree", "worktree_refresh": "Refresh worktrees",
 		"replace_char": "Replace char (r)", "delete_line": "Delete line",
 		"branch_picker": "Branch picker", "insert_line_above": "Insert line above",
 		"toggle_line_numbers": "Toggle line numbers",

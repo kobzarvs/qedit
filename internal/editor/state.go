@@ -234,6 +234,9 @@ func (e *Editor) SetGitBranch(name string) {
 	if content, ok := e.sidebar.Content.(*SidebarBranchesContent); ok {
 		content.SetCurrent(name)
 	}
+	if content, ok := e.sidebar.Content.(*SidebarWorktreesContent); ok {
+		content.SetCurrentBranch(name)
+	}
 }
 func (e *Editor) SetGitMainBranch(name string) {
 	e.gitMainBranch = strings.TrimSpace(name)

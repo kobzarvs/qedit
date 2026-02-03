@@ -36,6 +36,7 @@ const (
 	SidebarActionSwitchMode                   // switch to different mode
 	SidebarActionOpenAIModels                 // open AI models list for provider
 	SidebarActionSetAIModel                   // set AI model
+	SidebarActionSwitchWorktree               // switch git worktree
 )
 
 // SidebarActionData contains action and associated data
@@ -46,6 +47,7 @@ type SidebarActionData struct {
 	Mode     SidebarMode // for SwitchMode
 	Provider string      // for AI provider selection
 	Model    string      // for AI model selection
+	Worktree string      // for worktree selection (path)
 }
 
 // SidebarItem represents an item in the sidebar list

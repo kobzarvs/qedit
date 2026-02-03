@@ -35,7 +35,7 @@ func (m *SidebarMenuContent) buildItems() {
 		{Label: "AI", Mode: SidebarModeAI, Hotkey: "", Available: m.aiAvail},
 		{Label: "Recent History", Mode: SidebarModeRecentHistory, Hotkey: "", Available: false},
 		{Label: "Git Changes", Mode: SidebarModeLocalChanges, Hotkey: "", Available: m.gitAvail},
-		{Label: "Worktrees", Mode: SidebarModeWorktrees, Hotkey: "", Available: m.gitAvail},
+		{Label: "Worktree", Mode: SidebarModeWorktrees, Hotkey: "Cmd+Shift+W", Available: m.gitAvail},
 	}
 }
 

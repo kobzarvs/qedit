@@ -30,6 +30,11 @@ const (
 	actionMoveLineDown       = "move_line_down"
 	actionToggleLineNumbers  = "toggle_line_numbers"
 	actionBranchPicker       = "branch_picker"
+	actionWorktreeMenu       = "worktree_menu"
+	actionWorktreeNew        = "worktree_new"
+	actionWorktreeSwitch     = "worktree_switch"
+	actionWorktreeRemove     = "worktree_remove"
+	actionWorktreeRefresh    = "worktree_refresh"
 	actionOpenFileTree       = "open_file_tree"
 	actionToggleSidebar      = "toggle_sidebar"
 	actionToggleSidebarFocus = "toggle_sidebar_focus"
@@ -149,11 +154,18 @@ type CommandInfo struct {
 	Group       string
 }
 
+// WorktreeInfo represents a git worktree entry for UI.
+type WorktreeInfo struct {
+	Path   string
+	Branch string
+}
+
 // Command groups for autocomplete
 const (
 	CmdGroupFile = "File"
 	CmdGroupEdit = "Edit"
 	CmdGroupView = "View"
+	CmdGroupGit  = "Git"
 )
 
 // Command groups for autocomplete
@@ -186,6 +198,13 @@ var AvailableCommands = []CommandInfo{
 	{"sidew", "set sidebar width", CmdGroupView},
 	{"sidebar-focus", "toggle sidebar focus", CmdGroupView},
 	{"focus-editor", "focus editor", CmdGroupView},
+	// Git
+	{"worktree", "open worktree menu", CmdGroupGit},
+	{"worktree list", "list worktrees", CmdGroupGit},
+	{"worktree new <name>", "create worktree from current branch", CmdGroupGit},
+	{"worktree switch <name>", "switch to worktree", CmdGroupGit},
+	{"worktree remove <name>", "remove worktree", CmdGroupGit},
+	{"worktree refresh", "refresh worktree list", CmdGroupGit},
 	// AI
 	{"ide", "toggle AI panel", CmdGroupAI},
 	{"ai-focus", "toggle AI panel focus", CmdGroupAI},
@@ -500,6 +519,8 @@ type Editor struct {
 	branchPickerIndex             int
 	branchPickerRequested         bool
 	branchPickerSelection         string
+	worktreeListRequested         bool
+	worktreeSwitchSelection       string
 	sidebar                       *Sidebar
 	sidebarStyles                 SidebarStyles
 	fileTreeShowHidden            bool

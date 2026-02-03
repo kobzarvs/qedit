@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/kobzarvs/qedit/internal/gitinfo"
 )
 
 func (e *Editor) execAction(action string) bool {
@@ -48,6 +50,19 @@ func (e *Editor) execAction(action string) bool {
 		e.toggleLineNumbers()
 	case actionBranchPicker:
 		e.openSidebarBranches()
+	case actionWorktreeMenu:
+		e.openSidebarWorktrees()
+	case actionWorktreeNew:
+		e.prefillCommand("worktree new ")
+		return false
+	case actionWorktreeSwitch:
+		e.prefillCommand("worktree switch ")
+		return false
+	case actionWorktreeRemove:
+		e.prefillCommand("worktree remove ")
+		return false
+	case actionWorktreeRefresh:
+		e.refreshSidebarWorktrees()
 	case actionOpenFileTree:
 		e.openSidebarFileTree("")
 	case actionToggleSidebar:
@@ -485,6 +500,8 @@ func (e *Editor) execCommand(cmd string) bool {
 		return false
 	case "ai":
 		return e.handleAICommand(args)
+	case "worktree", "worktrees":
+		return e.handleWorktreeCommand(args)
 	default:
 		// Check if command is a line number
 		if lineNum, err := strconv.Atoi(name); err == nil && lineNum > 0 {
@@ -652,6 +669,117 @@ func (e *Editor) handleAICommand(args []string) bool {
 		}
 		return false
 	}
+}
+
+func (e *Editor) handleWorktreeCommand(args []string) bool {
+	root := e.gitRoot
+	if root == "" {
+		root = e.detectGitRoot()
+	}
+	if root == "" {
+		e.setStatus("not a git repository")
+		return false
+	}
+	if len(args) == 0 {
+		e.openSidebarWorktrees()
+		return false
+	}
+	switch strings.ToLower(args[0]) {
+	case "list":
+		e.openSidebarWorktrees()
+		return false
+	case "refresh":
+		e.refreshSidebarWorktrees()
+		return false
+	case "new":
+		name := strings.TrimSpace(strings.Join(args[1:], " "))
+		if name == "" {
+			e.setStatus("usage: worktree new <name>")
+			return false
+		}
+		path, err := gitinfo.AddWorktree(root, name)
+		if err != nil {
+			e.setStatus(err.Error())
+			return false
+		}
+		e.setStatus("worktree created: " + name)
+		e.requestWorktreeRefreshIfActive()
+		e.worktreeSwitchSelection = path
+		return false
+	case "switch":
+		target := strings.TrimSpace(strings.Join(args[1:], " "))
+		if target == "" {
+			e.setStatus("usage: worktree switch <name>")
+			return false
+		}
+		path, err := e.resolveWorktreeTarget(root, target)
+		if err != nil {
+			e.setStatus(err.Error())
+			return false
+		}
+		e.worktreeSwitchSelection = path
+		return false
+	case "remove":
+		target := strings.TrimSpace(strings.Join(args[1:], " "))
+		if target == "" {
+			e.setStatus("usage: worktree remove <name>")
+			return false
+		}
+		path, err := e.resolveWorktreeTarget(root, target)
+		if err != nil {
+			e.setStatus(err.Error())
+			return false
+		}
+		if err := gitinfo.RemoveWorktree(root, path); err != nil {
+			e.setStatus(err.Error())
+			return false
+		}
+		e.setStatus("worktree removed: " + filepath.Base(path))
+		e.requestWorktreeRefreshIfActive()
+		return false
+	default:
+		e.setStatus("usage: worktree [list|new|switch|remove|refresh]")
+		return false
+	}
+}
+
+func (e *Editor) resolveWorktreeTarget(root, target string) (string, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "", errors.New("worktree name required")
+	}
+	worktrees, _, err := gitinfo.ListWorktrees(root)
+	if err != nil {
+		return "", err
+	}
+	targetAbs := target
+	if abs, err := filepath.Abs(target); err == nil {
+		targetAbs = abs
+	}
+	for _, wt := range worktrees {
+		if filepath.Clean(wt.Path) == filepath.Clean(target) || filepath.Clean(wt.Path) == filepath.Clean(targetAbs) {
+			return wt.Path, nil
+		}
+	}
+	for _, wt := range worktrees {
+		if wt.Branch == target {
+			return wt.Path, nil
+		}
+	}
+	for _, wt := range worktrees {
+		if filepath.Base(wt.Path) == target {
+			return wt.Path, nil
+		}
+	}
+	return "", fmt.Errorf("worktree not found: %s", target)
+}
+
+func (e *Editor) prefillCommand(text string) {
+	e.mode = ModeCommand
+	e.cmd = []rune(text)
+	e.cmdCursor = len(e.cmd)
+	e.cmdHistoryIndex = -1
+	e.closeAutoComplete()
 }
 func (e *Editor) gotoLineNumber(lineNum int) {
 	if lineNum < 1 {

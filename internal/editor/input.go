@@ -1588,6 +1588,24 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 		logger.Debug("sidebar action: set AI model", "model", action.Model)
 		e.selectSidebarAIModel(action.Model)
 		return false
+
+	case SidebarActionSwitchWorktree:
+		logger.Debug("sidebar action: switch worktree", "path", action.Worktree)
+		if action.Worktree != "" {
+			e.worktreeSwitchSelection = action.Worktree
+			if e.sidebar.CloseOnSelect {
+				e.closeSidebar()
+			} else {
+				e.sidebar.Focused = false
+			}
+		}
+		return false
+
+	case SidebarActionRefresh:
+		if action.Mode == SidebarModeWorktrees {
+			e.refreshSidebarWorktrees()
+		}
+		return false
 	}
 
 	return false // continue running, don't quit
@@ -1620,7 +1638,7 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 		e.openSidebarGitChanges()
 
 	case SidebarModeWorktrees:
-		e.setStatus("Worktrees: not implemented yet")
+		e.openSidebarWorktrees()
 	}
 }
 
@@ -1683,6 +1701,65 @@ func (e *Editor) openSidebarBranches() {
 	e.setStatus("loading branches...")
 	e.branchPickerRequested = true
 	logger.Debug("openSidebarBranches: branch request set")
+}
+
+// openSidebarWorktrees opens the sidebar directly in worktrees mode
+func (e *Editor) openSidebarWorktrees() {
+	logger.Debug("openSidebarWorktrees called")
+	if e.sidebar == nil {
+		logger.Warn("openSidebarWorktrees: sidebar is nil")
+		return
+	}
+	if !e.isGitRepo() {
+		e.setStatus("not a git repository")
+		if e.sidebar.MenuContent != nil {
+			e.sidebar.MenuContent.SetAvailability(false, e.aiManager != nil)
+		}
+		return
+	}
+
+	// Close refs picker if open (mutual exclusion)
+	if e.refsPickerActive {
+		logger.Debug("openSidebarWorktrees: closing refs picker")
+		e.closeRefsPicker(false)
+	}
+
+	// Initialize menu content for later "back" navigation
+	if e.sidebar.MenuContent == nil {
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+	} else {
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+	}
+
+	e.sidebar.Open(NewSidebarLoadingContent("Worktree", "Loading..."))
+	e.setStatus("loading worktrees...")
+	e.worktreeListRequested = true
+	logger.Debug("openSidebarWorktrees: list request set")
+}
+
+func (e *Editor) refreshSidebarWorktrees() {
+	if e.sidebar == nil {
+		return
+	}
+	if !e.isGitRepo() {
+		e.setStatus("not a git repository")
+		return
+	}
+	if e.sidebar.Visible && e.sidebar.Content != nil && e.sidebar.Content.Mode() == SidebarModeWorktrees {
+		e.worktreeListRequested = true
+		e.setStatus("loading worktrees...")
+		return
+	}
+	e.openSidebarWorktrees()
+}
+
+func (e *Editor) requestWorktreeRefreshIfActive() {
+	if e.sidebar == nil || !e.sidebar.Visible || e.sidebar.Content == nil {
+		return
+	}
+	if e.sidebar.Content.Mode() == SidebarModeWorktrees {
+		e.worktreeListRequested = true
+	}
 }
 
 // openSidebarFileTree opens the sidebar in file tree mode.
@@ -2108,6 +2185,24 @@ func (e *Editor) ShowSidebarBranches(branches []string, current string) {
 	e.sidebar.Focused = true
 }
 
+// ShowSidebarWorktrees shows worktrees in the sidebar.
+func (e *Editor) ShowSidebarWorktrees(worktrees []WorktreeInfo, activePath string) {
+	logger.Debug("ShowSidebarWorktrees called", "count", len(worktrees), "active", activePath)
+	if e.sidebar == nil {
+		logger.Warn("ShowSidebarWorktrees: sidebar is nil")
+		return
+	}
+	if content, ok := e.sidebar.Content.(*SidebarWorktreesContent); ok {
+		content.UpdateWorktrees(worktrees, activePath)
+		e.sidebar.SetContent(content)
+	} else {
+		content := NewSidebarWorktreesContent(worktrees, activePath)
+		e.sidebar.SetContent(content)
+	}
+	e.sidebar.Visible = true
+	e.sidebar.Focused = true
+}
+
 // isGitRepo returns true if current file is in a git repo
 func (e *Editor) isGitRepo() bool {
 	return e.gitBranch != ""
@@ -2121,6 +2216,15 @@ func (e *Editor) IsSidebarBranchRequest() bool {
 	return e.branchPickerRequested
 }
 
+// ConsumeWorktreeListRequest consumes the worktree list request.
+func (e *Editor) ConsumeWorktreeListRequest() bool {
+	if !e.worktreeListRequested {
+		return false
+	}
+	e.worktreeListRequested = false
+	return true
+}
+
 // ConsumeSidebarBranchSelection consumes the branch selection from sidebar
 func (e *Editor) ConsumeSidebarBranchSelection() string {
 	if e.branchPickerSelection == "" {
@@ -2128,6 +2232,16 @@ func (e *Editor) ConsumeSidebarBranchSelection() string {
 	}
 	selection := e.branchPickerSelection
 	e.branchPickerSelection = ""
+	return selection
+}
+
+// ConsumeSidebarWorktreeSelection consumes the worktree selection from sidebar/commands.
+func (e *Editor) ConsumeSidebarWorktreeSelection() string {
+	if e.worktreeSwitchSelection == "" {
+		return ""
+	}
+	selection := e.worktreeSwitchSelection
+	e.worktreeSwitchSelection = ""
 	return selection
 }
 

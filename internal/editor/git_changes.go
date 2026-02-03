@@ -41,6 +41,11 @@ func (e *Editor) SetGitRoot(root string) {
 	e.gitChangeHunks = nil
 	e.gitChangesVersion++
 	e.gitChangesUpdated = time.Time{}
+	if e.sidebar != nil {
+		if content, ok := e.sidebar.Content.(*SidebarWorktreesContent); ok {
+			content.SetCurrentPath(root)
+		}
+	}
 }
 
 // RefreshGitChanges reloads git change data.
