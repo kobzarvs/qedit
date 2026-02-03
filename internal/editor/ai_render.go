@@ -217,6 +217,8 @@ func (e *Editor) renderAIPanelChat(s Screen, x, y, w, h int, panel *AIPanel) {
 		lineSpans := highlights[lineIdx]
 		e.drawAIPanelLine(s, x+1, row, w-2, line, style, lineSpans)
 	}
+
+	e.drawScrollIndicator(s, x+w-1, y, h, len(lines), panel.Scroll, panel.lastScrollTime)
 }
 
 func (e *Editor) renderAIPanelInput(s Screen, x, y, w, h int, panel *AIPanel) {

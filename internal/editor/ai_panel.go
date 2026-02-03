@@ -64,10 +64,11 @@ type AIPanel struct {
 	Maximized          bool
 
 	// Scroll state
-	Scroll       int // Scroll position in chat history
-	InputScroll  int // Horizontal scroll in input
-	InputHistory []string
-	HistoryIndex int // -1 = not browsing history
+	Scroll         int // Scroll position in chat history
+	InputScroll    int // Horizontal scroll in input
+	InputHistory   []string
+	HistoryIndex   int // -1 = not browsing history
+	lastScrollTime time.Time
 
 	// Model selection popup
 	ModelSelectActive bool
@@ -338,6 +339,7 @@ func (p *AIPanel) HistoryDown() {
 // ScrollUp scrolls the chat history up.
 func (p *AIPanel) ScrollUp(lines int) {
 	p.autoScroll = false
+	p.lastScrollTime = time.Now()
 	p.Scroll -= lines
 	if p.Scroll < 0 {
 		p.Scroll = 0
@@ -347,6 +349,7 @@ func (p *AIPanel) ScrollUp(lines int) {
 // ScrollDown scrolls the chat history down.
 func (p *AIPanel) ScrollDown(lines int) {
 	p.autoScroll = false
+	p.lastScrollTime = time.Now()
 	p.Scroll += lines
 	// Will be clamped during render
 }

@@ -765,34 +765,44 @@ func (e *Editor) renderScrollIndicator(s Screen, w, viewHeight int) {
 		return
 	}
 
-	// Check if scroll indicator should be visible
-	elapsed := time.Since(e.lastScrollTime)
+	e.drawScrollIndicator(s, w-1, 0, viewHeight, e.LineCount(), e.scroll, e.lastScrollTime)
+}
+
+func (e *Editor) drawScrollIndicator(s Screen, x, y, height int, totalLines int, scroll int, lastScroll time.Time) {
+	if height < 1 || totalLines <= height {
+		return
+	}
+	if lastScroll.IsZero() {
+		return
+	}
+	elapsed := time.Since(lastScroll)
 	if elapsed >= scrollIndicatorDuration {
 		return
 	}
 
-	totalLines := e.LineCount()
-	if totalLines <= viewHeight {
-		return // No need for scroll indicator if all content fits
-	}
-
 	// Calculate thumb size (minimum 1 row)
-	thumbSize := viewHeight * viewHeight / totalLines
+	thumbSize := height * height / totalLines
 	if thumbSize < 1 {
 		thumbSize = 1
 	}
 
 	// Calculate thumb position
-	maxScroll := totalLines - viewHeight
+	maxScroll := totalLines - height
 	if maxScroll < 1 {
 		maxScroll = 1
 	}
-	thumbPos := e.scroll * (viewHeight - thumbSize) / maxScroll
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+	thumbPos := scroll * (height - thumbSize) / maxScroll
 	if thumbPos < 0 {
 		thumbPos = 0
 	}
-	if thumbPos+thumbSize > viewHeight {
-		thumbPos = viewHeight - thumbSize
+	if thumbPos+thumbSize > height {
+		thumbPos = height - thumbSize
 	}
 
 	// Calculate opacity based on time elapsed (fade out effect)
@@ -818,21 +828,19 @@ func (e *Editor) renderScrollIndicator(s Screen, w, viewHeight int) {
 		}
 	}
 
-	// Draw scroll indicator in the rightmost column
-	x := w - 1
 	style := e.styleScrollIndicator
 	if style == nil {
 		style = e.styleLineNumber
 	}
-	for y := 0; y < viewHeight; y++ {
+	for row := 0; row < height; row++ {
 		var ch rune
-		if y >= thumbPos && y < thumbPos+thumbSize {
+		if row >= thumbPos && row < thumbPos+thumbSize {
 			ch = thumbChar
 		} else {
 			ch = trackChar
 		}
 		if ch != ' ' {
-			s.SetContent(x, y, ch, nil, style)
+			s.SetContent(x, y+row, ch, nil, style)
 		}
 	}
 }
