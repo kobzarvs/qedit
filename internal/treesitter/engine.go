@@ -1,11 +1,13 @@
 package treesitter
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/kobzarvs/qedit/internal/config"
 
@@ -275,6 +277,10 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, star
 	if query == nil || tree == nil {
 		return nil
 	}
+	var lines [][]byte
+	if source != nil {
+		lines = bytes.Split(source, []byte("\n"))
+	}
 	cursor := sitter.NewQueryCursor()
 	defer cursor.Close()
 	cursor.SetPointRange(
@@ -317,6 +323,11 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, star
 				if row == endRow {
 					endCol = int(end.Column)
 				}
+				if lines != nil && row >= 0 && row < len(lines) {
+					line := lines[row]
+					startCol = byteColToRuneCol(line, startCol)
+					endCol = byteColToRuneCol(line, endCol)
+				}
 				out[row] = append(out[row], HighlightSpan{
 					StartCol: startCol,
 					EndCol:   endCol,
@@ -326,6 +337,16 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, star
 		}
 	}
 	return out
+}
+
+func byteColToRuneCol(line []byte, col int) int {
+	if col <= 0 {
+		return 0
+	}
+	if col > len(line) {
+		col = len(line)
+	}
+	return utf8.RuneCount(line[:col])
 }
 
 func (e *Engine) markdownHighlights(path string, startLine, endLine int) map[int][]HighlightSpan {
