@@ -97,6 +97,11 @@ func (b *SidebarBranchesContent) Refresh() error {
 	return nil
 }
 
+// SetCurrent updates the current branch marker without changing selection.
+func (b *SidebarBranchesContent) SetCurrent(current string) {
+	b.current = current
+}
+
 // UpdateBranches updates the branch list
 func (b *SidebarBranchesContent) UpdateBranches(branches []string, current string) {
 	b.branches = branches

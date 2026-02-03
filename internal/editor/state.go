@@ -223,7 +223,17 @@ func (e *Editor) SetKeyboardLayout(name string) {
 	e.layoutName = strings.TrimSpace(name)
 }
 func (e *Editor) SetGitBranch(name string) {
-	e.gitBranch = strings.TrimSpace(name)
+	name = strings.TrimSpace(name)
+	if e.gitBranch == name {
+		return
+	}
+	e.gitBranch = name
+	if e.sidebar == nil {
+		return
+	}
+	if content, ok := e.sidebar.Content.(*SidebarBranchesContent); ok {
+		content.SetCurrent(name)
+	}
 }
 func (e *Editor) SetGitMainBranch(name string) {
 	e.gitMainBranch = strings.TrimSpace(name)
