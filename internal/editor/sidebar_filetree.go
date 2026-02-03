@@ -204,6 +204,9 @@ func (c *SidebarFileTreeContent) goUp() {
 	if parent == c.dir {
 		return
 	}
+	if c.projectRoot != "" && !c.isWithinProject(parent) {
+		return
+	}
 	prev := c.dir
 	_ = c.loadDir(parent)
 	c.selectByPath(prev)
@@ -235,12 +238,14 @@ func (c *SidebarFileTreeContent) loadDir(dir string) error {
 
 	var parentItems []SidebarItem
 	if parent := filepath.Dir(dir); parent != dir {
-		parentItems = append(parentItems, SidebarItem{
-			Label:     "..",
-			Path:      parent,
-			IsDir:     true,
-			Available: true,
-		})
+		if c.projectRoot == "" || c.isWithinProject(parent) {
+			parentItems = append(parentItems, SidebarItem{
+				Label:     "..",
+				Path:      parent,
+				IsDir:     true,
+				Available: true,
+			})
+		}
 	}
 
 	var dirs []SidebarItem
@@ -348,6 +353,28 @@ func (c *SidebarFileTreeContent) currentPath() string {
 		return ""
 	}
 	return item.Path
+}
+
+func (c *SidebarFileTreeContent) isWithinProject(path string) bool {
+	if c.projectRoot == "" {
+		return true
+	}
+	absPath, err := filepath.Abs(path)
+	if err == nil {
+		path = absPath
+	}
+	rel, err := filepath.Rel(c.projectRoot, path)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	sep := string(filepath.Separator)
+	if rel == ".." || strings.HasPrefix(rel, ".."+sep) || strings.HasPrefix(rel, ".."+"/") || strings.HasPrefix(rel, ".."+"\\") {
+		return false
+	}
+	return true
 }
 
 func (c *SidebarFileTreeContent) selectedRelativePath() (string, bool) {
