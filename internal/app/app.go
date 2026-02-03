@@ -203,6 +203,13 @@ func (a *App) Run() error {
 		cfg.Editor.SidebarWidth = width
 		return nil
 	})
+	ed.SetAIPanelWidthConfigHook(func(width int) error {
+		if err := config.UpdateEditorAIPanelWidth(width); err != nil {
+			return err
+		}
+		cfg.Editor.AIPanelWidth = width
+		return nil
+	})
 	ed.SetFormatter(integrations.GoFormatter{})
 	if runtime.GOOS == "darwin" {
 		ed.SetClipboard(integrations.MacClipboard{})

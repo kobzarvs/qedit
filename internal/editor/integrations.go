@@ -138,9 +138,7 @@ func (e *Editor) SetSessionStore(s SessionStore) {
 
 func (e *Editor) SetAIManager(m AIManager) {
 	e.aiManager = m
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 	e.restoreAIState()
 	e.syncAIPanelProviderState()
 }

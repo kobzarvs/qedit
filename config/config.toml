@@ -5,6 +5,7 @@ git-branch-symbol = ""
 highlight-max-bytes = 8388608 # 0 = no limit
 file-tree-show-hidden = false
 file-tree-show-ignored = false
+ai-panel-width = 50
 
 [theme]
 theme = "ayu"

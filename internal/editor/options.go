@@ -9,6 +9,7 @@ type Options struct {
 	SidebarMinWidth      int
 	SidebarMaxWidth      string
 	SidebarCloseOnSelect bool
+	AIPanelWidth         int
 	FileTreeShowHidden   bool
 	FileTreeShowIgnored  bool
 	AutoReloadOnChanges  bool

@@ -8,11 +8,19 @@ import (
 	"time"
 )
 
+func (e *Editor) ensureAIPanel() {
+	if e.aiPanel != nil {
+		return
+	}
+	e.aiPanel = NewAIPanel()
+	if e.aiPanelDefaultWidth > 0 {
+		e.aiPanel.Width = e.aiPanelDefaultWidth
+	}
+}
+
 // toggleAIPanel toggles the AI panel visibility.
 func (e *Editor) toggleAIPanel() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 	e.aiPanel.Toggle()
 
 	// Update panel state from manager
@@ -23,9 +31,7 @@ func (e *Editor) toggleAIPanel() {
 
 // sendToAI sends the current context to the AI.
 func (e *Editor) sendToAI() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 
 	// Open panel if not visible
 	if !e.aiPanel.Visible {
@@ -522,9 +528,7 @@ func (e *Editor) handleAIPanelModelPopup(ev EventKey) bool {
 // editAIConversation opens the entire AI conversation in the editor for editing.
 // The conversation is exported as markdown, edited, and then re-imported.
 func (e *Editor) editAIConversation() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 
 	// Export conversation to markdown
 	markdown := e.aiPanel.ExportToMarkdown()
@@ -580,9 +584,7 @@ func (e *Editor) cancelAIEdit() {
 
 // toggleAIReasoning toggles the visibility of AI reasoning messages.
 func (e *Editor) toggleAIReasoning() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 	show := e.aiPanel.ToggleReasoning()
 	if show {
 		e.setStatus("AI reasoning: on")
@@ -593,9 +595,7 @@ func (e *Editor) toggleAIReasoning() {
 
 // toggleAIThinkingLevel cycles through available AI thinking levels.
 func (e *Editor) toggleAIThinkingLevel() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 	model := ""
 	if e.aiManager != nil {
 		model = e.aiManager.CurrentModel()
@@ -612,9 +612,7 @@ func (e *Editor) toggleAIThinkingLevel() {
 
 // toggleAIPanelMaximize toggles the maximized state of the AI panel.
 func (e *Editor) toggleAIPanelMaximize() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 	max := e.aiPanel.ToggleMaximize()
 	if max {
 		e.setStatus("AI panel: maximized")

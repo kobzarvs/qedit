@@ -594,9 +594,7 @@ func (e *Editor) handleAICommand(args []string) bool {
 		return false
 
 	case "thinking":
-		if e.aiPanel == nil {
-			e.aiPanel = NewAIPanel()
-		}
+		e.ensureAIPanel()
 		if len(args) >= 2 && args[1] == "list" {
 			model := e.aiManager.CurrentModel()
 			levels := e.aiThinkingLevelsForModel(model)
@@ -629,9 +627,7 @@ func (e *Editor) handleAICommand(args []string) bool {
 		return false
 
 	case "max":
-		if e.aiPanel == nil {
-			e.aiPanel = NewAIPanel()
-		}
+		e.ensureAIPanel()
 		if len(args) > 1 {
 			switch strings.ToLower(args[1]) {
 			case "on", "true", "1":

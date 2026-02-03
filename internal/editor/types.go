@@ -542,6 +542,8 @@ type Editor struct {
 	lastKeyCombo                  string
 	freeScroll                    bool
 	lastScrollTime                time.Time
+	resizeDragging                bool
+	resizeTarget                  resizeTarget
 	systemClipboard               Clipboard
 	formatter                     Formatter
 	terminalZoomer                TerminalZoomer
@@ -600,6 +602,7 @@ type Editor struct {
 
 	autoReloadConfigHook   func(enabled bool) error
 	sidebarWidthConfigHook func(width string) error
+	aiPanelWidthConfigHook func(width int) error
 
 	// Command autocomplete state
 	cmdAutoCompleteActive    bool
@@ -616,6 +619,7 @@ type Editor struct {
 	aiManager               AIManager // AI provider manager
 	aiThinkingLevels        []string
 	aiThinkingLevelsByModel map[string][]string
+	aiPanelDefaultWidth     int
 
 	// AI edit mode state
 	aiEditBufferPath    string   // path to temp file for AI conversation editing

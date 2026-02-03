@@ -49,6 +49,7 @@ func New(opts Options) *Editor {
 		fileTreeShowIgnored:     opts.FileTreeShowIgnored,
 		aiThinkingLevels:        append([]string(nil), opts.AIThinkingLevels...),
 		aiThinkingLevelsByModel: copyStringSliceMap(opts.AIThinkingLevelsByModel),
+		aiPanelDefaultWidth:     opts.AIPanelWidth,
 	}
 	e.SetStyles(defaultEditorStyles())
 	return e

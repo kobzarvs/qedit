@@ -11,6 +11,14 @@ import (
 	"github.com/kobzarvs/qedit/internal/logger"
 )
 
+type resizeTarget int
+
+const (
+	resizeTargetNone resizeTarget = iota
+	resizeTargetSidebar
+	resizeTargetAIPanel
+)
+
 func (e *Editor) HandleKey(ev EventKey) bool {
 	e.freeScroll = false
 	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" && !e.autoReloadInProgress {
@@ -89,6 +97,10 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 		return
 	}
 
+	if e.handleMouseResize(ev) {
+		return
+	}
+
 	if ev.Buttons() == WheelUp || ev.Buttons() == WheelDown {
 		x, y := ev.Position()
 		if e.scrollAIPanelIfHovered(ev.Buttons(), x, y) {
@@ -112,6 +124,171 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 	} else if ev.Buttons() == Button1 {
 		e.handleMouseClick(ev)
 	}
+}
+
+func (e *Editor) handleMouseResize(ev EventMouse) bool {
+	buttons := ev.Buttons()
+	if e.resizeDragging {
+		if buttons == 0 {
+			e.finishMouseResize()
+			return true
+		}
+		if buttons == Button1 {
+			x, _ := ev.Position()
+			e.updateMouseResize(x)
+		}
+		return true
+	}
+
+	if buttons != Button1 {
+		return false
+	}
+
+	x, y := ev.Position()
+	if y < 0 || y >= e.viewHeight {
+		return false
+	}
+	if e.tryStartSidebarResize(x) {
+		return true
+	}
+	if e.tryStartAIPanelResize(x) {
+		return true
+	}
+	return false
+}
+
+func (e *Editor) tryStartSidebarResize(x int) bool {
+	if e.sidebar == nil || !e.sidebar.Visible {
+		return false
+	}
+	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Maximized {
+		return false
+	}
+	if e.viewWidth <= 0 {
+		return false
+	}
+	sidebarWidth := e.sidebar.CalculateWidth(e.viewWidth)
+	if sidebarWidth <= 0 {
+		return false
+	}
+	if x != sidebarWidth-1 {
+		return false
+	}
+	e.resizeDragging = true
+	e.resizeTarget = resizeTargetSidebar
+	e.updateSidebarWidthFromX(x)
+	return true
+}
+
+func (e *Editor) tryStartAIPanelResize(x int) bool {
+	if e.aiPanel == nil || !e.aiPanel.Visible || e.aiPanel.Maximized {
+		return false
+	}
+	aiX, ok := e.aiPanelX()
+	if !ok || x != aiX {
+		return false
+	}
+	e.resizeDragging = true
+	e.resizeTarget = resizeTargetAIPanel
+	e.updateAIPanelWidthFromX(x)
+	return true
+}
+
+func (e *Editor) updateMouseResize(x int) {
+	switch e.resizeTarget {
+	case resizeTargetSidebar:
+		e.updateSidebarWidthFromX(x)
+	case resizeTargetAIPanel:
+		e.updateAIPanelWidthFromX(x)
+	}
+}
+
+func (e *Editor) updateSidebarWidthFromX(x int) {
+	if e.sidebar == nil {
+		return
+	}
+	width := x + 1
+	width = e.clampSidebarWidth(width)
+	e.sidebar.WidthConfig = strconv.Itoa(width)
+}
+
+func (e *Editor) clampSidebarWidth(width int) int {
+	if width < 0 {
+		width = 0
+	}
+	if e.sidebar == nil {
+		return width
+	}
+	if width < e.sidebar.MinWidth {
+		width = e.sidebar.MinWidth
+	}
+	maxWidth := parseWidthValue(e.sidebar.MaxWidthConfig, e.viewWidth)
+	if maxWidth > 0 && width > maxWidth {
+		width = maxWidth
+	}
+	if e.viewWidth > 0 && width > e.viewWidth/2 {
+		width = e.viewWidth / 2
+	}
+	return width
+}
+
+func (e *Editor) updateAIPanelWidthFromX(x int) {
+	if e.aiPanel == nil || e.viewWidth <= 0 {
+		return
+	}
+	width := e.viewWidth - x
+	if width < 0 {
+		width = 0
+	}
+	if width < 30 {
+		width = 30
+	}
+	sidebarWidth := 0
+	if e.sidebar != nil && e.sidebar.Visible {
+		sidebarWidth = e.sidebar.CalculateWidth(e.viewWidth)
+	} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
+		sidebarWidth = e.viewWidth / 4
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if sidebarWidth > e.viewWidth/2 {
+			sidebarWidth = e.viewWidth / 2
+		}
+	}
+	remaining := e.viewWidth - sidebarWidth
+	maxWidth := 0
+	if remaining > 0 {
+		maxWidth = remaining / 2
+	}
+	if maxWidth < 0 {
+		maxWidth = 0
+	}
+	if maxWidth > 0 && width > maxWidth {
+		width = maxWidth
+	}
+	if maxWidth == 0 && width > 0 {
+		width = 0
+	}
+	e.aiPanel.Width = width
+}
+
+func (e *Editor) finishMouseResize() {
+	switch e.resizeTarget {
+	case resizeTargetSidebar:
+		if e.sidebarWidthConfigHook != nil && e.sidebar != nil {
+			if err := e.sidebarWidthConfigHook(e.sidebar.WidthConfig); err != nil {
+				e.setStatus("config write failed: " + err.Error())
+			}
+		}
+	case resizeTargetAIPanel:
+		if e.aiPanelWidthConfigHook != nil && e.aiPanel != nil {
+			if err := e.aiPanelWidthConfigHook(e.aiPanel.Width); err != nil {
+				e.setStatus("config write failed: " + err.Error())
+			}
+		}
+	}
+	e.resizeDragging = false
+	e.resizeTarget = resizeTargetNone
 }
 
 func (e *Editor) scrollAIPanelIfHovered(buttons MouseButton, x, y int) bool {
@@ -2008,9 +2185,7 @@ func (e *Editor) focusSidebar() {
 }
 
 func (e *Editor) toggleAIPanelFocus() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 	if !e.aiPanel.Visible {
 		e.aiPanel.Open()
 		e.syncAIPanelProviderState()
@@ -2023,9 +2198,7 @@ func (e *Editor) toggleAIPanelFocus() {
 }
 
 func (e *Editor) focusAIPanel() {
-	if e.aiPanel == nil {
-		e.aiPanel = NewAIPanel()
-	}
+	e.ensureAIPanel()
 	if !e.aiPanel.Visible {
 		e.aiPanel.Open()
 		e.syncAIPanelProviderState()

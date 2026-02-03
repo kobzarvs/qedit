@@ -21,6 +21,7 @@ type EditorOptions struct {
 	SidebarMinWidth       int    `toml:"sidebar-min-width"`
 	SidebarMaxWidth       string `toml:"sidebar-max-width"`
 	SidebarCloseOnSelect  bool   `toml:"sidebar-close-on-select"`
+	AIPanelWidth          int    `toml:"ai-panel-width"`
 	FileTreeShowHidden    bool   `toml:"file-tree-show-hidden"`
 	FileTreeShowIgnored   bool   `toml:"file-tree-show-ignored"`
 	HighlightMaxBytes     int64  `toml:"highlight-max-bytes"`
@@ -129,6 +130,7 @@ func Default() Config {
 			SidebarMinWidth:       15,
 			SidebarMaxWidth:       "50",
 			SidebarCloseOnSelect:  false,
+			AIPanelWidth:          50,
 			FileTreeShowHidden:    false,
 			FileTreeShowIgnored:   false,
 			HighlightMaxBytes:     8 << 20,
@@ -425,6 +427,11 @@ func Load() (Config, error) {
 	}
 	if userCfg.Editor.SidebarMaxWidth != "" {
 		cfg.Editor.SidebarMaxWidth = userCfg.Editor.SidebarMaxWidth
+	}
+	if md.IsDefined("editor", "ai-panel-width") {
+		if userCfg.Editor.AIPanelWidth > 0 {
+			cfg.Editor.AIPanelWidth = userCfg.Editor.AIPanelWidth
+		}
 	}
 	if md.IsDefined("editor", "sidebar-close-on-select") {
 		cfg.Editor.SidebarCloseOnSelect = userCfg.Editor.SidebarCloseOnSelect
@@ -795,6 +802,36 @@ func UpdateEditorSidebarWidth(width string) error {
 		cfg["editor"] = section
 	}
 	section["sidebar-width"] = width
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
+}
+
+// UpdateEditorAIPanelWidth persists ai-panel-width in config.
+func UpdateEditorAIPanelWidth(width int) error {
+	path, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg := map[string]interface{}{}
+	if data, err := os.ReadFile(path); err == nil {
+		if _, err := toml.Decode(string(data), &cfg); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	section, ok := cfg["editor"].(map[string]interface{})
+	if !ok || section == nil {
+		section = map[string]interface{}{}
+		cfg["editor"] = section
+	}
+	section["ai-panel-width"] = width
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

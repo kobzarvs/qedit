@@ -854,6 +854,84 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 	}
 }
 
+func TestMouseDragResizesSidebar(t *testing.T) {
+	e := newTestEditor("line")
+	e.lineNumberMode = LineNumberOff
+	e.sidebar.Visible = true
+	e.sidebar.WidthConfig = "20"
+	e.sidebar.MinWidth = 10
+	e.sidebar.MaxWidthConfig = "50"
+
+	var persisted string
+	e.SetSidebarWidthConfigHook(func(width string) error {
+		persisted = width
+		return nil
+	})
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(80, 5)
+	e.Render(wrapScreen(s))
+
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(19, 1, tcell.Button1, 0)))
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(30, 1, tcell.Button1, 0)))
+
+	if e.sidebar.WidthConfig != "31" {
+		t.Fatalf("sidebar width = %q, want %q", e.sidebar.WidthConfig, "31")
+	}
+
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(30, 1, tcell.ButtonNone, 0)))
+	if persisted != "31" {
+		t.Fatalf("persisted width = %q, want %q", persisted, "31")
+	}
+}
+
+func TestMouseDragResizesAIPanel(t *testing.T) {
+	e := newTestEditor("line")
+	e.lineNumberMode = LineNumberOff
+	e.sidebar.Visible = true
+	e.sidebar.WidthConfig = "20"
+	e.sidebar.MinWidth = 10
+	e.sidebar.MaxWidthConfig = "50"
+	e.ensureAIPanel()
+	e.aiPanel.Visible = true
+	e.aiPanel.Width = 40
+
+	var persisted int
+	e.SetAIPanelWidthConfigHook(func(width int) error {
+		persisted = width
+		return nil
+	})
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(120, 5)
+	e.Render(wrapScreen(s))
+
+	aiX, ok := e.aiPanelX()
+	if !ok {
+		t.Fatalf("aiPanelX not available")
+	}
+
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(aiX, 1, tcell.Button1, 0)))
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(85, 1, tcell.Button1, 0)))
+
+	if e.aiPanel.Width != 35 {
+		t.Fatalf("ai panel width = %d, want %d", e.aiPanel.Width, 35)
+	}
+
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(85, 1, tcell.ButtonNone, 0)))
+	if persisted != 35 {
+		t.Fatalf("persisted width = %d, want %d", persisted, 35)
+	}
+}
+
 // ============================================================================
 // Autocomplete layout optimization tests
 // ============================================================================
