@@ -28,6 +28,9 @@ type EditorStyles struct {
 	SyntaxUnknown           Style
 	SyntaxVariable          Style
 	SyntaxParameter         Style
+	SyntaxYAMLKey           Style
+	SyntaxYAMLValue         Style
+	SyntaxYAMLListItem      Style
 	TableBorder             Style
 	AIReasoning             Style
 	AIUser                  Style
@@ -81,6 +84,9 @@ func (e *Editor) SetStyles(s EditorStyles) {
 	e.styleSyntaxUnknown = s.SyntaxUnknown
 	e.styleSyntaxVariable = s.SyntaxVariable
 	e.styleSyntaxParameter = s.SyntaxParameter
+	e.styleSyntaxYAMLKey = s.SyntaxYAMLKey
+	e.styleSyntaxYAMLValue = s.SyntaxYAMLValue
+	e.styleSyntaxYAMLListItem = s.SyntaxYAMLListItem
 	e.styleTableBorder = s.TableBorder
 	e.styleAIReasoning = s.AIReasoning
 	e.styleAIUser = s.AIUser

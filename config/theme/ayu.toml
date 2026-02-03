@@ -56,6 +56,11 @@ syntax-variable = "#92D8F9" # "#B3B1AD"
 syntax-parameter = "#77B9E2"
 syntax-unknown = "#FF0000"
 
+# YAML-specific
+syntax-yaml-key = "#E6B673"       # Same as field by default (gold)
+syntax-yaml-value = "#B3B1AD"     # Same as foreground (plain text)
+syntax-yaml-list-item = "#77B9E2" # Same as parameter (light blue)
+
 # AI
 ai-reasoning-foreground = "syntax-comment"
 ai-user-foreground = "#59C2FF"

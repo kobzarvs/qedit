@@ -119,7 +119,7 @@ func (e *Engine) OpenFile(path, text string) {
 
 	// For regex-based languages, just store the source
 	switch lang.Name {
-	case "json", "gitignore":
+	case "json", "gitignore", "makefile":
 		e.mu.Lock()
 		e.sources[path] = []byte(text)
 		e.mu.Unlock()
@@ -187,7 +187,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 
 	// For regex-based languages, just store the source
 	switch lang {
-	case "json", "gitignore":
+	case "json", "gitignore", "makefile":
 		e.mu.Lock()
 		e.sources[path] = []byte(text)
 		e.mu.Unlock()
@@ -245,7 +245,7 @@ func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]Highl
 	switch lang.Name {
 	case "markdown":
 		return e.markdownHighlights(path, startLine, endLine)
-	case "json", "gitignore":
+	case "json", "gitignore", "makefile":
 		e.mu.RLock()
 		source := e.sources[path]
 		e.mu.RUnlock()
@@ -938,19 +938,21 @@ const goHighlightQuery = `
 
 const yamlHighlightQuery = `
 ((comment) @comment)
-((string_scalar) @string)
-((double_quote_scalar) @string)
-((single_quote_scalar) @string)
+((string_scalar) @yaml-value)
+((double_quote_scalar) @yaml-value)
+((single_quote_scalar) @yaml-value)
 ((integer_scalar) @number)
 ((float_scalar) @number)
 ((null_scalar) @constant)
 ((boolean_scalar) @constant)
-((block_mapping_pair key: (_) @field))
-((flow_pair key: (_) @field))
+((block_mapping_pair key: (_) @yaml-key))
+((flow_pair key: (_) @yaml-key))
+((block_sequence (block_sequence_item) @yaml-list-item))
 ((anchor_name) @keyword)
 ((alias_name) @keyword)
 ((tag) @type)
-["," ":" "-" "[" "]" "{" "}" ">" "|" "*" "&"] @punctuation
+["," ":" "[" "]" "{" "}" ">" "|" "*" "&"] @punctuation
+("-") @punctuation
 `
 
 const tomlHighlightQuery = `
@@ -1040,9 +1042,21 @@ var (
 	jsonNull   = regexp.MustCompile(`\bnull\b`)
 
 	// Gitignore patterns
-	gitComment = regexp.MustCompile(`^#.*`)
-	gitNegate  = regexp.MustCompile(`^!`)
-	gitGlob    = regexp.MustCompile(`[*?]|\[.+?\]`)
+	gitComment    = regexp.MustCompile(`^#.*`)
+	gitNegate     = regexp.MustCompile(`^!`)
+	gitDoubleGlob = regexp.MustCompile(`\*\*`)
+	gitGlob       = regexp.MustCompile(`[*?]`)
+	gitCharRange  = regexp.MustCompile(`\[[^\]]+\]`)
+	gitEscape     = regexp.MustCompile(`\\[!#*?\[\]\\]`)
+
+	// Makefile patterns
+	makeComment       = regexp.MustCompile(`#.*$`)
+	makeTarget        = regexp.MustCompile(`^([a-zA-Z0-9_./%][a-zA-Z0-9_./%+-]*)\s*:($|[^:=])`)
+	makeVarAssign     = regexp.MustCompile(`^(\.?[a-zA-Z_][a-zA-Z0-9_]*)\s*(:=|\?=|\+=|::=|!=|=)`)
+	makeVarRef        = regexp.MustCompile(`\$\(([^)]+)\)|\$\{([^}]+)\}`)
+	makeAutoVar       = regexp.MustCompile(`\$[@<^?*%+]|\$\([@<^?*%+][DF]?\)|\$\{[@<^?*%+][DF]?\}`)
+	makeDirective     = regexp.MustCompile(`^\s*(-?include|sinclude|vpath|override|export|unexport|define|endef|undefine|ifdef|ifndef|ifeq|ifneq|else|endif)\b`)
+	makeSpecialTarget = regexp.MustCompile(`^(\.(?:PHONY|SUFFIXES|DEFAULT|PRECIOUS|INTERMEDIATE|SECONDARY|SECONDEXPANSION|DELETE_ON_ERROR|IGNORE|LOW_RESOLUTION_TIME|SILENT|EXPORT_ALL_VARIABLES|NOTPARALLEL|ONESHELL|POSIX))\s*:`)
 )
 
 // regexHighlights provides syntax highlighting using regex for languages without tree-sitter
@@ -1057,6 +1071,8 @@ func (e *Engine) regexHighlights(langName string, source []byte, startLine, endL
 			out[row] = e.highlightJSONLine(line)
 		case "gitignore":
 			out[row] = e.highlightGitignoreLine(line)
+		case "makefile":
+			out[row] = e.highlightMakefileLine(line)
 		}
 	}
 
@@ -1119,29 +1135,172 @@ func (e *Engine) highlightJSONLine(line string) []HighlightSpan {
 }
 
 func (e *Engine) highlightGitignoreLine(line string) []HighlightSpan {
-	lineLen := len([]rune(line))
+	lineRunes := []rune(line)
+	lineLen := len(lineRunes)
 	if lineLen == 0 {
 		return nil
 	}
 
-	// Comments
+	// Comments take precedence - entire line is comment
 	if gitComment.MatchString(line) {
 		return []HighlightSpan{{StartCol: 0, EndCol: lineLen, Kind: "comment"}}
 	}
 
 	var spans []HighlightSpan
 
-	// Negation
+	// Negation prefix (!)
 	if loc := gitNegate.FindStringIndex(line); loc != nil {
 		spans = append(spans, HighlightSpan{StartCol: 0, EndCol: 1, Kind: "keyword"})
 	}
 
-	// Glob patterns
+	// Rooted path prefix (/) - after potential negation
+	offset := 0
+	if len(line) > 0 && line[0] == '!' {
+		offset = 1
+	}
+	if offset < len(line) && line[offset] == '/' {
+		startRune := len([]rune(line[:offset]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: startRune + 1, Kind: "type"})
+	}
+
+	// Escape sequences (must be processed before globs)
+	for _, loc := range gitEscape.FindAllStringIndex(line, -1) {
+		startRune := len([]rune(line[:loc[0]]))
+		endRune := len([]rune(line[:loc[1]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "string"})
+	}
+
+	// Character ranges [...]
+	for _, loc := range gitCharRange.FindAllStringIndex(line, -1) {
+		startRune := len([]rune(line[:loc[0]]))
+		endRune := len([]rune(line[:loc[1]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "string"})
+	}
+
+	// Double glob patterns (**) - must be before single glob
+	for _, loc := range gitDoubleGlob.FindAllStringIndex(line, -1) {
+		startRune := len([]rune(line[:loc[0]]))
+		endRune := len([]rune(line[:loc[1]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "constant"})
+	}
+
+	// Single glob patterns (*, ?)
 	for _, loc := range gitGlob.FindAllStringIndex(line, -1) {
 		startRune := len([]rune(line[:loc[0]]))
 		endRune := len([]rune(line[:loc[1]]))
-		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "operator"})
+		// Skip if this is part of ** (already highlighted as constant)
+		isPartOfDouble := false
+		for _, span := range spans {
+			if span.Kind == "constant" && startRune >= span.StartCol && endRune <= span.EndCol {
+				isPartOfDouble = true
+				break
+			}
+		}
+		if !isPartOfDouble {
+			spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "operator"})
+		}
 	}
 
+	// Directory marker (trailing /)
+	if len(line) > 0 && line[len(line)-1] == '/' {
+		spans = append(spans, HighlightSpan{StartCol: lineLen - 1, EndCol: lineLen, Kind: "type"})
+	}
+
+	spans = append(spans, HighlightSpan{StartCol: 0, EndCol: lineLen, Kind: "plain"})
+	return spans
+}
+
+func (e *Engine) highlightMakefileLine(line string) []HighlightSpan {
+	lineRunes := []rune(line)
+	lineLen := len(lineRunes)
+	fullLineLen := lineLen
+	if lineLen == 0 {
+		return nil
+	}
+
+	var spans []HighlightSpan
+
+	// Recipe lines (start with tab) - don't treat # as Make comment
+	isRecipeLine := len(line) > 0 && line[0] == '\t'
+
+	// Comments (only on non-recipe lines, and not escaped \#)
+	if !isRecipeLine {
+		if loc := makeComment.FindStringIndex(line); loc != nil {
+			// Check if # is escaped
+			if loc[0] == 0 || line[loc[0]-1] != '\\' {
+				startRune := len([]rune(line[:loc[0]]))
+				spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: lineLen, Kind: "comment"})
+				// Process only the part before comment
+				line = line[:loc[0]]
+				lineLen = len([]rune(line))
+			}
+		}
+	}
+
+	if lineLen == 0 {
+		return spans
+	}
+
+	// Special targets (.PHONY:, .SUFFIXES:, etc.) - highlight as keyword
+	if matches := makeSpecialTarget.FindStringSubmatchIndex(line); matches != nil && len(matches) >= 4 {
+		startRune := len([]rune(line[:matches[2]]))
+		endRune := len([]rune(line[:matches[3]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "keyword"})
+	}
+
+	// Directives (include, ifdef, etc.)
+	if matches := makeDirective.FindStringSubmatchIndex(line); matches != nil && len(matches) >= 4 {
+		startRune := len([]rune(line[:matches[2]]))
+		endRune := len([]rune(line[:matches[3]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "keyword"})
+	}
+
+	// Variable assignment (VAR = value)
+	if matches := makeVarAssign.FindStringSubmatchIndex(line); matches != nil && len(matches) >= 6 {
+		// Variable name
+		startRune := len([]rune(line[:matches[2]]))
+		endRune := len([]rune(line[:matches[3]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "variable"})
+		// Assignment operator
+		opStart := len([]rune(line[:matches[4]]))
+		opEnd := len([]rune(line[:matches[5]]))
+		spans = append(spans, HighlightSpan{StartCol: opStart, EndCol: opEnd, Kind: "operator"})
+	} else if matches := makeTarget.FindStringSubmatchIndex(line); matches != nil && len(matches) >= 4 {
+		// Target name (before colon)
+		startRune := len([]rune(line[:matches[2]]))
+		endRune := len([]rune(line[:matches[3]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "function"})
+	}
+
+	// Recipe line indicator (tab at start)
+	if len(line) > 0 && line[0] == '\t' {
+		spans = append(spans, HighlightSpan{StartCol: 0, EndCol: 1, Kind: "punctuation"})
+	}
+
+	// Automatic variables ($@, $<, $^, etc.) - highlight before regular vars
+	for _, loc := range makeAutoVar.FindAllStringIndex(line, -1) {
+		startRune := len([]rune(line[:loc[0]]))
+		endRune := len([]rune(line[:loc[1]]))
+		spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "constant"})
+	}
+
+	// Variable references $(VAR) or ${VAR}
+	for _, loc := range makeVarRef.FindAllStringIndex(line, -1) {
+		startRune := len([]rune(line[:loc[0]]))
+		endRune := len([]rune(line[:loc[1]]))
+		// Skip if already highlighted as automatic variable
+		isAuto := false
+		for _, span := range spans {
+			if span.Kind == "constant" && startRune >= span.StartCol && startRune < span.EndCol {
+				isAuto = true
+				break
+			}
+		}
+		if !isAuto {
+			spans = append(spans, HighlightSpan{StartCol: startRune, EndCol: endRune, Kind: "variable"})
+		}
+	}
+
+	spans = append(spans, HighlightSpan{StartCol: 0, EndCol: fullLineLen, Kind: "plain"})
 	return spans
 }

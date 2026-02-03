@@ -69,6 +69,9 @@ type Theme struct {
 	SyntaxUnknown                  string `toml:"syntax-unknown"`
 	SyntaxVariable                 string `toml:"syntax-variable"`
 	SyntaxParameter                string `toml:"syntax-parameter"`
+	SyntaxYAMLKey                  string `toml:"syntax-yaml-key"`
+	SyntaxYAMLValue                string `toml:"syntax-yaml-value"`
+	SyntaxYAMLListItem             string `toml:"syntax-yaml-list-item"`
 	AIReasoningForeground          string `toml:"ai-reasoning-foreground"`
 	AIUserForeground               string `toml:"ai-user-foreground"`
 	AIAssistantForeground          string `toml:"ai-assistant-foreground"`
@@ -591,6 +594,15 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.SyntaxParameter != "" {
 		dst.SyntaxParameter = src.SyntaxParameter
+	}
+	if src.SyntaxYAMLKey != "" {
+		dst.SyntaxYAMLKey = src.SyntaxYAMLKey
+	}
+	if src.SyntaxYAMLValue != "" {
+		dst.SyntaxYAMLValue = src.SyntaxYAMLValue
+	}
+	if src.SyntaxYAMLListItem != "" {
+		dst.SyntaxYAMLListItem = src.SyntaxYAMLListItem
 	}
 	if src.AIReasoningForeground != "" {
 		dst.AIReasoningForeground = src.AIReasoningForeground

@@ -451,6 +451,9 @@ type Editor struct {
 	styleSyntaxUnknown            Style
 	styleSyntaxVariable           Style
 	styleSyntaxParameter          Style
+	styleSyntaxYAMLKey            Style
+	styleSyntaxYAMLValue          Style
+	styleSyntaxYAMLListItem       Style
 	styleTableBorder              Style
 	styleAIReasoning              Style
 	styleAIUser                   Style

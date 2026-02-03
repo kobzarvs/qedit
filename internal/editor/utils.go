@@ -187,6 +187,14 @@ func (e *Editor) styleForHighlight(kind string) (Style, bool) {
 		return e.styleSyntaxVariable, true
 	case "parameter":
 		return e.styleSyntaxParameter, true
+	case "yaml-key":
+		return e.styleSyntaxYAMLKey, true
+	case "yaml-value":
+		return e.styleSyntaxYAMLValue, true
+	case "yaml-list-item":
+		return e.styleSyntaxYAMLListItem, true
+	case "plain":
+		return e.styleMain, true
 	case "text":
 		return e.styleTableBorder, true
 	default:
@@ -205,7 +213,11 @@ func highlightPriority(kind string) int {
 		return 4
 	case "builtin":
 		return 4
+	case "yaml-key":
+		return 4
 	case "parameter":
+		return 3
+	case "yaml-list-item":
 		return 3
 	case "type", "function", "number":
 		return 3
@@ -213,9 +225,13 @@ func highlightPriority(kind string) int {
 		return 2
 	case "variable":
 		return 2
+	case "yaml-value":
+		return 2
 	case "operator":
 		return 1
 	case "punctuation":
+		return 1
+	case "plain":
 		return 1
 	case "text":
 		return 8

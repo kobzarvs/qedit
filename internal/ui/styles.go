@@ -63,6 +63,9 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	colors["syntax-unknown"] = resolve(theme.SyntaxUnknown, tcell.ColorRed)
 	colors["syntax-variable"] = resolve(theme.SyntaxVariable, colors["foreground"])
 	colors["syntax-parameter"] = resolve(theme.SyntaxParameter, colors["foreground"])
+	colors["syntax-yaml-key"] = resolve(theme.SyntaxYAMLKey, colors["syntax-field"])
+	colors["syntax-yaml-value"] = resolve(theme.SyntaxYAMLValue, colors["foreground"])
+	colors["syntax-yaml-list-item"] = resolve(theme.SyntaxYAMLListItem, colors["syntax-parameter"])
 	colors["ai-reasoning-foreground"] = resolve(theme.AIReasoningForeground, colors["syntax-comment"])
 	colors["ai-user-foreground"] = resolve(theme.AIUserForeground, tcell.NewRGBColor(89, 194, 255)) // #59C2FF
 	colors["ai-assistant-foreground"] = resolve(theme.AIAssistantForeground, colors["foreground"])
@@ -132,6 +135,9 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	syntaxUnknown := style(colors["syntax-unknown"], colors["background"])
 	syntaxVariable := style(colors["syntax-variable"], colors["background"])
 	syntaxParameter := style(colors["syntax-parameter"], colors["background"])
+	syntaxYAMLKey := style(colors["syntax-yaml-key"], colors["background"])
+	syntaxYAMLValue := style(colors["syntax-yaml-value"], colors["background"])
+	syntaxYAMLListItem := style(colors["syntax-yaml-list-item"], colors["background"])
 	tableBorder := style(tcell.ColorWhite, colors["background"])
 	aiReasoning := style(colors["ai-reasoning-foreground"], colors["sidebar-background"])
 	aiUser := style(colors["ai-user-foreground"], colors["sidebar-background"])
@@ -203,6 +209,9 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 		SyntaxUnknown:           syntaxUnknown,
 		SyntaxVariable:          syntaxVariable,
 		SyntaxParameter:         syntaxParameter,
+		SyntaxYAMLKey:           syntaxYAMLKey,
+		SyntaxYAMLValue:         syntaxYAMLValue,
+		SyntaxYAMLListItem:      syntaxYAMLListItem,
 		TableBorder:             tableBorder,
 		AIReasoning:             aiReasoning,
 		AIUser:                  aiUser,
