@@ -145,6 +145,13 @@ const (
 	actionAIApply          = "ai_apply"           // Apply suggested edit
 	actionAIReject         = "ai_reject"          // Reject suggested edit
 	actionAIEdit           = "ai_edit"            // Edit conversation
+
+	// Buffer management
+	actionBufferPicker     = "buffer_picker"      // open buffer picker in sidebar
+	actionGotoNextBuffer   = "goto_next_buffer"   // gn - next buffer
+	actionGotoPrevBuffer   = "goto_prev_buffer"   // gp - previous buffer
+	actionGotoLastAccessed = "goto_last_accessed" // ga - last accessed buffer
+	actionCloseBuffer      = "close_buffer"       // close current buffer
 )
 
 // CommandInfo describes an available command with description
@@ -205,6 +212,11 @@ var AvailableCommands = []CommandInfo{
 	{"worktree switch <name>", "switch to worktree", CmdGroupGit},
 	{"worktree remove <name>", "remove worktree", CmdGroupGit},
 	{"worktree refresh", "refresh worktree list", CmdGroupGit},
+	// Buffers
+	{"bn", "next buffer", CmdGroupFile},
+	{"bp", "previous buffer", CmdGroupFile},
+	{"bc", "close buffer", CmdGroupFile},
+	{"bc!", "close buffer (force)", CmdGroupFile},
 	// AI
 	{"ide", "toggle AI panel", CmdGroupAI},
 	{"ai-focus", "toggle AI panel focus", CmdGroupAI},
@@ -234,7 +246,7 @@ var SpaceMenuItems = []SpaceMenuItem{
 	{'F', "Open file picker at cwd", "file_picker_cwd", false},
 	{'e', "Open file explorer", "file_explorer", false},
 	{'E', "Open file explorer at buffer dir", "file_explorer_buffer", false},
-	{'b', "Open buffer picker", "buffer_picker", false},
+	{'b', "Open buffer picker", "buffer_picker", true},
 	{'j', "Open jumplist picker", "jumplist_picker", false},
 	{'s', "Open symbol picker", "symbol_picker", false},
 	{'S', "Open workspace symbol picker", "workspace_symbol_picker", false},
@@ -274,10 +286,10 @@ var GotoMenuItems = []SpaceMenuItem{
 	{'t', "Go to window top", "goto_window_top", true},
 	{'c', "Go to window center", "goto_window_center", true},
 	{'b', "Go to window bottom", "goto_window_bottom", true},
-	{'a', "Go to last accessed file", "goto_last_accessed", false},
+	{'a', "Go to last accessed file", "goto_last_accessed", true},
 	{'m', "Go to last modified file", "goto_last_modified", false},
-	{'n', "Go to next buffer", "goto_next_buffer", false},
-	{'p', "Go to previous buffer", "goto_prev_buffer", false},
+	{'n', "Go to next buffer", "goto_next_buffer", true},
+	{'p', "Go to previous buffer", "goto_prev_buffer", true},
 	{'.', "Go to last change", "goto_last_change", false},
 }
 
@@ -624,6 +636,10 @@ type Editor struct {
 	// AI edit mode state
 	aiEditBufferPath    string   // path to temp file for AI conversation editing
 	aiEditOriginalPanel *AIPanel // reference to original AI panel when in edit mode
+
+	// Multi-buffer state
+	buffers        *BufferManager // tracks multiple open buffers
+	bufferSwitched bool           // signal for app.go that buffer was switched
 }
 
 // SearchMatch represents a match location

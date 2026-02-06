@@ -31,6 +31,7 @@ func NewSidebarMenuContent(gitAvailable bool, aiAvailable bool) *SidebarMenuCont
 func (m *SidebarMenuContent) buildItems() {
 	m.items = []SidebarMenuItem{
 		{Label: "Project files", Mode: SidebarModeFileTree, Hotkey: "Cmd+O", Available: true},
+		{Label: "Open Buffers", Mode: SidebarModeBuffers, Hotkey: "", Available: true},
 		{Label: "Branches", Mode: SidebarModeBranches, Hotkey: "Cmd+B", Available: m.gitAvail},
 		{Label: "AI", Mode: SidebarModeAI, Hotkey: "", Available: m.aiAvail},
 		{Label: "Recent History", Mode: SidebarModeRecentHistory, Hotkey: "", Available: false},

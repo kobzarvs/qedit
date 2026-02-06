@@ -20,6 +20,7 @@ const (
 	SidebarModeRecentHistory             // line-by-line history (future)
 	SidebarModeLocalChanges              // git changes
 	SidebarModeWorktrees                 // git worktrees (future)
+	SidebarModeBuffers                   // open buffers
 )
 
 // SidebarAction represents actions returned from sidebar content
@@ -37,17 +38,19 @@ const (
 	SidebarActionOpenAIModels                 // open AI models list for provider
 	SidebarActionSetAIModel                   // set AI model
 	SidebarActionSwitchWorktree               // switch git worktree
+	SidebarActionSwitchBuffer                 // switch to buffer
 )
 
 // SidebarActionData contains action and associated data
 type SidebarActionData struct {
-	Action   SidebarAction
-	Path     string      // for OpenFile
-	Branch   string      // for CheckoutBranch
-	Mode     SidebarMode // for SwitchMode
-	Provider string      // for AI provider selection
-	Model    string      // for AI model selection
-	Worktree string      // for worktree selection (path)
+	Action      SidebarAction
+	Path        string      // for OpenFile
+	Branch      string      // for CheckoutBranch
+	Mode        SidebarMode // for SwitchMode
+	Provider    string      // for AI provider selection
+	Model       string      // for AI model selection
+	Worktree    string      // for worktree selection (path)
+	BufferIndex int         // for SwitchBuffer
 }
 
 // SidebarItem represents an item in the sidebar list

@@ -304,13 +304,23 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 		flags += "[!]"
 	}
 
+	// Buffer indicator: [2/5] when multiple buffers are open
+	bufIndicator := ""
+	if e.buffers != nil && e.buffers.Count() > 1 {
+		bufIndicator = fmt.Sprintf("[%d/%d]", e.buffers.ActiveIndex()+1, e.buffers.Count())
+	}
+
 	msg := e.statusMessage
 	if showTopMessage {
 		msg = ""
 	}
-	status := fmt.Sprintf(" %s | %s %s", mode, name, flags)
+	namePart := name
+	if bufIndicator != "" {
+		namePart = bufIndicator + " " + name
+	}
+	status := fmt.Sprintf(" %s | %s %s", mode, namePart, flags)
 	if msg != "" {
-		status = fmt.Sprintf(" %s | %s %s | %s ", mode, name, flags, msg)
+		status = fmt.Sprintf(" %s | %s %s | %s ", mode, namePart, flags, msg)
 	}
 	row := e.cursor.Row + 1
 	col := 1

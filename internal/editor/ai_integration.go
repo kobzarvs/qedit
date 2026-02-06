@@ -19,9 +19,24 @@ func (e *Editor) ensureAIPanel() {
 }
 
 // toggleAIPanel toggles the AI panel visibility.
+// Close only when focused; otherwise just focus it.
 func (e *Editor) toggleAIPanel() {
 	e.ensureAIPanel()
-	e.aiPanel.Toggle()
+	if e.aiPanel.Visible {
+		if e.aiPanel.Focused {
+			e.aiPanel.Close()
+		} else {
+			e.aiPanel.Focused = true
+			if e.sidebar != nil {
+				e.sidebar.Focused = false
+			}
+		}
+	} else {
+		e.aiPanel.Open()
+		if e.sidebar != nil {
+			e.sidebar.Focused = false
+		}
+	}
 
 	// Update panel state from manager
 	if e.aiPanel.Visible && e.aiManager != nil {

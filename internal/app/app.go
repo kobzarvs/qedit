@@ -252,6 +252,14 @@ func (a *App) Run() error {
 	var langName string
 	highlightEnabled := true
 	highlightExpected := false
+	isAsyncParseLang := func(name string) bool {
+		switch name {
+		case "typescript", "typescriptreact", "javascript", "javascriptreact", "vue":
+			return true
+		default:
+			return false
+		}
+	}
 	if len(a.args) > 0 {
 		openPath = a.args[0]
 		if err := ed.OpenFile(openPath); err != nil {
@@ -589,7 +597,9 @@ func (a *App) Run() error {
 	lastHighlightStart := -1
 	lastHighlightEnd := -1
 	if openPath != "" && highlightEnabled && langName != "" {
-		if ts.ParseSync(openPath, langName, ed.Content()) {
+		if isAsyncParseLang(langName) {
+			ts.Parse(openPath, langName, ed.Content())
+		} else if ts.ParseSync(openPath, langName, ed.Content()) {
 			_, h := s.Size()
 			viewHeight := h - 2
 			if viewHeight < 0 {
@@ -663,7 +673,9 @@ func (a *App) Run() error {
 		lastHighlightStart = -1
 		lastHighlightEnd = -1
 		if highlightEnabled && langName != "" {
-			if ts.ParseSync(absPath, langName, ed.Content()) {
+			if isAsyncParseLang(langName) {
+				ts.Parse(absPath, langName, ed.Content())
+			} else if ts.ParseSync(absPath, langName, ed.Content()) {
 				_, h := s.Size()
 				viewHeight := h - 2
 				if viewHeight < 0 {
@@ -826,6 +838,10 @@ func (a *App) Run() error {
 		isMouseScroll := false
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
+			// Emergency exit: allow Ctrl+C to quit even if editor state is stuck.
+			if ev.Key() == tcell.KeyCtrlC {
+				return nil
+			}
 			if ed.HandleKey(ui.WrapKey(ev)) {
 				return nil
 			}
@@ -920,6 +936,90 @@ func (a *App) Run() error {
 				}
 			}
 		}
+		if ed.ConsumeBufferSwitch() {
+			path := ed.Filename()
+			if path != openPath {
+				openPath = path
+				gitPath = path
+
+				// Update file watcher
+				resetFileWatcher(path)
+
+				// LSP: inform about open file
+				content := ed.Content()
+				ls.OpenFile(path, content)
+
+				// Re-detect language
+				langName = ""
+				highlightEnabled = true
+				if highlightMaxBytes > 0 {
+					if info, err := os.Stat(path); err == nil && info.Size() > highlightMaxBytes {
+						highlightEnabled = false
+					}
+				}
+				if highlightEnabled {
+					if lang := langs.Match(path); lang != nil {
+						langName = lang.Name
+					}
+				}
+				highlightExpected = highlightEnabled && langName != ""
+
+				// Re-parse tree-sitter
+				if highlightEnabled && langName != "" {
+					if isAsyncParseLang(langName) {
+						ts.Parse(path, langName, ed.Content())
+					} else if ts.ParseSync(path, langName, ed.Content()) {
+						_, h := s.Size()
+						viewHeight := h - 2
+						if viewHeight < 0 {
+							viewHeight = 0
+						}
+						end := viewHeight - 1
+						if end < 0 {
+							end = 0
+						}
+						lineCount := ed.LineCount()
+						if lineCount > 0 && end >= lineCount {
+							end = lineCount - 1
+						}
+						spans := ts.Highlights(path, 0, end)
+						if spans != nil {
+							editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
+							for line, lineSpans := range spans {
+								dst := make([]editor.HighlightSpan, len(lineSpans))
+								for i, span := range lineSpans {
+									dst[i] = editor.HighlightSpan{
+										StartCol: span.StartCol,
+										EndCol:   span.EndCol,
+										Kind:     span.Kind,
+									}
+								}
+								editorSpans[line] = dst
+							}
+							ed.SetHighlights(0, end, editorSpans)
+						}
+					} else {
+						highlightExpected = false
+						ed.SetHighlights(-1, -1, nil)
+					}
+				} else {
+					ed.SetHighlights(-1, -1, nil)
+				}
+
+				// Update git info
+				ed.SetGitBranch(gitinfo.Branch(path))
+				gitRoot := gitinfo.Root(path)
+				ed.SetGitRoot(gitRoot)
+
+				lastChangeTick = ed.ChangeTick()
+				lastHighlightStart = -1
+				lastHighlightEnd = -1
+
+				if autoReloadResults == nil {
+					autoReloadResults = make(chan autoReloadResult, 1)
+				}
+			}
+		}
 		if fileWatcher != nil {
 			for {
 				select {
@@ -972,7 +1072,9 @@ func (a *App) Run() error {
 			changed := tick != lastChangeTick
 			if changed {
 				lastChangeTick = tick
-				if edit, ok := ed.ConsumeLastEdit(); ok {
+				if isAsyncParseLang(langName) {
+					ts.Parse(openPath, langName, ed.Content())
+				} else if edit, ok := ed.ConsumeLastEdit(); ok {
 					tsEdit := sitter.EditInput{
 						StartIndex:  uint32(edit.StartByte),
 						OldEndIndex: uint32(edit.OldEndByte),
@@ -1033,10 +1135,9 @@ func (a *App) Run() error {
 			ed.SetGitBranch(gitinfo.Branch(gitPath))
 		}
 		if highlightExpected && !ed.HasHighlights() {
-			if openPath == ed.Filename() {
-				continue
+			if openPath != ed.Filename() {
+				highlightExpected = false
 			}
-			highlightExpected = false
 		}
 
 		// Process AI events (non-blocking, drain backlog)

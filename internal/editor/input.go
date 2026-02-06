@@ -715,6 +715,12 @@ func (e *Editor) handleGotoKey(ch rune) bool {
 		action = actionLineEnd
 	case 's':
 		action = actionFileStart // same as gg
+	case 'a':
+		action = actionGotoLastAccessed
+	case 'n':
+		action = actionGotoNextBuffer
+	case 'p':
+		action = actionGotoPrevBuffer
 	default:
 		return false
 	}
@@ -776,7 +782,7 @@ func (e *Editor) lspGoto(method string) bool {
 	loc := locations[0]
 	currentAbs, _ := filepath.Abs(e.filename)
 	if loc.Path != currentAbs && loc.Path != e.filename {
-		e.setStatus("LSP: " + loc.Path + ":" + strconv.Itoa(loc.StartLine+1) + " (cross-file)")
+		e.requestOpenLocation(loc.Path, loc.StartLine, loc.StartCol)
 		return false
 	}
 
@@ -958,6 +964,8 @@ func (e *Editor) executeSpaceAction(item SpaceMenuItem) bool {
 		return false
 	case "toggle_comment":
 		e.toggleLineComment()
+	case "buffer_picker":
+		e.openSidebarBuffers()
 	case "show_keybindings":
 		e.keybindingsHelpActive = true
 		e.keybindingsHelpScroll = 0
@@ -1658,6 +1666,8 @@ func (e *Editor) jumpToSelectedRef() {
 		e.cursor.Row = loc.StartLine
 		e.cursor.Col = loc.StartCol
 		e.ensureCursorVisible(e.viewHeightCached())
+	} else {
+		e.requestOpenLocation(loc.Path, loc.StartLine, loc.StartCol)
 	}
 }
 
@@ -1778,6 +1788,16 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 		}
 		return false
 
+	case SidebarActionSwitchBuffer:
+		logger.Debug("sidebar action: switch buffer", "index", action.BufferIndex)
+		e.switchToBuffer(action.BufferIndex)
+		if e.sidebar.CloseOnSelect {
+			e.closeSidebar()
+		} else {
+			e.sidebar.Focused = false
+		}
+		return false
+
 	case SidebarActionRefresh:
 		if action.Mode == SidebarModeWorktrees {
 			e.refreshSidebarWorktrees()
@@ -1816,6 +1836,9 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 
 	case SidebarModeWorktrees:
 		e.openSidebarWorktrees()
+
+	case SidebarModeBuffers:
+		e.openSidebarBuffers()
 	}
 }
 
@@ -2122,7 +2145,8 @@ func (e *Editor) closeSidebar() {
 	e.clearFileTreePreview()
 }
 
-// toggleSidebar toggles the sidebar visibility
+// toggleSidebar toggles the sidebar visibility.
+// Close only when focused; otherwise just focus it.
 func (e *Editor) toggleSidebar() {
 	logger.Debug("toggleSidebar called", "visible", e.sidebar != nil && e.sidebar.Visible, "focused", e.sidebar != nil && e.sidebar.Focused)
 	if e.sidebar == nil {
@@ -2130,9 +2154,25 @@ func (e *Editor) toggleSidebar() {
 		return
 	}
 	if e.sidebar.Visible {
-		e.closeSidebar()
+		if e.sidebar.Focused {
+			e.closeSidebar()
+		} else {
+			e.sidebar.Focused = true
+			if e.aiPanel != nil {
+				e.aiPanel.Focused = false
+			}
+		}
 	} else {
-		e.openSidebar()
+		// Restore previous content if available, otherwise open menu
+		if e.sidebar.Content != nil {
+			e.sidebar.Visible = true
+			e.sidebar.Focused = true
+			if e.aiPanel != nil {
+				e.aiPanel.Focused = false
+			}
+		} else {
+			e.openSidebar()
+		}
 	}
 }
 

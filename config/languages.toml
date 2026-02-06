@@ -5,6 +5,36 @@ roots = ["go.mod", ".git"]
 language-servers = ["gopls"]
 
 [[language]]
+name = "typescript"
+file-types = ["ts", "mts", "cts"]
+roots = ["package.json", "tsconfig.json"]
+language-servers = ["tsgo"]
+
+[[language]]
+name = "typescriptreact"
+file-types = ["tsx"]
+roots = ["package.json", "tsconfig.json"]
+language-servers = ["tsgo"]
+
+[[language]]
+name = "javascript"
+file-types = ["js", "mjs", "cjs"]
+roots = ["package.json", "tsconfig.json"]
+language-servers = ["tsgo"]
+
+[[language]]
+name = "javascriptreact"
+file-types = ["jsx"]
+roots = ["package.json", "tsconfig.json"]
+language-servers = ["tsgo"]
+
+[[language]]
+name = "vue"
+file-types = ["vue"]
+roots = ["package.json", "tsconfig.json"]
+language-servers = ["tsgo"]
+
+[[language]]
 name = "toml"
 file-types = ["toml"]
 roots = []
@@ -21,8 +51,9 @@ roots = []
 
 [[language]]
 name = "markdown"
-file-types = ["md", "markdown"]
-roots = []
+file-types = ["md", "markdown", "mdx"]
+roots = ["package.json", "tsconfig.json"]
+language-servers = ["tsgo"]
 
 [[language]]
 name = "bash"
@@ -42,3 +73,7 @@ roots = []
 [language-server.gopls]
 command = "gopls"
 args = []
+
+[language-server.tsgo]
+command = "tsgo"
+args = ["--lsp", "-stdio"]

@@ -100,6 +100,17 @@ func (e *Editor) execAction(action string) bool {
 			e.cancelAIEdit()
 			return false
 		}
+		if e.buffers != nil && e.buffers.Count() > 0 {
+			bs := e.snapshotBufferState()
+			e.buffers.UpdateActive(bs)
+			if e.buffers.HasDirtyBuffers() {
+				e.setStatus("unsaved changes in open buffers (use :q!)")
+				return false
+			}
+		} else if e.dirty {
+			e.setStatus("unsaved changes (use :q!)")
+			return false
+		}
 		return true
 	case actionBackspace:
 		e.backspace()
@@ -303,7 +314,29 @@ func (e *Editor) execAction(action string) bool {
 			} else {
 				e.setStatus("saved " + e.filename)
 			}
+			// Update buffer manager with saved state
+			if e.buffers != nil && e.buffers.Count() > 0 {
+				bs := e.snapshotBufferState()
+				e.buffers.UpdateActive(bs)
+			}
 		}
+		return false
+
+	// Buffer management
+	case actionBufferPicker:
+		e.openSidebarBuffers()
+		return false
+	case actionGotoNextBuffer:
+		e.gotoNextBuffer()
+		return false
+	case actionGotoPrevBuffer:
+		e.gotoPrevBuffer()
+		return false
+	case actionGotoLastAccessed:
+		e.gotoLastAccessedBuffer()
+		return false
+	case actionCloseBuffer:
+		e.closeCurrentBuffer(false)
 		return false
 
 	// AI integration
@@ -356,6 +389,11 @@ func (e *Editor) execCommand(cmd string) bool {
 			e.setStatus(err.Error())
 			return false
 		}
+		// Update buffer manager with saved state
+		if e.buffers != nil && e.buffers.Count() > 0 {
+			bs := e.snapshotBufferState()
+			e.buffers.UpdateActive(bs)
+		}
 		e.setStatus("written")
 		return false
 	case "e", "edit":
@@ -381,13 +419,33 @@ func (e *Editor) execCommand(cmd string) bool {
 		e.setStatus("reloaded")
 		return false
 	case "q":
-		if e.dirty {
+		if e.buffers != nil && e.buffers.HasDirtyBuffers() {
+			// Update active buffer state first
+			bs := e.snapshotBufferState()
+			e.buffers.UpdateActive(bs)
+			if e.buffers.HasDirtyBuffers() {
+				e.setStatus("unsaved changes in open buffers (use :q!)")
+				return false
+			}
+		} else if e.dirty {
 			e.setStatus("unsaved changes (use :q!)")
 			return false
 		}
 		return true
 	case "q!":
 		return true
+	case "bn":
+		e.gotoNextBuffer()
+		return false
+	case "bp":
+		e.gotoPrevBuffer()
+		return false
+	case "bc":
+		e.closeCurrentBuffer(false)
+		return false
+	case "bc!":
+		e.closeCurrentBuffer(true)
+		return false
 	case "wq", "x":
 		path := ""
 		if len(args) > 0 {

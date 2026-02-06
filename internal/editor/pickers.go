@@ -2,7 +2,6 @@ package editor
 
 import (
 	"path/filepath"
-	"strconv"
 )
 
 func (e *Editor) ConsumeBranchPickerRequest() bool {
@@ -82,7 +81,7 @@ func (e *Editor) closeRefsPicker(jump bool) {
 			e.cursor.Col = loc.StartCol
 			e.ensureCursorVisible(e.viewHeightCached())
 		} else {
-			e.setStatus("cross-file: " + loc.Path + ":" + strconv.Itoa(loc.StartLine+1))
+			e.requestOpenLocation(loc.Path, loc.StartLine, loc.StartCol)
 		}
 	}
 	e.refsPickerActive = false

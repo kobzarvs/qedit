@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kobzarvs/qedit/internal/config"
+	"github.com/kobzarvs/qedit/internal/logger"
 )
 
 type Event struct {
@@ -68,6 +69,7 @@ func (m *Manager) OpenFile(path, text string) {
 	if !ok || serverCfg.Command == "" {
 		return
 	}
+	logger.Debug("lsp open file", "path", path, "language", lang.Name, "server", serverName)
 
 	root := findRoot(path, lang.Roots)
 	srv, err := m.getServer(serverName, serverCfg, root)
@@ -119,6 +121,7 @@ func (m *Manager) getServer(name string, cfg config.LanguageServer, root string)
 	}
 	m.mu.Unlock()
 
+	logger.Debug("lsp start server", "server", name, "command", cfg.Command, "args", cfg.Args, "root", root)
 	cmd := exec.Command(cfg.Command, cfg.Args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -131,6 +134,9 @@ func (m *Manager) getServer(name string, cfg config.LanguageServer, root string)
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		return nil, err
+	}
+	if cmd.Process != nil {
+		logger.Debug("lsp process started", "server", name, "pid", cmd.Process.Pid)
 	}
 	rootURI := fileURI(root)
 	srv := &server{
@@ -153,6 +159,7 @@ func (m *Manager) getServer(name string, cfg config.LanguageServer, root string)
 		srv.stop()
 		return nil, err
 	}
+	logger.Debug("lsp initialize sent", "server", name, "root", root)
 
 	m.mu.Lock()
 	m.servers[cacheKey] = srv
@@ -325,10 +332,10 @@ type rpcNotification struct {
 }
 
 type initializeParams struct {
-	ProcessID  int                    `json:"processId"`
-	RootURI    string                 `json:"rootUri"`
-	Capabilities map[string]any       `json:"capabilities"`
-	ClientInfo map[string]string      `json:"clientInfo"`
+	ProcessID    int               `json:"processId"`
+	RootURI      string            `json:"rootUri"`
+	Capabilities map[string]any    `json:"capabilities"`
+	ClientInfo   map[string]string `json:"clientInfo"`
 }
 
 type textDocumentItem struct {
@@ -370,11 +377,12 @@ type didCloseParams struct {
 }
 
 func (s *server) initialize() error {
+	logger.Debug("lsp initialize start", "server", s.name, "root", s.rootURI)
 	params := initializeParams{
-		ProcessID:   os.Getpid(),
-		RootURI:     s.rootURI,
+		ProcessID:    os.Getpid(),
+		RootURI:      s.rootURI,
 		Capabilities: map[string]any{},
-		ClientInfo:  map[string]string{"name": "qedit"},
+		ClientInfo:   map[string]string{"name": "qedit"},
 	}
 	s.mu.Lock()
 	s.nextID++
@@ -399,12 +407,14 @@ func (s *server) didOpen(path, languageID, text string) {
 		return
 	}
 	if !s.initialized {
+		logger.Debug("lsp didOpen queued", "server", s.name, "uri", uri, "language", languageID, "bytes", len(text))
 		s.pendingOpen = append(s.pendingOpen, openRequest{uri: uri, languageID: languageID, text: text})
 		s.mu.Unlock()
 		return
 	}
 	s.docs[uri] = 1
 	s.mu.Unlock()
+	logger.Debug("lsp didOpen send", "server", s.name, "uri", uri, "language", languageID, "bytes", len(text))
 	_ = s.sendNotification("textDocument/didOpen", didOpenParams{
 		TextDocument: textDocumentItem{
 			URI:        uri,
@@ -479,14 +489,36 @@ func (s *server) readLoop() {
 		if err := json.Unmarshal(msg, &envelope); err != nil {
 			continue
 		}
+		// Check if this is a server-initiated request (has both id and method)
+		if _, hasMethod := envelope["method"]; hasMethod {
+			if idRaw, ok := envelope["id"]; ok {
+				// Server-initiated request — respond with null result
+				var id json.RawMessage
+				if err := json.Unmarshal(idRaw, &id); err == nil {
+					s.respondToServerRequest(id)
+				}
+			}
+			// Notifications (method but no id) are ignored
+			continue
+		}
+		// Response to our request (id but no method)
 		if idRaw, ok := envelope["id"]; ok {
 			var id int
 			if err := json.Unmarshal(idRaw, &id); err == nil {
 				s.handleResponse(id, envelope)
 			}
-			continue
 		}
 	}
+}
+
+func (s *server) respondToServerRequest(id json.RawMessage) {
+	resp := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  nil,
+	}
+	logger.Debug("lsp server request respond", "server", s.name, "id", string(id))
+	_ = s.send(resp)
 }
 
 func (s *server) handleResponse(id int, envelope map[string]json.RawMessage) {
@@ -517,6 +549,7 @@ func (s *server) handleResponse(id int, envelope map[string]json.RawMessage) {
 	s.pendingOpen = nil
 	s.mu.Unlock()
 
+	logger.Debug("lsp initialized", "server", s.name, "pending_open", len(pending))
 	_ = s.sendNotification("initialized", map[string]any{})
 	for _, req := range pending {
 		s.mu.Lock()
@@ -526,6 +559,7 @@ func (s *server) handleResponse(id int, envelope map[string]json.RawMessage) {
 		}
 		s.docs[req.uri] = 1
 		s.mu.Unlock()
+		logger.Debug("lsp didOpen send", "server", s.name, "uri", req.uri, "language", req.languageID, "bytes", len(req.text))
 		_ = s.sendNotification("textDocument/didOpen", didOpenParams{
 			TextDocument: textDocumentItem{
 				URI:        req.uri,
@@ -588,10 +622,14 @@ func (s *server) request(method string, params any) (json.RawMessage, error) {
 	}
 
 	// Wait for response with timeout
+	timeout := 10 * time.Second
+	if method == "textDocument/references" {
+		timeout = 30 * time.Second
+	}
 	select {
 	case result := <-ch:
 		return result, nil
-	case <-time.After(10 * time.Second):
+	case <-time.After(timeout):
 		s.mu.Lock()
 		delete(s.handlers, id)
 		s.mu.Unlock()
