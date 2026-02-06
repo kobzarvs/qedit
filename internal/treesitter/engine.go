@@ -7,16 +7,22 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kobzarvs/qedit/internal/config"
+	"github.com/kobzarvs/qedit/internal/logger"
 
+	tree_sitter_vue "github.com/kobzarvs/qedit/internal/treesitter/vue"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/bash"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/javascript"
 	tree_sitter_markdown "github.com/smacker/go-tree-sitter/markdown/tree-sitter-markdown"
 	tree_sitter_markdown_inline "github.com/smacker/go-tree-sitter/markdown/tree-sitter-markdown-inline"
 	"github.com/smacker/go-tree-sitter/toml"
+	tsx "github.com/smacker/go-tree-sitter/typescript/tsx"
+	ts "github.com/smacker/go-tree-sitter/typescript/typescript"
 	"github.com/smacker/go-tree-sitter/yaml"
 )
 
@@ -50,6 +56,35 @@ type parseRequest struct {
 	text     string
 }
 
+func (e *Engine) ensureQuery(name string) *sitter.Query {
+	e.mu.RLock()
+	if q, ok := e.queries[name]; ok {
+		e.mu.RUnlock()
+		return q
+	}
+	e.mu.RUnlock()
+
+	lang, queryText := highlightQuerySpec(name)
+	if lang == nil || queryText == "" {
+		return nil
+	}
+	query, err := sitter.NewQuery([]byte(queryText), lang)
+	if err != nil {
+		logger.Warn("treesitter query error", "lang", name, "error", err)
+		e.mu.Lock()
+		e.queries[name] = nil
+		e.mu.Unlock()
+		return nil
+	}
+	e.mu.Lock()
+	if _, ok := e.queries[name]; !ok {
+		e.queries[name] = query
+	}
+	e.mu.Unlock()
+	logger.Debug("treesitter query ready", "lang", name)
+	return query
+}
+
 func New(langs config.Languages) *Engine {
 	return &Engine{
 		langs:   langs,
@@ -71,7 +106,12 @@ func (e *Engine) Start() error {
 		query string
 	}{
 		{"go", golang.GetLanguage(), goHighlightQuery},
+		{"javascript", javascript.GetLanguage(), javascriptHighlightQuery},
+		{"javascriptreact", javascript.GetLanguage(), javascriptHighlightQuery},
 		{"markdown", tree_sitter_markdown.GetLanguage(), markdownBlockHighlightQuery},
+		{"typescript", ts.GetLanguage(), typescriptHighlightQuery},
+		{"typescriptreact", tsx.GetLanguage(), typescriptReactHighlightQuery},
+		{"vue", tree_sitter_vue.GetLanguage(), vueHighlightQuery},
 		{"yaml", yaml.GetLanguage(), yamlHighlightQuery},
 		{"toml", toml.GetLanguage(), tomlHighlightQuery},
 		{"bash", bash.GetLanguage(), bashHighlightQuery},
@@ -84,9 +124,11 @@ func (e *Engine) Start() error {
 
 		query, err := sitter.NewQuery([]byte(l.query), l.lang)
 		if err != nil {
-			// Log error but continue with other languages
+			logger.Warn("treesitter query error", "lang", l.name, "error", err)
+			e.queries[l.name] = nil
 			continue
 		}
+		logger.Debug("treesitter query ready", "lang", l.name)
 		e.queries[l.name] = query
 	}
 
@@ -133,9 +175,12 @@ func (e *Engine) OpenFile(path, text string) {
 }
 
 func (e *Engine) Parse(path, language, text string) {
+	req := parseRequest{path: path, language: language, text: text}
 	select {
-	case e.reqCh <- parseRequest{path: path, language: language, text: text}:
+	case e.reqCh <- req:
+		logger.Debug("treesitter parse queued", "path", path, "lang", language, "bytes", len(text))
 	default:
+		logger.Debug("treesitter parse dropped", "path", path, "lang", language, "bytes", len(text))
 	}
 }
 
@@ -145,17 +190,25 @@ func (e *Engine) loop() {
 		case <-e.stopCh:
 			return
 		case req := <-e.reqCh:
+			start := time.Now()
+			logger.Debug("treesitter parse start", "path", req.path, "lang", req.language, "mode", "async", "bytes", len(req.text))
 			e.mu.RLock()
 			parser, ok := e.parsers[req.language]
 			e.mu.RUnlock()
 			if !ok {
+				logger.Debug("treesitter parse skip", "path", req.path, "lang", req.language, "mode", "async", "reason", "no-parser")
 				continue
 			}
 			e.mu.Lock()
-			tree, _ := parser.ParseCtx(context.Background(), nil, []byte(req.text))
+			tree, err := parser.ParseCtx(context.Background(), nil, []byte(req.text))
 			e.trees[req.path] = tree
 			e.sources[req.path] = []byte(req.text)
 			e.mu.Unlock()
+			if err != nil {
+				logger.Warn("treesitter parse error", "path", req.path, "lang", req.language, "mode", "async", "error", err, "duration", time.Since(start))
+			} else {
+				logger.Debug("treesitter parse done", "path", req.path, "lang", req.language, "mode", "async", "duration", time.Since(start))
+			}
 			e.sendEvent("parsed", req.path)
 		}
 	}
@@ -184,8 +237,11 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 		}
 	}
 	if lang == "" {
+		logger.Debug("treesitter parse skip", "path", path, "lang", language, "mode", "sync", "reason", "no-lang")
 		return false
 	}
+	start := time.Now()
+	logger.Debug("treesitter parse start", "path", path, "lang", lang, "mode", "sync", "bytes", len(text))
 
 	// For regex-based languages, just store the source
 	switch lang {
@@ -194,6 +250,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 		e.sources[path] = []byte(text)
 		e.mu.Unlock()
 		e.sendEvent("parsed", path)
+		logger.Debug("treesitter parse done", "path", path, "lang", lang, "mode", "sync", "duration", time.Since(start))
 		return true
 	}
 
@@ -201,8 +258,16 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	switch lang {
 	case "go":
 		tsLang = golang.GetLanguage()
+	case "javascript", "javascriptreact":
+		tsLang = javascript.GetLanguage()
 	case "markdown":
 		tsLang = tree_sitter_markdown.GetLanguage()
+	case "typescript":
+		tsLang = ts.GetLanguage()
+	case "typescriptreact":
+		tsLang = tsx.GetLanguage()
+	case "vue":
+		tsLang = tree_sitter_vue.GetLanguage()
 	case "yaml":
 		tsLang = yaml.GetLanguage()
 	case "toml":
@@ -210,6 +275,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	case "bash":
 		tsLang = bash.GetLanguage()
 	default:
+		logger.Debug("treesitter parse skip", "path", path, "lang", lang, "mode", "sync", "reason", "no-language")
 		return false
 	}
 	e.mu.Lock()
@@ -226,51 +292,74 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	if prev != nil && edit != nil {
 		prev.Edit(*edit)
 	}
-	tree, _ := parser.ParseCtx(context.Background(), prev, []byte(text))
+	tree, err := parser.ParseCtx(context.Background(), prev, []byte(text))
 	e.trees[path] = tree
 	e.sources[path] = []byte(text)
 	e.mu.Unlock()
+	if err != nil {
+		logger.Warn("treesitter parse error", "path", path, "lang", lang, "mode", "sync", "error", err, "duration", time.Since(start))
+	} else {
+		logger.Debug("treesitter parse done", "path", path, "lang", lang, "mode", "sync", "duration", time.Since(start))
+	}
 	e.sendEvent("parsed", path)
 	return true
 }
 
 func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]HighlightSpan {
 	if startLine < 0 || endLine < startLine {
+		logger.Debug("treesitter highlight skip", "path", path, "reason", "invalid-range", "start", startLine, "end", endLine)
 		return nil
 	}
 	lang := e.langs.Match(path)
 	if lang == nil {
+		logger.Debug("treesitter highlight skip", "path", path, "reason", "no-lang")
 		return nil
 	}
+	start := time.Now()
+	logger.Debug("treesitter highlight start", "path", path, "lang", lang.Name, "start", startLine, "end", endLine)
+	var reason string
+	var out map[int][]HighlightSpan
 
 	// Try non-tree-sitter highlighting for languages without tree-sitter
 	switch lang.Name {
 	case "markdown":
-		return e.markdownHighlights(path, startLine, endLine)
+		out = e.markdownHighlights(path, startLine, endLine)
+		break
 	case "json", "gitignore", "makefile":
 		e.mu.RLock()
 		source := e.sources[path]
 		e.mu.RUnlock()
 		if source != nil {
-			return e.regexHighlights(lang.Name, source, startLine, endLine)
+			out = e.regexHighlights(lang.Name, source, startLine, endLine)
+		} else {
+			reason = "no-source"
 		}
+		break
+	default:
+	}
+	if out == nil && reason == "" && lang.Name != "markdown" && lang.Name != "json" && lang.Name != "gitignore" && lang.Name != "makefile" {
+		query := e.ensureQuery(lang.Name)
+		if query == nil {
+			reason = "no-query"
+		} else {
+			e.mu.RLock()
+			tree := e.trees[path]
+			if tree == nil {
+				e.mu.RUnlock()
+				reason = "no-tree"
+			} else {
+				source := e.sources[path]
+				e.mu.RUnlock()
+				out = queryHighlights(query, tree, source, startLine, endLine)
+			}
+		}
+	}
+	if reason != "" {
+		logger.Debug("treesitter highlight skip", "path", path, "lang", lang.Name, "reason", reason, "start", startLine, "end", endLine, "duration", time.Since(start))
 		return nil
 	}
-
-	e.mu.RLock()
-	query, ok := e.queries[lang.Name]
-	if !ok || query == nil {
-		e.mu.RUnlock()
-		return nil
-	}
-	tree := e.trees[path]
-	if tree == nil {
-		e.mu.RUnlock()
-		return nil
-	}
-	source := e.sources[path]
-	e.mu.RUnlock()
-	return queryHighlights(query, tree, source, startLine, endLine)
+	logger.Debug("treesitter highlight done", "path", path, "lang", lang.Name, "start", startLine, "end", endLine, "lines", len(out), "duration", time.Since(start))
+	return out
 }
 
 func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, startLine, endLine int) map[int][]HighlightSpan {
@@ -683,6 +772,16 @@ func normalizeFenceLang(info string) string {
 		return "bash"
 	case "jsonc":
 		return "json"
+	case "js":
+		return "javascript"
+	case "jsx":
+		return "javascriptreact"
+	case "ts":
+		return "typescript"
+	case "tsx":
+		return "typescriptreact"
+	case "vue", "vuejs":
+		return "vue"
 	default:
 		return s
 	}
@@ -769,6 +868,7 @@ func (e *Engine) applyFencedBlockHighlights(out map[int][]HighlightSpan, block m
 		return
 	}
 
+	lang = normalizeFenceLang(lang)
 	query := e.queries[lang]
 	tsLang := tsLanguageForName(lang)
 	if query == nil || tsLang == nil {
@@ -842,10 +942,43 @@ func addFenceFallback(out map[int][]HighlightSpan, block mdFenceBlock, offsets [
 	}
 }
 
-func tsLanguageForName(name string) *sitter.Language {
+func highlightQuerySpec(name string) (*sitter.Language, string) {
 	switch name {
 	case "go":
+		return golang.GetLanguage(), goHighlightQuery
+	case "javascript":
+		return javascript.GetLanguage(), javascriptHighlightQuery
+	case "javascriptreact":
+		return javascript.GetLanguage(), javascriptHighlightQuery
+	case "typescript":
+		return ts.GetLanguage(), typescriptHighlightQuery
+	case "typescriptreact":
+		return tsx.GetLanguage(), typescriptReactHighlightQuery
+	case "vue":
+		return tree_sitter_vue.GetLanguage(), vueHighlightQuery
+	case "yaml":
+		return yaml.GetLanguage(), yamlHighlightQuery
+	case "toml":
+		return toml.GetLanguage(), tomlHighlightQuery
+	case "bash":
+		return bash.GetLanguage(), bashHighlightQuery
+	default:
+		return nil, ""
+	}
+}
+
+func tsLanguageForName(name string) *sitter.Language {
+	switch normalizeFenceLang(name) {
+	case "go":
 		return golang.GetLanguage()
+	case "javascript", "javascriptreact":
+		return javascript.GetLanguage()
+	case "typescript":
+		return ts.GetLanguage()
+	case "typescriptreact":
+		return tsx.GetLanguage()
+	case "vue":
+		return tree_sitter_vue.GetLanguage()
 	case "yaml":
 		return yaml.GetLanguage()
 	case "toml":
@@ -955,6 +1088,159 @@ const goHighlightQuery = `
 [
   "." "," ";" ":" "(" ")" "[" "]" "{" "}"
 ] @punctuation
+`
+
+const javascriptHighlightQuery = `
+((comment) @comment)
+((html_comment) @comment)
+((string) @string)
+((template_string) @string)
+((regex) @string)
+((number) @number)
+((true) @constant)
+((false) @constant)
+((null) @constant)
+((undefined) @constant)
+((identifier) @constant (#match? @constant "^(NaN|Infinity)$"))
+[
+  "break" "case" "catch" "class" "const" "continue" "debugger" "default"
+  "delete" "do" "else" "export" "extends" "finally" "for" "function"
+  "if" "import" "in" "instanceof" "let" "new" "of" "return"
+  "switch" "throw" "try" "typeof" "var" "void" "while" "with"
+  "yield" "async" "await" "get" "set" "static"
+] @keyword
+((super) @keyword)
+((this) @keyword)
+((class_declaration name: (identifier) @type))
+((function_declaration name: (identifier) @function))
+((generator_function_declaration name: (identifier) @function))
+((method_definition name: (property_identifier) @function))
+((call_expression function: (identifier) @function))
+((call_expression function: (member_expression property: (property_identifier) @function)))
+((property_identifier) @field)
+((shorthand_property_identifier) @field)
+((private_property_identifier) @field)
+((formal_parameters (identifier) @parameter))
+((identifier) @variable)
+((jsx_opening_element name: (identifier) @type))
+((jsx_closing_element name: (identifier) @type))
+((jsx_self_closing_element name: (identifier) @type))
+((jsx_attribute (property_identifier) @field))
+((jsx_text) @string)
+`
+
+const typescriptHighlightQuery = `
+((comment) @comment)
+((html_comment) @comment)
+((string) @string)
+((template_string) @string)
+((regex) @string)
+((number) @number)
+((true) @constant)
+((false) @constant)
+((null) @constant)
+((undefined) @constant)
+((identifier) @constant (#match? @constant "^(NaN|Infinity)$"))
+[
+  "abstract" "as" "asserts" "async" "await" "break" "case" "catch" "class"
+  "const" "continue" "debugger" "declare" "default" "delete" "do" "else"
+  "enum" "export" "extends" "finally" "for" "from" "function" "get" "if"
+  "implements" "import" "in" "infer" "instanceof" "interface" "is" "keyof"
+  "let" "namespace" "new" "of" "override" "private" "protected" "public"
+  "readonly" "return" "satisfies" "set" "static" "switch"
+  "throw" "try" "type" "typeof" "using" "var" "void" "while" "with" "yield"
+] @keyword
+((this) @keyword)
+((super) @keyword)
+((class_declaration name: (type_identifier) @type))
+((interface_declaration (type_identifier) @type))
+((type_alias_declaration (type_identifier) @type))
+((enum_declaration (identifier) @type))
+((type_identifier) @type)
+((predefined_type) @type)
+((function_declaration name: (identifier) @function))
+((generator_function_declaration name: (identifier) @function))
+((method_definition name: (property_identifier) @function))
+((call_expression function: (identifier) @function))
+((call_expression function: (member_expression property: (property_identifier) @function)))
+((property_identifier) @field)
+((shorthand_property_identifier) @field)
+((private_property_identifier) @field)
+((required_parameter (identifier) @parameter))
+((optional_parameter (identifier) @parameter))
+((identifier) @variable)
+`
+
+const typescriptReactHighlightQuery = `
+((comment) @comment)
+((html_comment) @comment)
+((string) @string)
+((template_string) @string)
+((regex) @string)
+((number) @number)
+((true) @constant)
+((false) @constant)
+((null) @constant)
+((undefined) @constant)
+((identifier) @constant (#match? @constant "^(NaN|Infinity)$"))
+[
+  "abstract" "as" "asserts" "async" "await" "break" "case" "catch" "class"
+  "const" "continue" "debugger" "declare" "default" "delete" "do" "else"
+  "enum" "export" "extends" "finally" "for" "from" "function" "get" "if"
+  "implements" "import" "in" "infer" "instanceof" "interface" "is" "keyof"
+  "let" "namespace" "new" "of" "override" "private" "protected" "public"
+  "readonly" "return" "satisfies" "set" "static" "switch"
+  "throw" "try" "type" "typeof" "using" "var" "void" "while" "with" "yield"
+] @keyword
+((this) @keyword)
+((super) @keyword)
+((class_declaration name: (type_identifier) @type))
+((interface_declaration (type_identifier) @type))
+((type_alias_declaration (type_identifier) @type))
+((enum_declaration (identifier) @type))
+((type_identifier) @type)
+((predefined_type) @type)
+((function_declaration name: (identifier) @function))
+((generator_function_declaration name: (identifier) @function))
+((method_definition name: (property_identifier) @function))
+((call_expression function: (identifier) @function))
+((call_expression function: (member_expression property: (property_identifier) @function)))
+((property_identifier) @field)
+((shorthand_property_identifier) @field)
+((private_property_identifier) @field)
+((required_parameter (identifier) @parameter))
+((optional_parameter (identifier) @parameter))
+((identifier) @variable)
+((jsx_opening_element name: (identifier) @type))
+((jsx_closing_element name: (identifier) @type))
+((jsx_self_closing_element name: (identifier) @type))
+((jsx_attribute (property_identifier) @field))
+((jsx_text) @string)
+`
+
+const vueHighlightQuery = `
+((comment) @comment)
+(tag_name) @type
+(attribute_name) @field
+((quoted_attribute_value) @string)
+((attribute_value) @string)
+(directive_name) @field
+(directive_modifier) @function
+(dynamic_directive_inner_value) @variable
+(interpolation) @punctuation
+(interpolation (raw_text) @variable)
+(":" . (directive_value) @variable)
+("." . (directive_value) @field)
+("@" . (directive_value) @function)
+("#" . (directive_value) @variable)
+(directive_attribute (quoted_attribute_value) @string)
+(directive_attribute (quoted_attribute_value (attribute_value) @string))
+(script_element (raw_text) @string)
+(style_element (raw_text) @string)
+[
+  "<" ">" "</" "/>" "[" "]" ":" "." "#" "@"
+] @punctuation
+"=" @operator
 `
 
 const yamlHighlightQuery = `
