@@ -1,19 +1,16 @@
 package app
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/gdamore/tcell/v2"
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/kobzarvs/qedit/internal/config"
-	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/lsp"
@@ -124,214 +121,11 @@ func (a *App) Run() error {
 	if autoReloadRetries < 1 {
 		autoReloadRetries = 1
 	}
-	type autoReloadResult struct {
-		seq  uint64
-		data []byte
-		err  error
-	}
-	var (
-		fileWatcher       *fsnotify.Watcher
-		fileEvents        chan time.Time
-		pendingFileChange bool
-		lastFileEvent     time.Time
-		lastFileCheck     time.Time
-		watchedPath       string
-		autoReloadSeq     uint64
-		autoReloadActive  bool
-		autoReloadPending bool
-		autoReloadResults chan autoReloadResult
-	)
-	resetFileWatcher := func(path string) {
-		if fileWatcher != nil {
-			_ = fileWatcher.Close()
-			fileWatcher = nil
-		}
-		fileEvents = nil
-		watchedPath = ""
-		pendingFileChange = false
-		lastFileEvent = time.Time{}
-
-		if path == "" {
-			return
-		}
-		absPath := path
-		if abs, err := filepath.Abs(path); err == nil {
-			absPath = abs
-		}
-		watchedPath = absPath
-		watchedDir := filepath.Dir(absPath)
-		watcher, err := fsnotify.NewWatcher()
-		if err != nil {
-			logger.Warn("file watcher unavailable", "error", err)
-			return
-		}
-		if err := watcher.Add(watchedDir); err != nil {
-			_ = watcher.Close()
-			logger.Warn("file watcher disabled", "error", err)
-			return
-		}
-		fileWatcher = watcher
-		fileEvents = make(chan time.Time, 1)
-		go func(w *fsnotify.Watcher, events chan time.Time) {
-			sendEvent := func(ts time.Time) {
-				select {
-				case events <- ts:
-					return
-				default:
-				}
-				select {
-				case <-events:
-				default:
-				}
-				select {
-				case events <- ts:
-				default:
-				}
-			}
-			for {
-				select {
-				case ev, ok := <-w.Events:
-					if !ok {
-						return
-					}
-					if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
-						continue
-					}
-					if filepath.Clean(ev.Name) != watchedPath {
-						continue
-					}
-					sendEvent(time.Now())
-					_ = s.PostEvent(tcell.NewEventInterrupt(nil))
-				case err, ok := <-w.Errors:
-					if !ok {
-						return
-					}
-					logger.Warn("file watcher error", "error", err)
-				}
-			}
-		}(watcher, fileEvents)
-	}
+	fileMonitor := newExternalFileMonitor(s, ed, autoReloadMaxBytes, autoReloadRetries, autoReloadStabilizeDelay)
 	if openPath != "" {
-		resetFileWatcher(openPath)
+		fileMonitor.Watch(openPath)
 	}
-	if fileWatcher != nil {
-		defer func() { _ = fileWatcher.Close() }()
-	}
-	if openPath != "" {
-		autoReloadResults = make(chan autoReloadResult, 1)
-	}
-	readFileStable := func(path string, attempts int, delay time.Duration) ([]byte, error) {
-		var lastErr error
-		for i := 0; i < attempts; i++ {
-			infoBefore, err := os.Stat(path)
-			if err != nil {
-				return nil, err
-			}
-			time.Sleep(delay)
-			infoMid, err := os.Stat(path)
-			if err != nil {
-				return nil, err
-			}
-			if !infoBefore.ModTime().Equal(infoMid.ModTime()) || infoBefore.Size() != infoMid.Size() {
-				lastErr = fmt.Errorf("file changed during read")
-				continue
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				lastErr = err
-				time.Sleep(delay)
-				continue
-			}
-			infoAfter, err := os.Stat(path)
-			if err != nil {
-				return nil, err
-			}
-			if infoMid.ModTime().Equal(infoAfter.ModTime()) && infoMid.Size() == infoAfter.Size() && int64(len(data)) == infoAfter.Size() {
-				return data, nil
-			}
-			lastErr = fmt.Errorf("file changed during read")
-			time.Sleep(delay)
-		}
-		return nil, lastErr
-	}
-	startAutoReload := func() {
-		if watchedPath == "" {
-			return
-		}
-		if autoReloadActive {
-			autoReloadPending = true
-			return
-		}
-		autoReloadActive = true
-		autoReloadPending = false
-		autoReloadSeq++
-		seq := autoReloadSeq
-		ed.SetAutoReloadInProgress(true)
-		go func(path string, currentSeq uint64) {
-			data, err := readFileStable(path, autoReloadRetries, autoReloadStabilizeDelay)
-			select {
-			case autoReloadResults <- autoReloadResult{seq: currentSeq, data: data, err: err}:
-			default:
-				select {
-				case <-autoReloadResults:
-				default:
-				}
-				autoReloadResults <- autoReloadResult{seq: currentSeq, data: data, err: err}
-			}
-			_ = s.PostEvent(tcell.NewEventInterrupt(nil))
-		}(watchedPath, seq)
-	}
-	applyExternalChange := func() {
-		change, err := ed.CheckExternalChange()
-		if err != nil {
-			logger.Error("file change check failed", "error", err)
-			return
-		}
-		if change == editor.ExternalChangeNone {
-			if ed.ExternalChange() != editor.ExternalChangeNone {
-				ed.ClearExternalChange()
-			}
-			return
-		}
-		if change == editor.ExternalChangeModified {
-			if ed.AutoReloadOnChanges() {
-				ed.ClearExternalChange()
-				startAutoReload()
-				return
-			}
-			largeFile := false
-			if name := ed.Filename(); name != "" {
-				if info, err := os.Stat(name); err == nil && info.Size() > autoReloadMaxBytes {
-					largeFile = true
-				}
-			}
-			if ed.ExternalChange() != change {
-				ed.SetExternalChange(change)
-				msg := "file changed on disk (use :e to reload)"
-				if ed.HasLocalChanges() {
-					msg = "file changed on disk (use :e! to reload)"
-				}
-				if largeFile {
-					msg = "large file changed on disk (use :e to reload)"
-					if ed.HasLocalChanges() {
-						msg = "large file changed on disk (use :e! to reload)"
-					}
-				}
-				ed.SetStatusMessage(msg)
-			}
-			ed.MarkExternalDirty()
-			return
-		}
-		if ed.ExternalChange() != change {
-			ed.SetExternalChange(change)
-			switch change {
-			case editor.ExternalChangeDeleted:
-				ed.SetStatusMessage("file deleted on disk")
-			default:
-				ed.SetStatusMessage("file changed on disk (use :e! to reload)")
-			}
-		}
-	}
+	defer fileMonitor.Close()
 
 	lastLayoutRaw := keyboard.CurrentLayoutRaw()
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
@@ -401,10 +195,7 @@ func (a *App) Run() error {
 			ed.SetHighlights(-1, -1, nil)
 		}
 
-		resetFileWatcher(absPath)
-		if autoReloadResults == nil {
-			autoReloadResults = make(chan autoReloadResult, 1)
-		}
+		fileMonitor.Watch(absPath)
 		ed.SetGitMainBranch("")
 		syncEditorRepoState(ed, gitPath, sessionMgr)
 		lastGitCheck = time.Now()
@@ -500,7 +291,7 @@ func (a *App) Run() error {
 				gitPath = path
 
 				// Update file watcher
-				resetFileWatcher(path)
+				fileMonitor.Watch(path)
 
 				// LSP: inform about open file
 				content := ed.Content()
@@ -535,58 +326,13 @@ func (a *App) Run() error {
 				lastChangeTick = ed.ChangeTick()
 				lastHighlightStart = -1
 				lastHighlightEnd = -1
-
-				if autoReloadResults == nil {
-					autoReloadResults = make(chan autoReloadResult, 1)
-				}
 			}
 		}
-		if fileWatcher != nil {
-			for {
-				select {
-				case ts := <-fileEvents:
-					pendingFileChange = true
-					if ts.After(lastFileEvent) {
-						lastFileEvent = ts
-					}
-				default:
-					goto doneFileEvents
-				}
-			}
-		doneFileEvents:
-			if pendingFileChange && time.Since(lastFileEvent) >= fileChangeDebounce {
-				pendingFileChange = false
-				applyExternalChange()
-			}
-		}
-		if autoReloadActive {
-			select {
-			case res := <-autoReloadResults:
-				if res.seq == autoReloadSeq {
-					autoReloadActive = false
-					ed.SetAutoReloadInProgress(false)
-					if res.err != nil {
-						ed.SetExternalChange(editor.ExternalChangeModified)
-						ed.SetStatusMessage("auto reload failed: " + res.err.Error())
-					} else if conflict, err := ed.MergeExternalContent(string(res.data)); err != nil {
-						ed.SetExternalChange(editor.ExternalChangeModified)
-						ed.SetStatusMessage("auto reload failed: " + err.Error())
-					} else if conflict {
-						ed.SetStatusMessage("auto reload merged with conflicts")
-					} else {
-						ed.SetStatusMessage("auto reload complete")
-					}
-				}
-				if autoReloadPending && ed.AutoReloadOnChanges() {
-					autoReloadPending = false
-					startAutoReload()
-				}
-			default:
-			}
-		}
-		if openPath != "" && time.Since(lastFileCheck) > filePollInterval {
-			lastFileCheck = time.Now()
-			applyExternalChange()
+		now := time.Now()
+		fileMonitor.ProcessWatcherEvents(now, fileChangeDebounce)
+		fileMonitor.HandleAutoReloadResults()
+		if openPath != "" {
+			fileMonitor.PollExternalChange(now, filePollInterval)
 		}
 		// Drain tree-sitter async parse events
 		tsParsed := false
