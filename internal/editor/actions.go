@@ -2,7 +2,6 @@ package editor
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -334,8 +333,11 @@ func (e *Editor) Save(path string) error {
 		}
 		path = e.document.filename
 	}
+	if e.runtime.fileStore == nil {
+		return errFileStoreUnavailable()
+	}
 	data := []byte(e.Content())
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := e.runtime.fileStore.Write(path, data); err != nil {
 		return err
 	}
 	e.document.filename = path

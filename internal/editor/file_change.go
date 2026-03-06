@@ -2,7 +2,6 @@ package editor
 
 import (
 	"errors"
-	"os"
 	"time"
 )
 
@@ -22,10 +21,10 @@ type fileSnapshot struct {
 	valid   bool
 }
 
-func snapshotFromInfo(info os.FileInfo) fileSnapshot {
+func snapshotFromMetadata(meta FileMetadata) fileSnapshot {
 	return fileSnapshot{
-		modTime: info.ModTime(),
-		size:    info.Size(),
+		modTime: meta.ModTime,
+		size:    meta.Size,
 		exists:  true,
 		valid:   true,
 	}
@@ -52,15 +51,18 @@ func (e *Editor) syncFileSnapshot() error {
 		e.file.snapshot = fileSnapshot{}
 		return nil
 	}
-	info, err := os.Stat(e.document.filename)
+	if e.runtime.fileStore == nil {
+		return errFileStoreUnavailable()
+	}
+	info, err := e.runtime.fileStore.Stat(e.document.filename)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if e.runtime.fileStore.IsNotExist(err) {
 			e.file.snapshot = fileSnapshot{exists: false, valid: true}
 			return nil
 		}
 		return err
 	}
-	e.file.snapshot = snapshotFromInfo(info)
+	e.file.snapshot = snapshotFromMetadata(info)
 	return nil
 }
 
@@ -69,9 +71,12 @@ func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 	if e.document.filename == "" || !e.file.snapshot.valid {
 		return ExternalChangeNone, nil
 	}
-	info, err := os.Stat(e.document.filename)
+	if e.runtime.fileStore == nil {
+		return ExternalChangeNone, errFileStoreUnavailable()
+	}
+	info, err := e.runtime.fileStore.Stat(e.document.filename)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if e.runtime.fileStore.IsNotExist(err) {
 			if e.file.snapshot.exists {
 				return ExternalChangeDeleted, nil
 			}
@@ -79,7 +84,7 @@ func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 		}
 		return ExternalChangeNone, err
 	}
-	current := snapshotFromInfo(info)
+	current := snapshotFromMetadata(info)
 	if e.file.snapshot.equal(current) {
 		return ExternalChangeNone, nil
 	}
@@ -91,10 +96,13 @@ func (e *Editor) ReloadFromDisk(force bool) error {
 	if e.document.filename == "" {
 		return errors.New("no file name")
 	}
+	if e.runtime.fileStore == nil {
+		return errFileStoreUnavailable()
+	}
 	if e.HasLocalChanges() && !force {
 		return errors.New("unsaved changes (use :e!)")
 	}
-	data, err := os.ReadFile(e.document.filename)
+	data, err := e.runtime.fileStore.Read(e.document.filename)
 	if err != nil {
 		return err
 	}
@@ -232,4 +240,8 @@ func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 // Filename returns the current buffer filename.
 func (e *Editor) Filename() string {
 	return e.document.filename
+}
+
+func errFileStoreUnavailable() error {
+	return errors.New("file store unavailable")
 }

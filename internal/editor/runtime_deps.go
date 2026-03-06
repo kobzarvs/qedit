@@ -6,6 +6,7 @@ type editorRuntimeDeps struct {
 	terminalZoomer         TerminalZoomer
 	sessionStore           SessionStore
 	historyStore           HistoryStore
+	fileStore              FileStore
 	nodeStackFunc          NodeStackFunc
 	lspGotoFunc            LSPGotoFunc
 	highlightRangeFunc     HighlightRangeFunc

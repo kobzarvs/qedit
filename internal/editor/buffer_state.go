@@ -1,13 +1,11 @@
 package editor
 
-import (
-	"os"
-	"path/filepath"
-)
-
 func (e *Editor) OpenFile(path string) error {
+	if e.runtime.fileStore == nil {
+		return errFileStoreUnavailable()
+	}
 	absPath := path
-	if abs, err := filepath.Abs(path); err == nil {
+	if abs, err := e.runtime.fileStore.Abs(path); err == nil {
 		absPath = abs
 	}
 
@@ -28,7 +26,7 @@ func (e *Editor) OpenFile(path string) error {
 	}
 
 	// Load the new file
-	data, err := os.ReadFile(absPath)
+	data, err := e.runtime.fileStore.Read(absPath)
 	if err != nil {
 		return err
 	}

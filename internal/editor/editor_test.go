@@ -12,12 +12,43 @@ import (
 	"github.com/kobzarvs/qedit/internal/config"
 )
 
+type realTestFileStore struct{}
+
+func (realTestFileStore) Abs(path string) (string, error) {
+	return filepath.Abs(path)
+}
+
+func (realTestFileStore) Read(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+func (realTestFileStore) Write(path string, data []byte) error {
+	return os.WriteFile(path, data, 0o644)
+}
+
+func (realTestFileStore) Stat(path string) (FileMetadata, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return FileMetadata{}, err
+	}
+	return FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, nil
+}
+
+func (realTestFileStore) IsNotExist(err error) bool {
+	return os.IsNotExist(err)
+}
+
 func newTestEditor(lines ...string) *Editor {
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
 	cfg := config.Default()
 	e := New(optionsFromConfig(cfg))
+	e.SetFileStore(realTestFileStore{})
 	applyTestStyles(e)
 	e.text = NewTextBufferFromString(strings.Join(lines, "\n"))
 	return e

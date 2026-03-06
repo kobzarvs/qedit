@@ -1,5 +1,7 @@
 package editor
 
+import "time"
+
 // Clipboard provides access to system clipboard.
 type Clipboard interface {
 	Read() (string, error)
@@ -38,6 +40,21 @@ type SessionStore interface {
 	Stop()
 }
 
+type FileMetadata struct {
+	ModTime time.Time
+	Size    int64
+	IsDir   bool
+}
+
+// FileStore provides current-buffer filesystem operations.
+type FileStore interface {
+	Abs(path string) (string, error)
+	Read(path string) ([]byte, error)
+	Write(path string, data []byte) error
+	Stat(path string) (FileMetadata, error)
+	IsNotExist(err error) bool
+}
+
 // HistoryStore persists line-based editor histories by path.
 type HistoryStore interface {
 	Load(path string) ([]string, error)
@@ -62,4 +79,8 @@ func (e *Editor) SetSessionStore(s SessionStore) {
 
 func (e *Editor) SetHistoryStore(s HistoryStore) {
 	e.runtime.historyStore = s
+}
+
+func (e *Editor) SetFileStore(s FileStore) {
+	e.runtime.fileStore = s
 }

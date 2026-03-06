@@ -69,6 +69,7 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 	})
 	ed.SetFormatter(integrations.GoFormatter{})
 	ed.SetHistoryStore(integrations.FileHistoryStore{})
+	ed.SetFileStore(integrations.FileStore{})
 	if runtime.GOOS == "darwin" {
 		ed.SetClipboard(integrations.MacClipboard{})
 		ed.SetTerminalZoomer(integrations.TerminalZoomer{})
