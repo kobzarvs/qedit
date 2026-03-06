@@ -32,8 +32,8 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	if fileTreeContent != nil {
 		e.updateFileTreePreview(fileTreeContent, action)
 		e.updateFileTreeStatus(fileTreeContent, action)
-		e.fileTreeShowHidden = fileTreeContent.ShowHidden()
-		e.fileTreeShowIgnored = fileTreeContent.ShowIgnored()
+		e.fileTree.showHidden = fileTreeContent.ShowHidden()
+		e.fileTree.showIgnored = fileTreeContent.ShowIgnored()
 		switch ev.Key() {
 		case KeyF2:
 			e.Notify(fileTreeContent.filterModeLabel())
@@ -306,7 +306,7 @@ func (e *Editor) openSidebarFileTree(path string) {
 		startDir = filepath.Dir(startDir)
 	}
 
-	content := NewSidebarFileTreeContent(startDir, e.fileTreeShowHidden, e.fileTreeShowIgnored)
+	content := NewSidebarFileTreeContent(startDir, e.fileTree.showHidden, e.fileTree.showIgnored)
 	e.sidebar.Open(content)
 }
 

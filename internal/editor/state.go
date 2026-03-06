@@ -52,9 +52,11 @@ func New(opts Options) *Editor {
 			opts.SidebarMaxWidth,
 			opts.SidebarCloseOnSelect,
 		),
-		fileTreeShowHidden:  opts.FileTreeShowHidden,
-		fileTreeShowIgnored: opts.FileTreeShowIgnored,
-		buffers:             NewBufferManager(),
+		fileTree: editorFileTreeState{
+			showHidden:  opts.FileTreeShowHidden,
+			showIgnored: opts.FileTreeShowIgnored,
+		},
+		buffers: NewBufferManager(),
 	}
 	e.SetStyles(defaultEditorStyles())
 	return e

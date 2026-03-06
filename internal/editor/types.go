@@ -466,8 +466,7 @@ type Editor struct {
 	branchPicker                 branchPickerState
 	sidebar                      *Sidebar
 	sidebarStyles                SidebarStyles
-	fileTreeShowHidden           bool
-	fileTreeShowIgnored          bool
+	fileTree                     editorFileTreeState
 	fileTreePreview              fileTreePreviewState
 	interaction                  editorInteractionState
 	runtime                      editorRuntimeDeps
