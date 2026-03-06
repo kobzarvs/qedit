@@ -163,37 +163,15 @@ func (a *App) Run() error {
 		if err := ed.OpenFile(absPath); err != nil {
 			return err
 		}
-		openPath = absPath
-		gitPath = absPath
-		highlightEnabled = true
-		if highlightMaxBytes > 0 {
-			if info, err := os.Stat(absPath); err == nil && info.Size() > highlightMaxBytes {
-				highlightEnabled = false
-			}
-		}
-		content := ed.Content()
-		ls.OpenFile(absPath, content)
-		langName, highlightEnabled = detectHighlightLanguage(absPath, langs, highlightMaxBytes)
-		highlightExpected = highlightEnabled && langName != ""
-
-		lastChangeTick = ed.ChangeTick()
-		lastHighlightStart = -1
-		lastHighlightEnd = -1
-		if highlightEnabled && langName != "" {
-			if isAsyncParseLang(langName) {
-				ts.Parse(absPath, langName, ed.Content())
-			} else if ts.ParseSync(absPath, langName, ed.Content()) {
-				if _, end, ok := applyInitialScreenHighlights(ed, s, ts, absPath); ok {
-					lastHighlightStart = 0
-					lastHighlightEnd = end
-				}
-			} else {
-				highlightExpected = false
-				ed.SetHighlights(-1, -1, nil)
-			}
-		} else {
-			ed.SetHighlights(-1, -1, nil)
-		}
+		state := activateEditorFile(ed, s, ls, ts, langs, absPath, highlightMaxBytes)
+		openPath = state.openPath
+		gitPath = state.gitPath
+		langName = state.langName
+		highlightEnabled = state.highlightEnabled
+		highlightExpected = state.highlightExpected
+		lastChangeTick = state.lastChangeTick
+		lastHighlightStart = state.lastHighlightStart
+		lastHighlightEnd = state.lastHighlightEnd
 
 		fileMonitor.Watch(absPath)
 		ed.SetGitMainBranch("")
@@ -287,43 +265,21 @@ func (a *App) Run() error {
 		if ed.ConsumeBufferSwitch() {
 			path := ed.Filename()
 			if path != openPath {
-				openPath = path
-				gitPath = path
-
 				// Update file watcher
 				fileMonitor.Watch(path)
-
-				// LSP: inform about open file
-				content := ed.Content()
-				ls.OpenFile(path, content)
-
-				// Re-detect language
-				langName, highlightEnabled = detectHighlightLanguage(path, langs, highlightMaxBytes)
-				highlightExpected = highlightEnabled && langName != ""
-
-				// Re-parse tree-sitter
-				if highlightEnabled && langName != "" {
-					if isAsyncParseLang(langName) {
-						ts.Parse(path, langName, ed.Content())
-					} else if ts.ParseSync(path, langName, ed.Content()) {
-						if _, end, ok := applyInitialScreenHighlights(ed, s, ts, path); ok {
-							lastHighlightStart = 0
-							lastHighlightEnd = end
-						}
-					} else {
-						highlightExpected = false
-						ed.SetHighlights(-1, -1, nil)
-					}
-				} else {
-					ed.SetHighlights(-1, -1, nil)
-				}
+				state := activateEditorFile(ed, s, ls, ts, langs, path, highlightMaxBytes)
+				openPath = state.openPath
+				gitPath = state.gitPath
+				langName = state.langName
+				highlightEnabled = state.highlightEnabled
+				highlightExpected = state.highlightExpected
 
 				// Update git info
 				ed.SetGitBranch(gitinfo.Branch(path))
 				gitRoot := gitinfo.Root(path)
 				ed.SetGitRoot(gitRoot)
 
-				lastChangeTick = ed.ChangeTick()
+				lastChangeTick = state.lastChangeTick
 				lastHighlightStart = -1
 				lastHighlightEnd = -1
 			}
