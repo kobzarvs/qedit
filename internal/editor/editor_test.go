@@ -938,12 +938,6 @@ func TestMouseDragResizesSidebar(t *testing.T) {
 	e.sidebar.MinWidth = 10
 	e.sidebar.MaxWidthConfig = "50"
 
-	var persisted string
-	e.SetSidebarWidthConfigHook(func(width string) error {
-		persisted = width
-		return nil
-	})
-
 	s := tcell.NewSimulationScreen("UTF-8")
 	if err := s.Init(); err != nil {
 		t.Fatalf("init screen: %v", err)
@@ -960,8 +954,26 @@ func TestMouseDragResizesSidebar(t *testing.T) {
 	}
 
 	e.HandleMouse(wrapMouse(tcell.NewEventMouse(30, 1, tcell.ButtonNone, 0)))
-	if persisted != "31" {
-		t.Fatalf("persisted width = %q, want %q", persisted, "31")
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok || req.Kind != RuntimeRequestPersistSidebarWidth || req.Value != "31" || req.PrevValue != "20" {
+		t.Fatalf("request = %#v ok=%v, want persist-sidebar-width 31 (prev 20)", req, ok)
+	}
+}
+
+func TestAutoReloadCommandQueuesPersistRequest(t *testing.T) {
+	e := newTestEditor("line")
+	e.file.autoReloadOnChanges = false
+
+	if quit := e.execCommand("auto-reload-on-changes 1"); quit {
+		t.Fatalf("command returned quit")
+	}
+	if !e.file.autoReloadOnChanges {
+		t.Fatalf("autoReloadOnChanges = false, want true")
+	}
+
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok || req.Kind != RuntimeRequestPersistAutoReload || !req.Bool || req.PrevBool {
+		t.Fatalf("request = %#v ok=%v, want persist-auto-reload true (prev false)", req, ok)
 	}
 }
 

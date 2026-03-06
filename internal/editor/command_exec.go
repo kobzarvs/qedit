@@ -139,13 +139,13 @@ func (e *Editor) execCommand(cmd string) bool {
 			}
 		} else {
 			if e.sidebar != nil {
-				if e.runtime.sidebarWidthConfigHook != nil {
-					if err := e.runtime.sidebarWidthConfigHook(args[0]); err != nil {
-						e.setStatus("config write failed: " + err.Error())
-						return false
-					}
-				}
+				prevWidth := e.sidebar.WidthConfig
 				e.sidebar.WidthConfig = args[0]
+				e.enqueueRuntimeRequest(RuntimeRequest{
+					Kind:      RuntimeRequestPersistSidebarWidth,
+					Value:     args[0],
+					PrevValue: prevWidth,
+				})
 				e.setStatus("sidebar width set to " + args[0])
 			}
 		}
@@ -174,13 +174,13 @@ func (e *Editor) execCommand(cmd string) bool {
 			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
 			return false
 		}
-		if e.runtime.autoReloadConfigHook != nil {
-			if err := e.runtime.autoReloadConfigHook(enabled); err != nil {
-				e.setStatus("config write failed: " + err.Error())
-				return false
-			}
-		}
+		prevEnabled := e.file.autoReloadOnChanges
 		e.file.autoReloadOnChanges = enabled
+		e.enqueueRuntimeRequest(RuntimeRequest{
+			Kind:     RuntimeRequestPersistAutoReload,
+			Bool:     enabled,
+			PrevBool: prevEnabled,
+		})
 		e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
 		return false
 	case "merge":

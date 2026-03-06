@@ -15,6 +15,7 @@ import (
 
 type editorRuntimeController struct {
 	ed                *editor.Editor
+	cfg               *config.Config
 	screen            tcell.Screen
 	ls                *lsp.Manager
 	ts                *treesitter.Engine

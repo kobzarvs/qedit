@@ -38,6 +38,7 @@ type editorRuntime struct {
 }
 
 func newEditorRuntime(
+	cfg *config.Config,
 	screen tcell.Screen,
 	ed *editor.Editor,
 	ls *lsp.Manager,
@@ -87,6 +88,7 @@ func newEditorRuntime(
 
 	rt.controller = editorRuntimeController{
 		ed:                ed,
+		cfg:               cfg,
 		screen:            screen,
 		ls:                ls,
 		ts:                ts,

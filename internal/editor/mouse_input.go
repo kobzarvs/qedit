@@ -89,6 +89,7 @@ func (e *Editor) tryStartSidebarResize(x int) bool {
 	if x != sidebarWidth-1 {
 		return false
 	}
+	e.interaction.resizeSidebarWidth = e.sidebar.WidthConfig
 	e.interaction.resizeDragging = true
 	e.interaction.resizeTarget = resizeTargetSidebar
 	e.updateSidebarWidthFromX(x)
@@ -134,14 +135,17 @@ func (e *Editor) clampSidebarWidth(width int) int {
 func (e *Editor) finishMouseResize() {
 	switch e.interaction.resizeTarget {
 	case resizeTargetSidebar:
-		if e.runtime.sidebarWidthConfigHook != nil && e.sidebar != nil {
-			if err := e.runtime.sidebarWidthConfigHook(e.sidebar.WidthConfig); err != nil {
-				e.setStatus("config write failed: " + err.Error())
-			}
+		if e.sidebar != nil {
+			e.enqueueRuntimeRequest(RuntimeRequest{
+				Kind:      RuntimeRequestPersistSidebarWidth,
+				Value:     e.sidebar.WidthConfig,
+				PrevValue: e.interaction.resizeSidebarWidth,
+			})
 		}
 	}
 	e.interaction.resizeDragging = false
 	e.interaction.resizeTarget = resizeTargetNone
+	e.interaction.resizeSidebarWidth = ""
 }
 
 func (e *Editor) scrollLeft(amount int) {

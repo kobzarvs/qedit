@@ -48,7 +48,7 @@ func (a *App) Run() error {
 	if autoReloadStabilizeDelay < 0 {
 		autoReloadStabilizeDelay = 0
 	}
-	rt, err := newEditorRuntime(services.screen, ed, services.ls, services.ts, langs, sessionMgr, fileStore, editorRuntimeOptions{
+	rt, err := newEditorRuntime(&cfg, services.screen, ed, services.ls, services.ts, langs, sessionMgr, fileStore, editorRuntimeOptions{
 		InitialPath:              firstArg(a.args),
 		HighlightMaxBytes:        cfg.Editor.HighlightMaxBytes,
 		AutoReloadMaxBytes:       int64(8 << 20),

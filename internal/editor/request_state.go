@@ -3,20 +3,25 @@ package editor
 type RuntimeRequestKind string
 
 const (
-	RuntimeRequestShowBranchPicker RuntimeRequestKind = "show_branch_picker"
-	RuntimeRequestSelectBranch     RuntimeRequestKind = "select_branch"
-	RuntimeRequestShowWorktrees    RuntimeRequestKind = "show_worktrees"
-	RuntimeRequestSwitchWorktree   RuntimeRequestKind = "switch_worktree"
-	RuntimeRequestOpenFile         RuntimeRequestKind = "open_file"
-	RuntimeRequestBufferSwitched   RuntimeRequestKind = "buffer_switched"
+	RuntimeRequestShowBranchPicker    RuntimeRequestKind = "show_branch_picker"
+	RuntimeRequestSelectBranch        RuntimeRequestKind = "select_branch"
+	RuntimeRequestShowWorktrees       RuntimeRequestKind = "show_worktrees"
+	RuntimeRequestSwitchWorktree      RuntimeRequestKind = "switch_worktree"
+	RuntimeRequestOpenFile            RuntimeRequestKind = "open_file"
+	RuntimeRequestBufferSwitched      RuntimeRequestKind = "buffer_switched"
+	RuntimeRequestPersistAutoReload   RuntimeRequestKind = "persist_auto_reload"
+	RuntimeRequestPersistSidebarWidth RuntimeRequestKind = "persist_sidebar_width"
 )
 
 type RuntimeRequest struct {
-	Kind  RuntimeRequestKind
-	Path  string
-	Value string
-	Line  int
-	Col   int
+	Kind      RuntimeRequestKind
+	Path      string
+	Value     string
+	PrevValue string
+	Line      int
+	Col       int
+	Bool      bool
+	PrevBool  bool
 }
 
 type editorRequestState struct {

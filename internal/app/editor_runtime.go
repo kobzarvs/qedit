@@ -52,20 +52,6 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 
 	ed.SetStyles(ui.StylesFromConfig(*cfg))
 	ed.SetHighlightRangeFunc(newHighlightRangeFunc(fileStore, langs, ts, cfg.Editor.HighlightMaxBytes))
-	ed.SetAutoReloadConfigHook(func(enabled bool) error {
-		if err := config.UpdateEditorAutoReloadOnChanges(enabled); err != nil {
-			return err
-		}
-		cfg.Editor.AutoReloadOnChanges = enabled
-		return nil
-	})
-	ed.SetSidebarWidthConfigHook(func(width string) error {
-		if err := config.UpdateEditorSidebarWidth(width); err != nil {
-			return err
-		}
-		cfg.Editor.SidebarWidth = width
-		return nil
-	})
 	ed.SetFormatter(integrations.GoFormatter{})
 	ed.SetMerger(integrations.GitMerger{})
 	ed.SetHistoryStore(integrations.FileHistoryStore{})
@@ -79,6 +65,26 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()
 	return ed
+}
+
+func persistEditorAutoReload(cfg *config.Config, enabled bool) error {
+	if err := config.UpdateEditorAutoReloadOnChanges(enabled); err != nil {
+		return err
+	}
+	if cfg != nil {
+		cfg.Editor.AutoReloadOnChanges = enabled
+	}
+	return nil
+}
+
+func persistEditorSidebarWidth(cfg *config.Config, width string) error {
+	if err := config.UpdateEditorSidebarWidth(width); err != nil {
+		return err
+	}
+	if cfg != nil {
+		cfg.Editor.SidebarWidth = width
+	}
+	return nil
 }
 
 func newHighlightRangeFunc(fileStore editor.FileStore, langs config.Languages, ts *treesitter.Engine, highlightMaxBytes int64) editor.HighlightRangeFunc {
