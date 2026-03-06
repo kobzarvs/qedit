@@ -13,6 +13,11 @@ type Formatter interface {
 	FormatGo(src string) (string, error)
 }
 
+// Merger performs a three-way merge for local/base/remote content.
+type Merger interface {
+	Merge(base, local, remote string) (string, bool, error)
+}
+
 // TerminalZoomer sends zoom commands to the terminal.
 type TerminalZoomer interface {
 	ZoomStep(zoomIn bool) error
@@ -82,6 +87,10 @@ func (e *Editor) SetClipboard(c Clipboard) {
 
 func (e *Editor) SetFormatter(f Formatter) {
 	e.runtime.formatter = f
+}
+
+func (e *Editor) SetMerger(m Merger) {
+	e.runtime.merger = m
 }
 
 func (e *Editor) SetTerminalZoomer(z TerminalZoomer) {

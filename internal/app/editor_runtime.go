@@ -68,6 +68,7 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 		return nil
 	})
 	ed.SetFormatter(integrations.GoFormatter{})
+	ed.SetMerger(integrations.GitMerger{})
 	ed.SetHistoryStore(integrations.FileHistoryStore{})
 	ed.SetFileStore(integrations.FileStore{})
 	ed.SetUndoStore(integrations.FileUndoStore{})

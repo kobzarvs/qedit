@@ -79,6 +79,12 @@ func (noopTestUndoStore) IsNotExist(error) bool {
 	return false
 }
 
+type noopTestMerger struct{}
+
+func (noopTestMerger) Merge(base, local, remote string) (string, bool, error) {
+	return local, false, nil
+}
+
 func newTestEditor(lines ...string) *Editor {
 	if len(lines) == 0 {
 		lines = []string{""}
@@ -86,6 +92,7 @@ func newTestEditor(lines ...string) *Editor {
 	cfg := config.Default()
 	e := New(optionsFromConfig(cfg))
 	e.SetFileStore(realTestFileStore{})
+	e.SetMerger(noopTestMerger{})
 	e.SetUndoStore(noopTestUndoStore{})
 	applyTestStyles(e)
 	e.text = NewTextBufferFromString(strings.Join(lines, "\n"))

@@ -1,4 +1,4 @@
-package editor
+package integrations
 
 import (
 	"fmt"
@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 )
 
-var mergeWithGitFunc = mergeWithGit
+// GitMerger performs three-way merges via `git merge-file -p`.
+type GitMerger struct{}
 
-func mergeWithGit(base, local, remote string) (string, bool, error) {
+func (GitMerger) Merge(base, local, remote string) (string, bool, error) {
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
 		return "", false, err
@@ -37,10 +38,8 @@ func mergeWithGit(base, local, remote string) (string, bool, error) {
 	cmd := exec.Command(gitPath, "merge-file", "-p", localPath, basePath, remotePath)
 	output, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if exitErr.ExitCode() == 1 {
-				return string(output), true, nil
-			}
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return string(output), true, nil
 		}
 		return "", false, fmt.Errorf("merge-file failed: %w", err)
 	}

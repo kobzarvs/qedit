@@ -88,9 +88,9 @@ func TestReloadFromDiskRequiresForceWhenDirty(t *testing.T) {
 }
 
 func TestMergeExternalContentConflict(t *testing.T) {
-	prev := mergeWithGitFunc
-	mergeWithGitFunc = func(base, local, remote string) (string, bool, error) {
-		merged := strings.Join([]string{
+	e := newTestEditor()
+	e.SetMerger(testMerger{
+		merged: strings.Join([]string{
 			"alpha",
 			"<<<<<<< local",
 			"local",
@@ -99,12 +99,9 @@ func TestMergeExternalContentConflict(t *testing.T) {
 			">>>>>>> remote",
 			"charlie",
 			"",
-		}, "\n")
-		return merged, true, nil
-	}
-	defer func() { mergeWithGitFunc = prev }()
-
-	e := newTestEditor()
+		}, "\n"),
+		conflict: true,
+	})
 	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
 	e.file.diskContent = e.Content()
 	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
@@ -138,13 +135,8 @@ func TestMergeExternalContentConflict(t *testing.T) {
 }
 
 func TestMergeExternalContentNoConflict(t *testing.T) {
-	prev := mergeWithGitFunc
-	mergeWithGitFunc = func(base, local, remote string) (string, bool, error) {
-		return "alpha\nmerged\ncharlie\n", false, nil
-	}
-	defer func() { mergeWithGitFunc = prev }()
-
 	e := newTestEditor()
+	e.SetMerger(testMerger{merged: "alpha\nmerged\ncharlie\n"})
 	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
 	e.file.diskContent = e.Content()
 	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
@@ -162,6 +154,16 @@ func TestMergeExternalContentNoConflict(t *testing.T) {
 	if len(e.conflicts.blocks) != 0 {
 		t.Fatalf("expected no conflict blocks")
 	}
+}
+
+type testMerger struct {
+	merged   string
+	conflict bool
+	err      error
+}
+
+func (m testMerger) Merge(base, local, remote string) (string, bool, error) {
+	return m.merged, m.conflict, m.err
 }
 
 func TestResolveConflictAcceptLocal(t *testing.T) {

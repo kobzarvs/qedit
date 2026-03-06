@@ -210,7 +210,10 @@ func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 		_ = e.syncFileSnapshot()
 		return false, nil
 	}
-	merged, conflict, err := mergeWithGitFunc(base, local, remoteNormalized)
+	if e.runtime.merger == nil {
+		return false, errMergerUnavailable()
+	}
+	merged, conflict, err := e.runtime.merger.Merge(base, local, remoteNormalized)
 	if err != nil {
 		return false, err
 	}
@@ -244,4 +247,8 @@ func (e *Editor) Filename() string {
 
 func errFileStoreUnavailable() error {
 	return errors.New("file store unavailable")
+}
+
+func errMergerUnavailable() error {
+	return errors.New("merger unavailable")
 }
