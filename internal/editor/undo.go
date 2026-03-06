@@ -17,10 +17,15 @@ func (e *Editor) Undo() {
 	// Get the group of the last action
 	group := e.undo[len(e.undo)-1].group
 
+	linesBefore := e.LineCount()
+	minRow := linesBefore
 	// Undo all actions in this group
 	for len(e.undo) > 0 && e.undo[len(e.undo)-1].group == group {
 		idx := len(e.undo) - 1
 		act := e.undo[idx]
+		if act.pos.Row < minRow {
+			minRow = act.pos.Row
+		}
 		e.undo = e.undo[:idx]
 		inv, ok := e.applyAction(act)
 		if !ok {
@@ -32,8 +37,7 @@ func (e *Editor) Undo() {
 	}
 	e.changeTick++
 	e.updateDirty()
-	// Invalidate lastEdit to force full reparse for syntax highlighting
-	e.lastEdit.Valid = false
+	e.setUndoRedoEdit(minRow, linesBefore)
 }
 func (e *Editor) Redo() {
 	if len(e.redo) == 0 {
@@ -44,10 +48,15 @@ func (e *Editor) Redo() {
 	// Get the group of the last action
 	group := e.redo[len(e.redo)-1].group
 
+	linesBefore := e.LineCount()
+	minRow := linesBefore
 	// Redo all actions in this group
 	for len(e.redo) > 0 && e.redo[len(e.redo)-1].group == group {
 		idx := len(e.redo) - 1
 		act := e.redo[idx]
+		if act.pos.Row < minRow {
+			minRow = act.pos.Row
+		}
 		e.redo = e.redo[:idx]
 		inv, ok := e.applyAction(act)
 		if !ok {
@@ -59,9 +68,29 @@ func (e *Editor) Redo() {
 	}
 	e.changeTick++
 	e.updateDirty()
-	// Invalidate lastEdit to force full reparse for syntax highlighting
-	e.lastEdit.Valid = false
+	e.setUndoRedoEdit(minRow, linesBefore)
 }
+
+// setUndoRedoEdit computes a synthetic TextEdit from undo/redo line changes
+// so that AdjustHighlights can shift the cached highlight map.
+func (e *Editor) setUndoRedoEdit(minRow, linesBefore int) {
+	linesAfter := e.LineCount()
+	delta := linesAfter - linesBefore
+	oldEnd := minRow
+	newEnd := minRow
+	if delta > 0 {
+		newEnd = minRow + delta
+	} else if delta < 0 {
+		oldEnd = minRow - delta
+	}
+	e.lastEdit = TextEdit{
+		Valid:     true,
+		StartRow:  minRow,
+		OldEndRow: oldEnd,
+		NewEndRow: newEnd,
+	}
+}
+
 func (e *Editor) applyAction(act action) (action, bool) {
 	switch act.kind {
 	case actionInsertRune:
