@@ -609,7 +609,7 @@ func (e *Editor) unindentSelection() {
 			removed = 1
 		} else if line[0] == ' ' {
 			// Count spaces to remove (up to tabWidth)
-			for i := 0; i < e.tabWidth && i < len(line) && line[i] == ' '; i++ {
+			for i := 0; i < e.display.tabWidth && i < len(line) && line[i] == ' '; i++ {
 				removed++
 			}
 			// Record undo for each space (backwards)
@@ -885,7 +885,7 @@ func (e *Editor) insertLineAboveCursor() {
 	}
 
 	line := e.line(e.cursor.Row)
-	tabWidth := e.tabWidth
+	tabWidth := e.display.tabWidth
 	if tabWidth < 1 {
 		tabWidth = 4
 	}

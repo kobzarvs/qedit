@@ -406,7 +406,6 @@ type Editor struct {
 	keymap                       keymapSet
 	commandLine                  editorCommandLineState
 	searchHistoryPath            string // search history file path
-	tabWidth                     int
 	viewHeight                   int
 	viewWidth                    int
 	styleMain                    Style
@@ -455,7 +454,7 @@ type Editor struct {
 	styleBoxBorder               Style
 	styleNotificationBright      Style
 	notificationFadeStyles       []Style
-	lineNumberMode               LineNumberMode
+	display                      editorDisplayState
 	ui                           editorUIFeedbackState
 	git                          editorGitState
 	highlight                    editorHighlightState

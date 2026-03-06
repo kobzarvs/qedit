@@ -26,10 +26,12 @@ func New(opts Options) *Editor {
 			text:   NewTextBufferFromRunes(nil),
 			cursor: Cursor{},
 		},
-		mode:           ModeNormal,
-		keymap:         keymapSet{normal: normal, insert: insert},
-		tabWidth:       tabWidth,
-		lineNumberMode: lineNumberMode,
+		mode:   ModeNormal,
+		keymap: keymapSet{normal: normal, insert: insert},
+		display: editorDisplayState{
+			tabWidth:       tabWidth,
+			lineNumberMode: lineNumberMode,
+		},
 		file: editorFileState{
 			autoReloadOnChanges: opts.AutoReloadOnChanges,
 		},

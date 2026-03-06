@@ -122,7 +122,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	row := e.cursor.Row + 1
 	col := 1
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-		col = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.tabWidth) + 1
+		col = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) + 1
 	}
 
 	// Build right part, tracking branch position for styling

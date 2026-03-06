@@ -14,7 +14,7 @@ const (
 
 func TestRenderSnapshotBaseline(t *testing.T) {
 	e := newTestEditor("hello", "world")
-	e.lineNumberMode = LineNumberOff
+	e.display.lineNumberMode = LineNumberOff
 
 	got := renderSnapshot(t, e, snapshotWidth, snapshotHeight)
 	want := strings.Join([]string{

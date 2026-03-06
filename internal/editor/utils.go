@@ -81,7 +81,7 @@ func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
 
 	var visualCursorCol int
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-		visualCursorCol = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.tabWidth)
+		visualCursorCol = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.display.tabWidth)
 	}
 
 	// Cursor position relative to scrollX
@@ -408,15 +408,15 @@ func parseLineNumberMode(value string) LineNumberMode {
 	}
 }
 func (e *Editor) toggleLineNumbers() {
-	switch e.lineNumberMode {
+	switch e.display.lineNumberMode {
 	case LineNumberAbsolute:
-		e.lineNumberMode = LineNumberRelative
+		e.display.lineNumberMode = LineNumberRelative
 		e.setStatus("line numbers relative")
 	case LineNumberRelative:
-		e.lineNumberMode = LineNumberAbsolute
+		e.display.lineNumberMode = LineNumberAbsolute
 		e.setStatus("line numbers absolute")
 	default:
-		e.lineNumberMode = LineNumberAbsolute
+		e.display.lineNumberMode = LineNumberAbsolute
 		e.setStatus("line numbers absolute")
 	}
 }
@@ -425,7 +425,7 @@ func (e *Editor) gutterWidth() int {
 	if e.hasConflictBlocks() || e.gitDiffGutterActive() {
 		diffWidth = 1
 	}
-	if e.lineNumberMode == LineNumberOff {
+	if e.display.lineNumberMode == LineNumberOff {
 		return diffWidth
 	}
 	maxLine := e.LineCount()

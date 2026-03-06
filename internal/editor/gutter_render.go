@@ -17,7 +17,7 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 		diffWidth = 1
 	}
 	numWidth := gutterWidth - diffWidth
-	if numWidth > 0 && e.lineNumberMode != LineNumberOff {
+	if numWidth > 0 && e.display.lineNumberMode != LineNumberOff {
 		// numWidth = 1 (leading space) + digits + 1 (trailing space)
 		digits := numWidth - 2
 		if digits < 1 {
@@ -36,7 +36,7 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 		if kind == conflictRemote {
 			num = remoteNum
 		}
-		if e.lineNumberMode == LineNumberRelative && lineIdx != e.cursor.Row {
+		if e.display.lineNumberMode == LineNumberRelative && lineIdx != e.cursor.Row {
 			cursorKind, _ := e.conflictLineInfo(e.cursor.Row)
 			cursorLocalBefore, cursorRemoteBefore := e.conflictLineOffsets(e.cursor.Row)
 			cursorLocalNum := e.cursor.Row + 1 - cursorRemoteBefore
@@ -119,7 +119,7 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 	if highlightActive {
 		spans = e.highlight.spans[lineIdx]
 	}
-	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX, kind)
+	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.display.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX, kind)
 }
 
 func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {
@@ -131,7 +131,7 @@ func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {
 		e.updateFileTreePreviewHighlights()
 	}
 	lineCount := e.fileTreePreview.text.LineCount()
-	gutterWidth := previewGutterWidth(lineCount, e.lineNumberMode)
+	gutterWidth := previewGutterWidth(lineCount, e.display.lineNumberMode)
 	for y := 0; y < viewHeight; y++ {
 		lineIdx := e.fileTreePreview.scroll + y
 		if lineIdx >= lineCount {
@@ -147,7 +147,7 @@ func (e *Editor) drawPreviewLineWithGutterAt(s Screen, x0, y, w, gutterWidth, li
 	if gutterWidth >= w {
 		return
 	}
-	if gutterWidth > 0 && e.lineNumberMode != LineNumberOff {
+	if gutterWidth > 0 && e.display.lineNumberMode != LineNumberOff {
 		numWidth := gutterWidth
 		digits := numWidth - 2
 		if digits < 1 {
@@ -179,5 +179,5 @@ func (e *Editor) drawPreviewLineWithGutterAt(s Screen, x0, y, w, gutterWidth, li
 	if highlightActive {
 		spans = e.fileTreePreview.highlight.spans[lineIdx]
 	}
-	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.tabWidth, -1, -1, spans, highlightActive, nil, lineIdx, 0, e.fileTreePreview.scrollX, conflictNone)
+	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.display.tabWidth, -1, -1, spans, highlightActive, nil, lineIdx, 0, e.fileTreePreview.scrollX, conflictNone)
 }

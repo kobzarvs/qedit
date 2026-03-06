@@ -147,16 +147,16 @@ func TestSelectionMoveWithShiftPgUp(t *testing.T) {
 
 func TestExecCommandLineNumbers(t *testing.T) {
 	e := newTestEditor("a")
-	if e.lineNumberMode != LineNumberAbsolute {
-		t.Fatalf("default lineNumberMode = %v, want absolute", e.lineNumberMode)
+	if e.display.lineNumberMode != LineNumberAbsolute {
+		t.Fatalf("default lineNumberMode = %v, want absolute", e.display.lineNumberMode)
 	}
 	e.execCommand("ln rel")
-	if e.lineNumberMode != LineNumberRelative {
-		t.Fatalf("lineNumberMode = %v, want relative", e.lineNumberMode)
+	if e.display.lineNumberMode != LineNumberRelative {
+		t.Fatalf("lineNumberMode = %v, want relative", e.display.lineNumberMode)
 	}
 	e.execCommand("ln off")
-	if e.lineNumberMode != LineNumberOff {
-		t.Fatalf("lineNumberMode = %v, want off", e.lineNumberMode)
+	if e.display.lineNumberMode != LineNumberOff {
+		t.Fatalf("lineNumberMode = %v, want off", e.display.lineNumberMode)
 	}
 }
 
@@ -800,7 +800,7 @@ func TestUserFlowShiftSelectThenTab(t *testing.T) {
 
 func TestMouseClickMovesCursorClearsSelection(t *testing.T) {
 	e := newTestEditor("a\tb", "second")
-	e.lineNumberMode = LineNumberOff
+	e.display.lineNumberMode = LineNumberOff
 
 	// Create a selection via shift+right
 	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRight, 0, tcell.ModShift)))
@@ -830,7 +830,7 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 		lines[i] = "line"
 	}
 	e := newTestEditor(lines...)
-	e.lineNumberMode = LineNumberOff
+	e.display.lineNumberMode = LineNumberOff
 
 	s := tcell.NewSimulationScreen("UTF-8")
 	if err := s.Init(); err != nil {
@@ -856,7 +856,7 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 
 func TestMouseDragResizesSidebar(t *testing.T) {
 	e := newTestEditor("line")
-	e.lineNumberMode = LineNumberOff
+	e.display.lineNumberMode = LineNumberOff
 	e.sidebar.Visible = true
 	e.sidebar.WidthConfig = "20"
 	e.sidebar.MinWidth = 10

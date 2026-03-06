@@ -75,7 +75,7 @@ func TestRenderCursorWithTab(t *testing.T) {
 	if !visible {
 		t.Fatalf("cursor not visible")
 	}
-	wantX := visualCol(e.line(0), e.cursor.Col, e.tabWidth)
+	wantX := visualCol(e.line(0), e.cursor.Col, e.display.tabWidth)
 	if x != wantX {
 		t.Fatalf("cursor x = %d, want %d", x, wantX)
 	}

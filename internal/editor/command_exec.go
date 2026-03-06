@@ -102,13 +102,13 @@ func (e *Editor) execCommand(cmd string) bool {
 		}
 		switch strings.ToLower(args[0]) {
 		case "off":
-			e.lineNumberMode = LineNumberOff
+			e.display.lineNumberMode = LineNumberOff
 			e.setStatus("line numbers off")
 		case "abs", "absolute":
-			e.lineNumberMode = LineNumberAbsolute
+			e.display.lineNumberMode = LineNumberAbsolute
 			e.setStatus("line numbers absolute")
 		case "rel", "relative":
-			e.lineNumberMode = LineNumberRelative
+			e.display.lineNumberMode = LineNumberRelative
 			e.setStatus("line numbers relative")
 		default:
 			e.setStatus("unknown line number mode")

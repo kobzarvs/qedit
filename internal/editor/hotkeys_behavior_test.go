@@ -73,16 +73,16 @@ func TestBranchPickerHotkey(t *testing.T) {
 
 func TestToggleLineNumbersHotkey(t *testing.T) {
 	e := newTestEditor("one")
-	if e.lineNumberMode != LineNumberAbsolute {
-		t.Fatalf("default lineNumberMode = %v, want absolute", e.lineNumberMode)
+	if e.display.lineNumberMode != LineNumberAbsolute {
+		t.Fatalf("default lineNumberMode = %v, want absolute", e.display.lineNumberMode)
 	}
 	e.HandleKey(eventForKeyString(t, "cmd+l"))
-	if e.lineNumberMode != LineNumberRelative {
-		t.Fatalf("lineNumberMode = %v, want relative", e.lineNumberMode)
+	if e.display.lineNumberMode != LineNumberRelative {
+		t.Fatalf("lineNumberMode = %v, want relative", e.display.lineNumberMode)
 	}
 	e.HandleKey(eventForKeyString(t, "cmd+l"))
-	if e.lineNumberMode != LineNumberAbsolute {
-		t.Fatalf("lineNumberMode = %v, want absolute", e.lineNumberMode)
+	if e.display.lineNumberMode != LineNumberAbsolute {
+		t.Fatalf("lineNumberMode = %v, want absolute", e.display.lineNumberMode)
 	}
 }
 
