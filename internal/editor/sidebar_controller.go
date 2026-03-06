@@ -88,7 +88,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionOpenFile:
 		logger.Debug("sidebar action: open file", "path", action.Path)
 		if action.Path != "" {
-			if fileTreeContent != nil && e.isBinaryPath(action.Path) {
+			if fileTreeContent != nil && isBinaryPath(fileTreeContent.fs, action.Path) {
 				e.Notify("Files: binary preview only")
 				return false
 			}

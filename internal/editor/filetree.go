@@ -30,7 +30,7 @@ func (e *Editor) fileTreePreviewCurrent(content *SidebarFileTreeContent) {
 	if e.fileTreePreview.active && e.fileTreePreview.path == path && e.fileTreePreview.text != nil {
 		return
 	}
-	data, err := e.readFilePreview(path)
+	data, err := readFilePreview(content.fs, path)
 	if err != nil {
 		e.clearFileTreePreview()
 		return
@@ -176,17 +176,17 @@ func formatHexPreview(data []byte) string {
 	return b.String()
 }
 
-func (e *Editor) isBinaryPath(path string) bool {
-	data, err := e.readFilePreview(path)
+func isBinaryPath(fs FileStore, path string) bool {
+	data, err := readFilePreview(fs, path)
 	if err != nil {
 		return false
 	}
 	return isBinaryData(data)
 }
 
-func (e *Editor) readFilePreview(path string) ([]byte, error) {
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
+func readFilePreview(fs FileStore, path string) ([]byte, error) {
+	if fs == nil {
 		return nil, errFileStoreUnavailable()
 	}
-	return e.runtime.workspace.Read(path)
+	return fs.Read(path)
 }

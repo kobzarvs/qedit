@@ -134,13 +134,14 @@ func TestOpenExistingBufferSwitchesWithoutRead(t *testing.T) {
 }
 
 func TestFileTreePreviewUsesRuntimeFileStore(t *testing.T) {
-	e := newTestEditor()
-	e.SetFileStore(&testFileStore{
+	store := &testFileStore{
 		readDataByPath: map[string][]byte{
 			"/tmp/file.txt": []byte("preview text"),
 		},
-	})
+	}
+	e := newTestEditor()
 	content := &SidebarFileTreeContent{
+		fs: store,
 		items: []SidebarItem{{
 			Path: "/tmp/file.txt",
 		}},
@@ -157,14 +158,13 @@ func TestFileTreePreviewUsesRuntimeFileStore(t *testing.T) {
 }
 
 func TestIsBinaryPathUsesRuntimeFileStore(t *testing.T) {
-	e := newTestEditor()
-	e.SetFileStore(&testFileStore{
+	store := &testFileStore{
 		readDataByPath: map[string][]byte{
 			"/tmp/file.bin": {0x00, 0x01, 0x02},
 		},
-	})
+	}
 
-	if !e.isBinaryPath("/tmp/file.bin") {
+	if !isBinaryPath(store, "/tmp/file.bin") {
 		t.Fatalf("isBinaryPath = false, want true")
 	}
 }
