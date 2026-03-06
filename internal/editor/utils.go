@@ -46,24 +46,24 @@ func (e *Editor) ensureCursorVisible(viewHeight int) {
 	const margin = 5 // scroll when cursor is within 5 lines of edge
 
 	// If cursor is far outside visible area, center it
-	if e.cursor.Row < e.scroll-1 || e.cursor.Row >= e.scroll+viewHeight+1 {
-		e.scroll = e.cursor.Row - viewHeight/2
-		if e.scroll < 0 {
-			e.scroll = 0
+	if e.cursor.Row < e.viewport.scroll-1 || e.cursor.Row >= e.viewport.scroll+viewHeight+1 {
+		e.viewport.scroll = e.cursor.Row - viewHeight/2
+		if e.viewport.scroll < 0 {
+			e.viewport.scroll = 0
 		}
 		return
 	}
 	// Scroll when cursor approaches top edge (within margin)
-	if e.cursor.Row < e.scroll+margin {
-		e.scroll = e.cursor.Row - margin
-		if e.scroll < 0 {
-			e.scroll = 0
+	if e.cursor.Row < e.viewport.scroll+margin {
+		e.viewport.scroll = e.cursor.Row - margin
+		if e.viewport.scroll < 0 {
+			e.viewport.scroll = 0
 		}
 		return
 	}
 	// Scroll when cursor approaches bottom edge (within margin)
-	if e.cursor.Row >= e.scroll+viewHeight-margin {
-		e.scroll = e.cursor.Row - viewHeight + margin + 1
+	if e.cursor.Row >= e.viewport.scroll+viewHeight-margin {
+		e.viewport.scroll = e.cursor.Row - viewHeight + margin + 1
 	}
 }
 func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
@@ -85,23 +85,23 @@ func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
 	}
 
 	// Cursor position relative to scrollX
-	relativeX := visualCursorCol - e.scrollX
+	relativeX := visualCursorCol - e.viewport.scrollX
 
 	// If cursor is too close to right edge, scroll right
 	if relativeX > textWidth-margin {
-		e.scrollX = visualCursorCol - (textWidth - margin)
+		e.viewport.scrollX = visualCursorCol - (textWidth - margin)
 	}
 	// If cursor is too close to left edge (or off screen left), scroll left
 	if relativeX < margin {
-		e.scrollX = visualCursorCol - margin
+		e.viewport.scrollX = visualCursorCol - margin
 	}
 	e.clampScrollX(textWidth)
 }
 func (e *Editor) viewHeightCached() int {
-	if e.viewHeight < 1 {
+	if e.viewport.height < 1 {
 		return 1
 	}
-	return e.viewHeight
+	return e.viewport.height
 }
 func splitLines(data []byte) [][]rune {
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")

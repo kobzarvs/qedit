@@ -40,7 +40,7 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 	} else if ev.Buttons() == WheelLeft {
 		e.scrollLeft(1)
 	} else if ev.Buttons() == WheelRight {
-		textWidth := e.viewWidth - e.gutterWidth()
+		textWidth := e.viewport.width - e.gutterWidth()
 		e.scrollRight(1, textWidth)
 	} else if ev.Buttons() == Button1 {
 		e.handleMouseClick(ev)
@@ -66,7 +66,7 @@ func (e *Editor) handleMouseResize(ev EventMouse) bool {
 	}
 
 	x, y := ev.Position()
-	if y < 0 || y >= e.viewHeight {
+	if y < 0 || y >= e.viewport.height {
 		return false
 	}
 	if e.tryStartSidebarResize(x) {
@@ -79,10 +79,10 @@ func (e *Editor) tryStartSidebarResize(x int) bool {
 	if e.sidebar == nil || !e.sidebar.Visible {
 		return false
 	}
-	if e.viewWidth <= 0 {
+	if e.viewport.width <= 0 {
 		return false
 	}
-	sidebarWidth := e.sidebar.CalculateWidth(e.viewWidth)
+	sidebarWidth := e.sidebar.CalculateWidth(e.viewport.width)
 	if sidebarWidth <= 0 {
 		return false
 	}
@@ -121,12 +121,12 @@ func (e *Editor) clampSidebarWidth(width int) int {
 	if width < e.sidebar.MinWidth {
 		width = e.sidebar.MinWidth
 	}
-	maxWidth := parseWidthValue(e.sidebar.MaxWidthConfig, e.viewWidth)
+	maxWidth := parseWidthValue(e.sidebar.MaxWidthConfig, e.viewport.width)
 	if maxWidth > 0 && width > maxWidth {
 		width = maxWidth
 	}
-	if e.viewWidth > 0 && width > e.viewWidth/2 {
-		width = e.viewWidth / 2
+	if e.viewport.width > 0 && width > e.viewport.width/2 {
+		width = e.viewport.width / 2
 	}
 	return width
 }
@@ -145,14 +145,14 @@ func (e *Editor) finishMouseResize() {
 }
 
 func (e *Editor) scrollLeft(amount int) {
-	e.scrollX -= amount
-	if e.scrollX < 0 {
-		e.scrollX = 0
+	e.viewport.scrollX -= amount
+	if e.viewport.scrollX < 0 {
+		e.viewport.scrollX = 0
 	}
 }
 
 func (e *Editor) scrollRight(amount, textWidth int) {
-	e.scrollX += amount
+	e.viewport.scrollX += amount
 	e.clampScrollX(textWidth)
 }
 
@@ -162,11 +162,11 @@ func (e *Editor) clampScrollX(textWidth int) {
 	if maxX < 0 {
 		maxX = 0
 	}
-	if e.scrollX > maxX {
-		e.scrollX = maxX
+	if e.viewport.scrollX > maxX {
+		e.viewport.scrollX = maxX
 	}
-	if e.scrollX < 0 {
-		e.scrollX = 0
+	if e.viewport.scrollX < 0 {
+		e.viewport.scrollX = 0
 	}
 }
 
@@ -177,11 +177,11 @@ func (e *Editor) maxVisibleLineWidth() int {
 	if lineCount == 0 {
 		return 0
 	}
-	startLine := e.scroll - 2
+	startLine := e.viewport.scroll - 2
 	if startLine < 0 {
 		startLine = 0
 	}
-	endLine := e.scroll + e.viewHeight + 2
+	endLine := e.viewport.scroll + e.viewport.height + 2
 	if endLine > lineCount {
 		endLine = lineCount
 	}
@@ -199,7 +199,7 @@ func (e *Editor) maxVisibleLineWidth() int {
 func (e *Editor) handleMouseClick(ev EventMouse) {
 	x, y := ev.Position()
 	if e.sidebar != nil && e.sidebar.Visible {
-		sidebarWidth := e.sidebar.CalculateWidth(e.viewWidth)
+		sidebarWidth := e.sidebar.CalculateWidth(e.viewport.width)
 		if x < sidebarWidth {
 			e.sidebar.Focused = true
 			return
@@ -208,7 +208,7 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 	}
 
 	// Convert screen Y to line number
-	row := y + e.scroll
+	row := y + e.viewport.scroll
 	if row < 0 {
 		row = 0
 	}
@@ -222,7 +222,7 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 
 	// Convert screen X to column (accounting for gutter and horizontal scroll)
 	gutterW := e.gutterWidth()
-	visualX := x - gutterW + e.scrollX
+	visualX := x - gutterW + e.viewport.scrollX
 	if visualX < 0 {
 		visualX = 0
 	}
@@ -241,9 +241,9 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 }
 
 func (e *Editor) scrollUp(lines int) {
-	e.scroll -= lines
-	if e.scroll < 0 {
-		e.scroll = 0
+	e.viewport.scroll -= lines
+	if e.viewport.scroll < 0 {
+		e.viewport.scroll = 0
 	}
 }
 
@@ -254,23 +254,23 @@ func (e *Editor) scrollDown(lines int) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	e.scroll += lines
-	if e.scroll > maxScroll {
-		e.scroll = maxScroll
+	e.viewport.scroll += lines
+	if e.viewport.scroll > maxScroll {
+		e.viewport.scroll = maxScroll
 	}
 }
 
 // scrollViewUp scrolls the view up (shows earlier lines), keeping cursor visible
 func (e *Editor) scrollViewUp() {
-	if e.scroll <= 0 {
+	if e.viewport.scroll <= 0 {
 		return
 	}
-	e.scroll--
+	e.viewport.scroll--
 	e.interaction.lastScrollTime = time.Now()
 	// If cursor is now below visible area, move it up
 	viewHeight := e.viewHeightCached()
-	if e.cursor.Row >= e.scroll+viewHeight {
-		e.cursor.Row = e.scroll + viewHeight - 1
+	if e.cursor.Row >= e.viewport.scroll+viewHeight {
+		e.cursor.Row = e.viewport.scroll + viewHeight - 1
 		e.clampCursorCol()
 	}
 }
@@ -283,14 +283,14 @@ func (e *Editor) scrollViewDown() {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if e.scroll >= maxScroll {
+	if e.viewport.scroll >= maxScroll {
 		return
 	}
-	e.scroll++
+	e.viewport.scroll++
 	e.interaction.lastScrollTime = time.Now()
 	// If cursor is now above visible area, move it down
-	if e.cursor.Row < e.scroll {
-		e.cursor.Row = e.scroll
+	if e.cursor.Row < e.viewport.scroll {
+		e.cursor.Row = e.viewport.scroll
 		e.clampCursorCol()
 	}
 }

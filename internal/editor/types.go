@@ -397,8 +397,6 @@ type Editor struct {
 	Selection
 	UndoManager
 	SearchState
-	scroll                       int
-	scrollX                      int // horizontal scroll offset (visual columns)
 	mode                         Mode
 	filename                     string
 	file                         editorFileState
@@ -406,8 +404,6 @@ type Editor struct {
 	keymap                       keymapSet
 	commandLine                  editorCommandLineState
 	searchHistoryPath            string // search history file path
-	viewHeight                   int
-	viewWidth                    int
 	styleMain                    Style
 	styleStatus                  Style
 	styleStatusWarning           Style
@@ -456,6 +452,7 @@ type Editor struct {
 	notificationFadeStyles       []Style
 	display                      editorDisplayState
 	ui                           editorUIFeedbackState
+	viewport                     editorViewportState
 	git                          editorGitState
 	highlight                    editorHighlightState
 	conflicts                    editorConflictState

@@ -132,7 +132,7 @@ func TestSelectionMoveWithShiftMeta(t *testing.T) {
 func TestSelectionMoveWithShiftPgUp(t *testing.T) {
 	e := newTestEditor("0", "1", "2", "3", "4", "5")
 	e.cursor = Cursor{Row: 4, Col: 0}
-	e.viewHeight = 3
+	e.viewport.height = 3
 	ev := wrapKey(tcell.NewEventKey(tcell.KeyPgUp, 0, tcell.ModShift))
 	if !e.handleSelectionMove(ev) {
 		t.Fatalf("handleSelectionMove returned false")
@@ -841,16 +841,16 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 	e.Render(wrapScreen(s))
 
 	e.HandleMouse(wrapMouse(tcell.NewEventMouse(0, 0, tcell.WheelDown, 0)))
-	if e.scroll != 1 {
-		t.Fatalf("scroll = %d, want 1", e.scroll)
+	if e.viewport.scroll != 1 {
+		t.Fatalf("scroll = %d, want 1", e.viewport.scroll)
 	}
 	if !e.interaction.freeScroll {
 		t.Fatalf("freeScroll = false, want true")
 	}
 
 	e.HandleMouse(wrapMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, 0)))
-	if e.scroll != 0 {
-		t.Fatalf("scroll = %d, want 0", e.scroll)
+	if e.viewport.scroll != 0 {
+		t.Fatalf("scroll = %d, want 0", e.viewport.scroll)
 	}
 }
 

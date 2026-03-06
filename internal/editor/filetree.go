@@ -59,7 +59,7 @@ func (e *Editor) updateFileTreePreviewHighlights() {
 	if lineCount <= 0 {
 		return
 	}
-	end := e.viewHeight - 1
+	end := e.viewport.height - 1
 	if end < 0 {
 		end = 0
 	}

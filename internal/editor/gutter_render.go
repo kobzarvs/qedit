@@ -119,7 +119,7 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 	if highlightActive {
 		spans = e.highlight.spans[lineIdx]
 	}
-	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.display.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX, kind)
+	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.display.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.viewport.scrollX, kind)
 }
 
 func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {

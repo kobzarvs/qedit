@@ -36,8 +36,8 @@ func (e *Editor) OpenFile(path string) error {
 	e.cursor = Cursor{}
 	e.file.diskContent = e.Content()
 	e.resetConflictBlocks()
-	e.scroll = 0
-	e.scrollX = 0
+	e.viewport.scroll = 0
+	e.viewport.scrollX = 0
 	e.mode = ModeNormal
 	e.filename = absPath
 	e.commandLine.text = e.commandLine.text[:0]

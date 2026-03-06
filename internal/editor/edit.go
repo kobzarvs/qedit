@@ -1339,10 +1339,10 @@ func (e *Editor) replaceBuffer(text string, markDirty bool) {
 		}
 	}
 	e.clampCursorCol()
-	if e.scroll >= lineCount {
-		e.scroll = lineCount - 1
-		if e.scroll < 0 {
-			e.scroll = 0
+	if e.viewport.scroll >= lineCount {
+		e.viewport.scroll = lineCount - 1
+		if e.viewport.scroll < 0 {
+			e.viewport.scroll = 0
 		}
 	}
 	e.undo = nil

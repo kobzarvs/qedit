@@ -26,8 +26,9 @@ func New(opts Options) *Editor {
 			text:   NewTextBufferFromRunes(nil),
 			cursor: Cursor{},
 		},
-		mode:   ModeNormal,
-		keymap: keymapSet{normal: normal, insert: insert},
+		mode:              ModeNormal,
+		keymap:            keymapSet{normal: normal, insert: insert},
+		searchHistoryPath: opts.SearchHistoryPath,
 		display: editorDisplayState{
 			tabWidth:       tabWidth,
 			lineNumberMode: lineNumberMode,
@@ -44,7 +45,6 @@ func New(opts Options) *Editor {
 			historyPath:  opts.CmdHistoryPath,
 			historyIndex: -1,
 		},
-		searchHistoryPath: opts.SearchHistoryPath,
 		runtime: editorRuntimeDeps{
 			sessionStore: opts.SessionStore,
 		},
@@ -152,11 +152,11 @@ func (e *Editor) VisibleRange() (int, int) {
 	if lineCount == 0 {
 		return 0, 0
 	}
-	start := e.scroll
+	start := e.viewport.scroll
 	if start < 0 {
 		start = 0
 	}
-	end := start + e.viewHeight - 1
+	end := start + e.viewport.height - 1
 	if end < start {
 		end = start
 	}

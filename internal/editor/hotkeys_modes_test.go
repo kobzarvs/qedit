@@ -323,12 +323,12 @@ func TestViewModeHotkeys(t *testing.T) {
 		t.Run(string(tt.key), func(t *testing.T) {
 			e := newTestEditor("a", "b", "c", "d", "e", "f", "g")
 			e.cursor = Cursor{Row: 3, Col: 0}
-			e.viewHeight = 5
-			e.scroll = tt.scroll
+			e.viewport.height = 5
+			e.viewport.scroll = tt.scroll
 			e.HandleKey(keyRune('z'))
 			e.HandleKey(keyRune(tt.key))
-			if e.scroll != tt.want {
-				t.Fatalf("scroll = %d, want %d", e.scroll, tt.want)
+			if e.viewport.scroll != tt.want {
+				t.Fatalf("scroll = %d, want %d", e.viewport.scroll, tt.want)
 			}
 			if e.modal.lastCommand != "z"+string(tt.key) {
 				t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "z"+string(tt.key))

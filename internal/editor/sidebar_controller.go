@@ -23,7 +23,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 		return false
 	}
 
-	viewHeight := e.viewHeight - 1 // subtract header
+	viewHeight := e.viewport.height - 1 // subtract header
 	var fileTreeContent *SidebarFileTreeContent
 	if content, ok := e.sidebar.Content.(*SidebarFileTreeContent); ok {
 		fileTreeContent = content

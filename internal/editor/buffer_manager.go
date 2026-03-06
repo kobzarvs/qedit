@@ -218,8 +218,8 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		lineUndoRow:         e.lineUndoRow,
 		lineUndoContent:     e.lineUndoContent,
 		lineUndoValid:       e.lineUndoValid,
-		scroll:              e.scroll,
-		scrollX:             e.scrollX,
+		scroll:              e.viewport.scroll,
+		scrollX:             e.viewport.scrollX,
 		selectionActive:     e.selectionActive,
 		selectionStart:      e.selectionStart,
 		selectionEnd:        e.selectionEnd,
@@ -250,8 +250,8 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.lineUndoRow = bs.lineUndoRow
 	e.lineUndoContent = bs.lineUndoContent
 	e.lineUndoValid = bs.lineUndoValid
-	e.scroll = bs.scroll
-	e.scrollX = bs.scrollX
+	e.viewport.scroll = bs.scroll
+	e.viewport.scrollX = bs.scrollX
 	e.selectionActive = bs.selectionActive
 	e.selectionStart = bs.selectionStart
 	e.selectionEnd = bs.selectionEnd

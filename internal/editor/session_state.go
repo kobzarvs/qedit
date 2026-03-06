@@ -33,13 +33,13 @@ func (e *Editor) restoreSessionState() {
 	}
 
 	// Restore scroll
-	e.scroll = state.ScrollY
-	if e.scroll < 0 {
-		e.scroll = 0
+	e.viewport.scroll = state.ScrollY
+	if e.viewport.scroll < 0 {
+		e.viewport.scroll = 0
 	}
-	e.scrollX = state.ScrollX
-	if e.scrollX < 0 {
-		e.scrollX = 0
+	e.viewport.scrollX = state.ScrollX
+	if e.viewport.scrollX < 0 {
+		e.viewport.scrollX = 0
 	}
 
 	// Restore mode
@@ -90,8 +90,8 @@ func (e *Editor) saveSessionState() {
 	state := FileState{
 		CursorRow:         e.cursor.Row,
 		CursorCol:         e.cursor.Col,
-		ScrollY:           e.scroll,
-		ScrollX:           e.scrollX,
+		ScrollY:           e.viewport.scroll,
+		ScrollX:           e.viewport.scrollX,
 		Mode:              mode,
 		SelectionActive:   e.selectionActive,
 		SelectionStartRow: e.selectionStart.Row,
@@ -118,8 +118,8 @@ func (e *Editor) Shutdown() {
 				bufState := e.buffers.buffers[info.Index]
 				e.filename = bufState.filename
 				e.cursor = bufState.cursor
-				e.scroll = bufState.scroll
-				e.scrollX = bufState.scrollX
+				e.viewport.scroll = bufState.scroll
+				e.viewport.scrollX = bufState.scrollX
 				e.mode = bufState.mode
 				e.selectionActive = bufState.selectionActive
 				e.selectionStart = bufState.selectionStart

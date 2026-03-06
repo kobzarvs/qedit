@@ -24,8 +24,8 @@ func (e *Editor) Render(s Screen) {
 	if viewHeight < 0 {
 		viewHeight = 0
 	}
-	e.viewHeight = viewHeight
-	e.viewWidth = w
+	e.viewport.height = viewHeight
+	e.viewport.width = w
 	e.ensureConflictBlocks()
 
 	// Calculate sidebar width (refs picker or new sidebar, mutually exclusive)
@@ -60,7 +60,7 @@ func (e *Editor) Render(s Screen) {
 			e.renderFileTreePreview(s, editorX, viewHeight, editorWidth)
 		} else {
 			for y := 0; y < viewHeight; y++ {
-				lineIdx := e.scroll + y
+				lineIdx := e.viewport.scroll + y
 				if lineIdx >= e.LineCount() {
 					clearLineAt(s, editorX, y, editorWidth, e.styleMain)
 					continue
@@ -96,12 +96,12 @@ func (e *Editor) Render(s Screen) {
 	}
 	cursorVisible := true
 	if e.mode != ModeCommand && e.mode != ModeSearch && e.mode != ModeBranchPicker {
-		cy = e.cursor.Row - e.scroll
+		cy = e.cursor.Row - e.viewport.scroll
 		if cy < 0 || cy >= viewHeight {
 			cursorVisible = false
 		}
 		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-			cx = editorX + gutterWidth + visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) - e.scrollX
+			cx = editorX + gutterWidth + visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
 		}
 		if cx < editorX+gutterWidth {
 			cx = editorX + gutterWidth
@@ -171,7 +171,7 @@ func (e *Editor) renderScrollIndicator(s Screen, w, viewHeight int) {
 		return
 	}
 
-	e.drawScrollIndicator(s, w-1, 0, viewHeight, e.LineCount(), e.scroll, e.interaction.lastScrollTime)
+	e.drawScrollIndicator(s, w-1, 0, viewHeight, e.LineCount(), e.viewport.scroll, e.interaction.lastScrollTime)
 }
 
 func (e *Editor) drawScrollIndicator(s Screen, x, y, height int, totalLines int, scroll int, lastScroll time.Time) {

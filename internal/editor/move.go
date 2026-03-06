@@ -212,23 +212,23 @@ func (e *Editor) findMatchingQuoteBackward(quoteChar rune) {
 // centerCursorLine scrolls to center cursor line on screen
 func (e *Editor) centerCursorLine() {
 	viewHeight := e.viewHeightCached()
-	e.scroll = e.cursor.Row - viewHeight/2
-	if e.scroll < 0 {
-		e.scroll = 0
+	e.viewport.scroll = e.cursor.Row - viewHeight/2
+	if e.viewport.scroll < 0 {
+		e.viewport.scroll = 0
 	}
 }
 
 // scrollCursorToTop scrolls to put cursor line at top
 func (e *Editor) scrollCursorToTop() {
-	e.scroll = e.cursor.Row
+	e.viewport.scroll = e.cursor.Row
 }
 
 // scrollCursorToBottom scrolls to put cursor line at bottom
 func (e *Editor) scrollCursorToBottom() {
 	viewHeight := e.viewHeightCached()
-	e.scroll = e.cursor.Row - viewHeight + 1
-	if e.scroll < 0 {
-		e.scroll = 0
+	e.viewport.scroll = e.cursor.Row - viewHeight + 1
+	if e.viewport.scroll < 0 {
+		e.viewport.scroll = 0
 	}
 }
 func (e *Editor) moveLeft() {

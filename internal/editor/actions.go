@@ -277,8 +277,8 @@ func (e *Editor) execAction(action string) bool {
 			return false // already zoomed, ignore
 		}
 		// Save current scroll positions for restore
-		e.zoom.savedScroll = e.scroll
-		e.zoom.savedScrollX = e.scrollX
+		e.zoom.savedScroll = e.viewport.scroll
+		e.zoom.savedScrollX = e.viewport.scrollX
 		e.zoomWithAnimation(true, 20) // zoom in with scroll animation
 		e.zoom.pendingRestore = true
 		return false
@@ -729,21 +729,21 @@ func (e *Editor) zoomWithAnimation(zoomIn bool, steps int) {
 	defer func() { e.zoom.animating = false }()
 
 	// Calculate start and target scroll positions
-	startScroll := e.scroll
-	startScrollX := e.scrollX
+	startScroll := e.viewport.scroll
+	startScrollX := e.viewport.scrollX
 
 	var targetScroll, targetScrollX int
 	if zoomIn {
 		// Target: center cursor on screen
 		// Use current viewport, will be approximate but close enough
-		targetScroll = e.cursor.Row - e.viewHeight/2
-		targetScrollX = e.cursor.Col - e.viewWidth/2
+		targetScroll = e.cursor.Row - e.viewport.height/2
+		targetScrollX = e.cursor.Col - e.viewport.width/2
 
 		// Clamp targets
 		if targetScroll < 0 {
 			targetScroll = 0
 		}
-		maxScroll := e.LineCount() - e.viewHeight
+		maxScroll := e.LineCount() - e.viewport.height
 		if maxScroll < 0 {
 			maxScroll = 0
 		}
@@ -766,14 +766,14 @@ func (e *Editor) zoomWithAnimation(zoomIn bool, steps int) {
 
 		// Interpolate scroll position (linear)
 		progress := float64(i) / float64(steps)
-		e.scroll = startScroll + int(float64(targetScroll-startScroll)*progress)
-		e.scrollX = startScrollX + int(float64(targetScrollX-startScrollX)*progress)
+		e.viewport.scroll = startScroll + int(float64(targetScroll-startScroll)*progress)
+		e.viewport.scrollX = startScrollX + int(float64(targetScrollX-startScrollX)*progress)
 
 		// Small delay between steps for smoothness
 		time.Sleep(15 * time.Millisecond)
 	}
 
 	// Ensure final position is exact
-	e.scroll = targetScroll
-	e.scrollX = targetScrollX
+	e.viewport.scroll = targetScroll
+	e.viewport.scrollX = targetScrollX
 }
