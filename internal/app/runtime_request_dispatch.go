@@ -17,6 +17,8 @@ func (c *editorRuntimeController) handleEditorRequests() {
 
 func (c *editorRuntimeController) dispatchRuntimeRequest(req editor.RuntimeRequest) {
 	switch req.Kind {
+	case editor.RuntimeRequestShowFileTree:
+		c.handleShowFileTreeRequest(req)
 	case editor.RuntimeRequestShowBranchPicker:
 		c.handleShowBranchPickerRequest()
 	case editor.RuntimeRequestShowWorktrees:
@@ -46,12 +48,16 @@ func (c *editorRuntimeController) dispatchRuntimeRequest(req editor.RuntimeReque
 	}
 }
 
+func (c *editorRuntimeController) handleShowFileTreeRequest(req editor.RuntimeRequest) {
+	c.ed.ShowSidebarFileTree(c.fileStore, req.Path)
+}
+
 func (c *editorRuntimeController) handleShowBranchPickerRequest() {
 	showSidebarBranches(c.ed, c.state.gitPath)
 }
 
 func (c *editorRuntimeController) handleShowWorktreesRequest() {
-	showSidebarWorktrees(c.ed, c.state.gitPath)
+	showSidebarWorktrees(c.ed, c.fileStore, c.state.gitPath)
 }
 
 func (c *editorRuntimeController) handleSelectBranchRequest(req editor.RuntimeRequest) {

@@ -299,7 +299,17 @@ func (e *Editor) openSidebarFileTree(path string) {
 	} else {
 		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
 	}
+	e.enqueueRuntimeRequest(RuntimeRequest{
+		Kind: RuntimeRequestShowFileTree,
+		Path: path,
+	})
+}
 
+func (e *Editor) ShowSidebarFileTree(fs FileStore, path string) {
+	if e.sidebar == nil {
+		logger.Warn("ShowSidebarFileTree: sidebar is nil")
+		return
+	}
 	startDir := strings.TrimSpace(path)
 	if startDir == "" {
 		if e.document.filename != "" {
@@ -311,13 +321,13 @@ func (e *Editor) openSidebarFileTree(path string) {
 	if startDir == "" {
 		startDir = "."
 	}
-	if e.runtime.workspace != nil && e.runtime.workspace.HasFileStore() {
-		if info, err := e.runtime.workspace.Stat(startDir); err == nil && !info.IsDir {
+	if fs != nil {
+		if info, err := fs.Stat(startDir); err == nil && !info.IsDir {
 			startDir = filepath.Dir(startDir)
 		}
 	}
 
-	content := NewSidebarFileTreeContent(e.runtime.workspace, startDir, e.fileTree.showHidden, e.fileTree.showIgnored)
+	content := NewSidebarFileTreeContent(fs, startDir, e.fileTree.showHidden, e.fileTree.showIgnored)
 	e.sidebar.Open(content)
 }
 
@@ -413,17 +423,18 @@ func (e *Editor) ShowSidebarBranches(branches []string, current string) {
 	e.sidebar.Focused = true
 }
 
-func (e *Editor) ShowSidebarWorktrees(worktrees []WorktreeInfo, activePath string) {
+func (e *Editor) ShowSidebarWorktrees(fs FileStore, worktrees []WorktreeInfo, activePath string) {
 	logger.Debug("ShowSidebarWorktrees called", "count", len(worktrees), "active", activePath)
 	if e.sidebar == nil {
 		logger.Warn("ShowSidebarWorktrees: sidebar is nil")
 		return
 	}
 	if content, ok := e.sidebar.Content.(*SidebarWorktreesContent); ok {
+		content.fs = fs
 		content.UpdateWorktrees(worktrees, activePath)
 		e.sidebar.SetContent(content)
 	} else {
-		content := NewSidebarWorktreesContent(e.runtime.workspace, worktrees, activePath)
+		content := NewSidebarWorktreesContent(fs, worktrees, activePath)
 		e.sidebar.SetContent(content)
 	}
 	e.sidebar.Visible = true

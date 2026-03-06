@@ -3,6 +3,7 @@ package editor
 type RuntimeRequestKind string
 
 const (
+	RuntimeRequestShowFileTree        RuntimeRequestKind = "show_file_tree"
 	RuntimeRequestShowBranchPicker    RuntimeRequestKind = "show_branch_picker"
 	RuntimeRequestSelectBranch        RuntimeRequestKind = "select_branch"
 	RuntimeRequestShowWorktrees       RuntimeRequestKind = "show_worktrees"

@@ -28,7 +28,7 @@ func showSidebarBranches(ed *editor.Editor, gitPath string) {
 	ed.ShowSidebarBranches(branches, current)
 }
 
-func showSidebarWorktrees(ed *editor.Editor, gitPath string) {
+func showSidebarWorktrees(ed *editor.Editor, fileStore editor.FileStore, gitPath string) {
 	logger.Debug("worktree list requested")
 	if gitPath == "" {
 		logger.Debug("not a git repository")
@@ -50,7 +50,7 @@ func showSidebarWorktrees(ed *editor.Editor, gitPath string) {
 			Branch: wt.Branch,
 		})
 	}
-	ed.ShowSidebarWorktrees(items, active)
+	ed.ShowSidebarWorktrees(fileStore, items, active)
 }
 
 func checkoutBranch(ed *editor.Editor, gitPath, branch string) {

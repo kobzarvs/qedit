@@ -200,3 +200,66 @@ func TestSidebarFileTreeContentUsesRuntimeFileStoreReadDir(t *testing.T) {
 		t.Fatalf("second item = %#v, want file %q", items[1], "b.txt")
 	}
 }
+
+func TestOpenSidebarFileTreeQueuesRuntimeRequest(t *testing.T) {
+	e := newTestEditor("hello")
+
+	e.openSidebarFileTree("rel")
+
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected runtime request")
+	}
+	if req.Kind != RuntimeRequestShowFileTree || req.Path != "rel" {
+		t.Fatalf("request = %#v, want show-file-tree rel", req)
+	}
+	if _, ok := e.ConsumeRuntimeRequest(); ok {
+		t.Fatalf("expected request queue to be empty")
+	}
+}
+
+func TestShowSidebarFileTreeUsesProvidedFileStore(t *testing.T) {
+	e := newTestEditor("hello")
+	store := &testFileStore{
+		stats: map[string]FileMetadata{
+			"/project/file.txt": {IsDir: false},
+			"/project":          {IsDir: true},
+		},
+		dirEntries: map[string][]DirEntry{
+			"/project": {
+				{Name: "file.txt"},
+			},
+		},
+	}
+
+	e.ShowSidebarFileTree(store, "/project/file.txt")
+
+	content, ok := e.sidebar.Content.(*SidebarFileTreeContent)
+	if !ok {
+		t.Fatalf("sidebar content = %T, want *SidebarFileTreeContent", e.sidebar.Content)
+	}
+	if content.fs != store {
+		t.Fatalf("file store = %#v, want %#v", content.fs, store)
+	}
+	if content.dir != "/project" {
+		t.Fatalf("dir = %q, want %q", content.dir, "/project")
+	}
+}
+
+func TestShowSidebarWorktreesUsesProvidedFileStore(t *testing.T) {
+	e := newTestEditor("hello")
+	store := &testFileStore{homeDir: "/Users/test"}
+
+	e.ShowSidebarWorktrees(store, []WorktreeInfo{{Path: "/Users/test/repo", Branch: "main"}}, "/Users/test/repo")
+
+	content, ok := e.sidebar.Content.(*SidebarWorktreesContent)
+	if !ok {
+		t.Fatalf("sidebar content = %T, want *SidebarWorktreesContent", e.sidebar.Content)
+	}
+	if content.fs != store {
+		t.Fatalf("file store = %#v, want %#v", content.fs, store)
+	}
+	if !content.isCurrentPath("/Users/test/repo") {
+		t.Fatalf("expected current worktree path to be tracked")
+	}
+}
