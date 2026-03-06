@@ -5,7 +5,6 @@ git-branch-symbol = ""
 highlight-max-bytes = 8388608 # 0 = no limit
 file-tree-show-hidden = false
 file-tree-show-ignored = false
-ai-panel-width = 50
 
 [theme]
 theme = "ayu"
@@ -41,11 +40,8 @@ end = "line_end"
 "alt+down" = "focus_command"
 "alt+1" = "toggle_sidebar"
 "alt+2" = "focus_editor"
-"alt+3" = "ai_panel"
 "ctrl+home" = "file_start"
 "ctrl+end" = "file_end"
-"ctrl+o" = "ai_toggle_reason"
-"ctrl+t" = "ai_toggle_thinking"
 "ctrl+a" = "file_start"
 "ctrl+e" = "file_end"
 pgup = "page_up"
@@ -92,11 +88,8 @@ end = "line_end"
 "alt+down" = "focus_command"
 "alt+1" = "toggle_sidebar"
 "alt+2" = "focus_editor"
-"alt+3" = "ai_panel"
 "ctrl+home" = "file_start"
 "ctrl+end" = "file_end"
-"ctrl+o" = "ai_toggle_reason"
-"ctrl+t" = "ai_toggle_thinking"
 "ctrl+a" = "file_start"
 "ctrl+e" = "file_end"
 pgup = "page_up"
@@ -106,7 +99,3 @@ enter = "newline"
 tab = "indent"
 "shift+tab" = "unindent"
 "cmd+a" = "select_all"
-
-[ai]
-thinking-levels = ["auto", "low", "medium", "high", "on", "off"]
-# thinking-levels-by-model = { "gpt-5.2" = ["low", "medium", "high", "xhigh"], "gpt-oss-20b" = ["low", "medium", "high"] }

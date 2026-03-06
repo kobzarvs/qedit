@@ -41,8 +41,6 @@ const (
 	actionFocusSidebar       = "focus_sidebar"
 	actionFocusPrevPane      = "focus_prev_pane"
 	actionFocusNextPane      = "focus_next_pane"
-	actionToggleAIPanelFocus = "toggle_ai_panel_focus"
-	actionFocusAIPanel       = "focus_ai_panel"
 	actionFocusEditor        = "focus_editor"
 	actionFocusCommandLine   = "focus_command"
 	actionEnterInsert        = "enter_insert"
@@ -137,15 +135,6 @@ const (
 	// File operations
 	actionSave = "save" // Cmd+S - save file
 
-	// AI integration
-	actionAIPanel          = "ai_panel"           // toggle AI panel
-	actionAISend           = "ai_send"            // Cmd+I - send context to AI
-	actionAIToggleReason   = "ai_toggle_reason"   // toggle AI reasoning
-	actionAIToggleThinking = "ai_toggle_thinking" // toggle AI thinking level
-	actionAIApply          = "ai_apply"           // Apply suggested edit
-	actionAIReject         = "ai_reject"          // Reject suggested edit
-	actionAIEdit           = "ai_edit"            // Edit conversation
-
 	// Buffer management
 	actionBufferPicker     = "buffer_picker"      // open buffer picker in sidebar
 	actionGotoNextBuffer   = "goto_next_buffer"   // gn - next buffer
@@ -173,11 +162,6 @@ const (
 	CmdGroupEdit = "Edit"
 	CmdGroupView = "View"
 	CmdGroupGit  = "Git"
-)
-
-// Command groups for autocomplete
-const (
-	CmdGroupAI = "AI"
 )
 
 // AvailableCommands lists all commands for autocomplete
@@ -217,19 +201,6 @@ var AvailableCommands = []CommandInfo{
 	{"bp", "previous buffer", CmdGroupFile},
 	{"bc", "close buffer", CmdGroupFile},
 	{"bc!", "close buffer (force)", CmdGroupFile},
-	// AI
-	{"ide", "toggle AI panel", CmdGroupAI},
-	{"ai-focus", "toggle AI panel focus", CmdGroupAI},
-	{"ai", "AI provider info", CmdGroupAI},
-	{"ai list", "list AI providers", CmdGroupAI},
-	{"ai model", "show AI models", CmdGroupAI},
-	{"ai model <name>", "set AI model", CmdGroupAI},
-	{"ai thinking", "show AI thinking level", CmdGroupAI},
-	{"ai thinking <level>", "set AI thinking level", CmdGroupAI},
-	{"ai thinking list", "list AI thinking levels", CmdGroupAI},
-	{"ai max", "toggle AI panel maximize", CmdGroupAI},
-	{"ai edit", "edit AI conversation", CmdGroupAI},
-	{"ai <provider>", "set AI provider", CmdGroupAI},
 }
 
 // SpaceMenuItem represents an item in the space menu
@@ -423,9 +394,6 @@ type LSPGotoFunc func(method, path string, line, col int) ([]LSPLocation, error)
 // HighlightRangeFunc is a callback to get syntax highlights for a range
 type HighlightRangeFunc func(path string, startLine, endLine int) map[int][]HighlightSpan
 
-// MarkdownHighlightFunc is a callback to highlight markdown text.
-type MarkdownHighlightFunc func(text string) map[int][]HighlightSpan
-
 type Editor struct {
 	Buffer
 	Selection
@@ -486,12 +454,6 @@ type Editor struct {
 	styleSyntaxYAMLValue          Style
 	styleSyntaxYAMLListItem       Style
 	styleTableBorder              Style
-	styleAIReasoning              Style
-	styleAIUser                   Style
-	styleAIAssistant              Style
-	styleAIThinking               Style
-	styleAIStatusOnline           Style
-	styleAIHeader                 Style
 	styleBranch                   Style
 	styleMainBranch               Style
 	styleLayoutUS                 Style
@@ -598,7 +560,6 @@ type Editor struct {
 	// LSP integration
 	lspGotoFunc          LSPGotoFunc                        // callback for LSP goto operations
 	highlightRangeFunc   HighlightRangeFunc                 // callback to get highlights for a range
-	aiMarkdownHighlight  MarkdownHighlightFunc              // callback to highlight AI markdown
 	refsPickerActive     bool                               // whether references picker is shown
 	refsPickerItems      []LSPLocation                      // list of references
 	refsPickerIndex      int                                // selected reference index
@@ -614,7 +575,6 @@ type Editor struct {
 
 	autoReloadConfigHook   func(enabled bool) error
 	sidebarWidthConfigHook func(width string) error
-	aiPanelWidthConfigHook func(width int) error
 
 	// Command autocomplete state
 	cmdAutoCompleteActive    bool
@@ -622,20 +582,6 @@ type Editor struct {
 	cmdAutoCompleteIndex     int
 	cmdAutoCompleteCols      int           // number of columns for display (computed during render)
 	cmdAutoCompleteColGroups [][]GroupInfo // column layout (computed during render)
-	aiInputCursorX           int
-	aiInputCursorY           int
-	aiInputCursorVisible     bool
-
-	// AI integration
-	aiPanel                 *AIPanel  // AI chat panel (right sidebar)
-	aiManager               AIManager // AI provider manager
-	aiThinkingLevels        []string
-	aiThinkingLevelsByModel map[string][]string
-	aiPanelDefaultWidth     int
-
-	// AI edit mode state
-	aiEditBufferPath    string   // path to temp file for AI conversation editing
-	aiEditOriginalPanel *AIPanel // reference to original AI panel when in edit mode
 
 	// Multi-buffer state
 	buffers        *BufferManager // tracks multiple open buffers

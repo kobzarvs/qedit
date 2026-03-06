@@ -16,7 +16,6 @@ type resizeTarget int
 const (
 	resizeTargetNone resizeTarget = iota
 	resizeTargetSidebar
-	resizeTargetAIPanel
 )
 
 func (e *Editor) HandleKey(ev EventKey) bool {
@@ -34,11 +33,6 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 	// Handle sidebar if focused
 	if e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused {
 		return e.handleSidebarKey(ev)
-	}
-
-	// Handle AI panel if focused
-	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused {
-		return e.handleAIPanelKey(ev)
 	}
 
 	switch e.mode {
@@ -70,14 +64,11 @@ func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
 
 	switch action {
 	case actionToggleSidebar,
-		actionAIPanel,
 		actionToggleSidebarFocus,
-		actionToggleAIPanelFocus,
 		actionFocusEditor,
 		actionFocusPrevPane,
 		actionFocusNextPane,
 		actionFocusSidebar,
-		actionFocusAIPanel,
 		actionFocusCommandLine:
 		return true, e.execAction(action)
 	default:
@@ -99,13 +90,6 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 
 	if e.handleMouseResize(ev) {
 		return
-	}
-
-	if ev.Buttons() == WheelUp || ev.Buttons() == WheelDown {
-		x, y := ev.Position()
-		if e.scrollAIPanelIfHovered(ev.Buttons(), x, y) {
-			return
-		}
 	}
 
 	if ev.Buttons() == WheelUp {
@@ -151,17 +135,11 @@ func (e *Editor) handleMouseResize(ev EventMouse) bool {
 	if e.tryStartSidebarResize(x) {
 		return true
 	}
-	if e.tryStartAIPanelResize(x) {
-		return true
-	}
 	return false
 }
 
 func (e *Editor) tryStartSidebarResize(x int) bool {
 	if e.sidebar == nil || !e.sidebar.Visible {
-		return false
-	}
-	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Maximized {
 		return false
 	}
 	if e.viewWidth <= 0 {
@@ -180,26 +158,10 @@ func (e *Editor) tryStartSidebarResize(x int) bool {
 	return true
 }
 
-func (e *Editor) tryStartAIPanelResize(x int) bool {
-	if e.aiPanel == nil || !e.aiPanel.Visible || e.aiPanel.Maximized {
-		return false
-	}
-	aiX, ok := e.aiPanelX()
-	if !ok || x != aiX {
-		return false
-	}
-	e.resizeDragging = true
-	e.resizeTarget = resizeTargetAIPanel
-	e.updateAIPanelWidthFromX(x)
-	return true
-}
-
 func (e *Editor) updateMouseResize(x int) {
 	switch e.resizeTarget {
 	case resizeTargetSidebar:
 		e.updateSidebarWidthFromX(x)
-	case resizeTargetAIPanel:
-		e.updateAIPanelWidthFromX(x)
 	}
 }
 
@@ -232,46 +194,6 @@ func (e *Editor) clampSidebarWidth(width int) int {
 	return width
 }
 
-func (e *Editor) updateAIPanelWidthFromX(x int) {
-	if e.aiPanel == nil || e.viewWidth <= 0 {
-		return
-	}
-	width := e.viewWidth - x
-	if width < 0 {
-		width = 0
-	}
-	if width < 30 {
-		width = 30
-	}
-	sidebarWidth := 0
-	if e.sidebar != nil && e.sidebar.Visible {
-		sidebarWidth = e.sidebar.CalculateWidth(e.viewWidth)
-	} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
-		sidebarWidth = e.viewWidth / 4
-		if sidebarWidth < 20 {
-			sidebarWidth = 20
-		}
-		if sidebarWidth > e.viewWidth/2 {
-			sidebarWidth = e.viewWidth / 2
-		}
-	}
-	remaining := e.viewWidth - sidebarWidth
-	maxWidth := 0
-	if remaining > 0 {
-		maxWidth = remaining / 2
-	}
-	if maxWidth < 0 {
-		maxWidth = 0
-	}
-	if maxWidth > 0 && width > maxWidth {
-		width = maxWidth
-	}
-	if maxWidth == 0 && width > 0 {
-		width = 0
-	}
-	e.aiPanel.Width = width
-}
-
 func (e *Editor) finishMouseResize() {
 	switch e.resizeTarget {
 	case resizeTargetSidebar:
@@ -280,87 +202,9 @@ func (e *Editor) finishMouseResize() {
 				e.setStatus("config write failed: " + err.Error())
 			}
 		}
-	case resizeTargetAIPanel:
-		if e.aiPanelWidthConfigHook != nil && e.aiPanel != nil {
-			if err := e.aiPanelWidthConfigHook(e.aiPanel.Width); err != nil {
-				e.setStatus("config write failed: " + err.Error())
-			}
-		}
 	}
 	e.resizeDragging = false
 	e.resizeTarget = resizeTargetNone
-}
-
-func (e *Editor) scrollAIPanelIfHovered(buttons MouseButton, x, y int) bool {
-	if e.aiPanel == nil || !e.aiPanel.Visible {
-		return false
-	}
-	if e.viewWidth <= 0 || e.viewHeight <= 0 {
-		return false
-	}
-	if y < 0 || y >= e.viewHeight {
-		return false
-	}
-
-	aiPanelX, ok := e.aiPanelX()
-	if !ok {
-		return false
-	}
-	if x < aiPanelX {
-		return false
-	}
-
-	switch buttons {
-	case WheelUp:
-		e.aiPanel.ScrollUp(1)
-		return true
-	case WheelDown:
-		e.aiPanel.ScrollDown(1)
-		return true
-	}
-
-	return false
-}
-
-func (e *Editor) aiPanelX() (int, bool) {
-	w := e.viewWidth
-	if w <= 0 {
-		return 0, false
-	}
-	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Maximized {
-		return 0, true
-	}
-
-	sidebarWidth := 0
-	if e.sidebar != nil && e.sidebar.Visible {
-		sidebarWidth = e.sidebar.CalculateWidth(w)
-	} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
-		sidebarWidth = w / 4
-		if sidebarWidth < 20 {
-			sidebarWidth = 20
-		}
-		if sidebarWidth > w/2 {
-			sidebarWidth = w / 2
-		}
-	}
-
-	aiPanelWidth := e.aiPanel.Width
-	if aiPanelWidth < 30 {
-		aiPanelWidth = 30
-	}
-	remaining := w - sidebarWidth
-	if remaining <= 0 {
-		return 0, false
-	}
-	maxAIPanelWidth := remaining / 2
-	if aiPanelWidth > maxAIPanelWidth {
-		aiPanelWidth = maxAIPanelWidth
-	}
-	if aiPanelWidth <= 0 {
-		return 0, false
-	}
-
-	return w - aiPanelWidth, true
 }
 func (e *Editor) scrollLeft(amount int) {
 	e.scrollX -= amount
@@ -414,22 +258,6 @@ func (e *Editor) maxVisibleLineWidth() int {
 }
 func (e *Editor) handleMouseClick(ev EventMouse) {
 	x, y := ev.Position()
-	if e.aiPanel != nil && e.aiPanel.Visible {
-		aiX, ok := e.aiPanelX()
-		if ok && x >= aiX {
-			e.aiPanel.Focused = true
-			if e.sidebar != nil {
-				e.sidebar.Focused = false
-			}
-			if e.aiPanel.Maximized {
-				return
-			}
-			return
-		}
-	}
-	if e.aiPanel != nil {
-		e.aiPanel.Focused = false
-	}
 	if e.sidebar != nil && e.sidebar.Visible {
 		sidebarWidth := e.sidebar.CalculateWidth(e.viewWidth)
 		if x < sidebarWidth {
@@ -762,8 +590,8 @@ func (e *Editor) lspGoto(method string) bool {
 		return false
 	}
 
-	// For references/implementations or multiple results, show picker
-	if method == "references" || method == "implementation" || len(locations) > 1 {
+	// For references or multiple results, show picker
+	if method == "references" || len(locations) > 1 {
 		title := "References"
 		if method == "implementation" {
 			title = "Implementations"
@@ -1709,7 +1537,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 			}
 		}
 	}
-	logger.Debug("handleSidebarKey", "action", action.Action, "branch", action.Branch, "mode", action.Mode, "provider", action.Provider, "model", action.Model)
+	logger.Debug("handleSidebarKey", "action", action.Action, "branch", action.Branch, "mode", action.Mode)
 
 	switch action.Action {
 	case SidebarActionClose:
@@ -1720,7 +1548,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionBackToMenu:
 		logger.Debug("sidebar action: back to menu")
 		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+			e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
 			e.sidebar.SetContent(e.sidebar.MenuContent)
 		}
 		return false
@@ -1764,16 +1592,6 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 				e.sidebar.Focused = false
 			}
 		}
-		return false
-
-	case SidebarActionOpenAIModels:
-		logger.Debug("sidebar action: open AI models", "provider", action.Provider)
-		e.openSidebarAIModels(action.Provider)
-		return false
-
-	case SidebarActionSetAIModel:
-		logger.Debug("sidebar action: set AI model", "model", action.Model)
-		e.selectSidebarAIModel(action.Model)
 		return false
 
 	case SidebarActionSwitchWorktree:
@@ -1822,9 +1640,6 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 	case SidebarModeBranches:
 		e.openSidebarBranches()
 
-	case SidebarModeAI:
-		e.openSidebarAIProviders()
-
 	case SidebarModeFileTree:
 		e.openSidebarFileTree("")
 
@@ -1859,9 +1674,9 @@ func (e *Editor) openSidebar() {
 	// Initialize menu content if not exists
 	if e.sidebar.MenuContent == nil {
 		logger.Debug("openSidebar: creating menu content", "gitRepo", e.isGitRepo())
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
 	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
 	}
 
 	e.sidebar.Open(e.sidebar.MenuContent)
@@ -1878,7 +1693,7 @@ func (e *Editor) openSidebarBranches() {
 	if !e.isGitRepo() {
 		e.setStatus("not a git repository")
 		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(false, e.aiManager != nil)
+			e.sidebar.MenuContent.SetAvailability(false)
 		}
 		return
 	}
@@ -1891,9 +1706,9 @@ func (e *Editor) openSidebarBranches() {
 
 	// Initialize menu content for later "back" navigation
 	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
 	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
 	}
 
 	// Request branches - app will call ShowSidebarBranches
@@ -1913,7 +1728,7 @@ func (e *Editor) openSidebarWorktrees() {
 	if !e.isGitRepo() {
 		e.setStatus("not a git repository")
 		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(false, e.aiManager != nil)
+			e.sidebar.MenuContent.SetAvailability(false)
 		}
 		return
 	}
@@ -1926,9 +1741,9 @@ func (e *Editor) openSidebarWorktrees() {
 
 	// Initialize menu content for later "back" navigation
 	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
 	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
 	}
 
 	e.sidebar.Open(NewSidebarLoadingContent("Worktree", "Loading..."))
@@ -1978,9 +1793,9 @@ func (e *Editor) openSidebarFileTree(path string) {
 
 	// Initialize menu content for later "back" navigation
 	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
 	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
 	}
 
 	startDir := strings.TrimSpace(path)
@@ -2012,7 +1827,7 @@ func (e *Editor) openSidebarGitChanges() {
 	if !e.isGitRepo() {
 		e.setStatus("not a git repository")
 		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(false, e.aiManager != nil)
+			e.sidebar.MenuContent.SetAvailability(false)
 		}
 		return
 	}
@@ -2025,9 +1840,9 @@ func (e *Editor) openSidebarGitChanges() {
 
 	// Initialize menu content for later "back" navigation
 	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
 	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
 	}
 
 	if err := e.refreshGitChangesIfStale(2 * time.Second); err != nil {
@@ -2037,102 +1852,6 @@ func (e *Editor) openSidebarGitChanges() {
 
 	content := NewSidebarGitChangesContent(e)
 	e.sidebar.Open(content)
-}
-
-// openSidebarAIProviders opens the sidebar in AI provider mode.
-func (e *Editor) openSidebarAIProviders() {
-	logger.Debug("openSidebarAIProviders called")
-	if e.sidebar == nil {
-		logger.Warn("openSidebarAIProviders: sidebar is nil")
-		return
-	}
-
-	if e.aiManager == nil {
-		e.setStatus("AI not configured")
-		e.sidebar.Open(NewSidebarLoadingContent("AI", "AI not configured"))
-		return
-	}
-
-	// Close refs picker if open (mutual exclusion)
-	if e.refsPickerActive {
-		logger.Debug("openSidebarAIProviders: closing refs picker")
-		e.closeRefsPicker(false)
-	}
-
-	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
-	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo(), e.aiManager != nil)
-	}
-
-	providers := e.aiManager.ListProviders()
-	content := NewSidebarAIProvidersContent(providers, e.aiManager.ActiveName())
-	if len(providers) == 0 {
-		e.setStatus("AI: no providers configured")
-	}
-	e.sidebar.Open(content)
-}
-
-// openSidebarAIModels opens the sidebar for models of a provider.
-func (e *Editor) openSidebarAIModels(provider string) {
-	if e.sidebar == nil {
-		return
-	}
-	if e.aiManager == nil {
-		e.setStatus("AI not configured")
-		return
-	}
-	if provider == "" {
-		return
-	}
-
-	if err := e.aiManager.SetActive(provider); err != nil {
-		e.setStatus("AI: " + err.Error())
-		return
-	}
-	e.saveAIState()
-	// Sync panel state after switching provider
-	e.refreshAIPanelProviderState()
-
-	providerLabel := provider
-	if e.aiPanel != nil && e.aiPanel.ProviderName != "" {
-		providerLabel = e.aiPanel.ProviderName
-	}
-
-	models, err := e.aiManager.ListModels()
-	if err != nil {
-		e.setStatus("AI: " + err.Error())
-		return
-	}
-	if len(models) == 0 {
-		e.setStatus("AI: no models available")
-		return
-	}
-
-	content := NewSidebarAIModelsContent(provider, providerLabel, models, e.aiManager.CurrentModel())
-	e.sidebar.SetContent(content)
-	e.sidebar.Visible = true
-	e.sidebar.Focused = true
-}
-
-func (e *Editor) selectSidebarAIModel(model string) {
-	if e.aiManager == nil {
-		e.setStatus("AI not configured")
-		return
-	}
-	if model == "" {
-		return
-	}
-	if err := e.aiManager.SetModel(model); err != nil {
-		e.setStatus("AI: " + err.Error())
-		return
-	}
-	e.saveAIState()
-	e.syncAIPanelProviderState()
-	e.setStatus("AI model: " + model)
-	if content, ok := e.sidebar.Content.(*SidebarAIModelsContent); ok {
-		content.SetCurrentModel(model)
-	}
 }
 
 // closeSidebar closes the sidebar
@@ -2158,18 +1877,12 @@ func (e *Editor) toggleSidebar() {
 			e.closeSidebar()
 		} else {
 			e.sidebar.Focused = true
-			if e.aiPanel != nil {
-				e.aiPanel.Focused = false
-			}
 		}
 	} else {
 		// Restore previous content if available, otherwise open menu
 		if e.sidebar.Content != nil {
 			e.sidebar.Visible = true
 			e.sidebar.Focused = true
-			if e.aiPanel != nil {
-				e.aiPanel.Focused = false
-			}
 		} else {
 			e.openSidebar()
 		}
@@ -2185,9 +1898,6 @@ func (e *Editor) toggleSidebarFocus() {
 		return
 	}
 	e.sidebar.Focused = !e.sidebar.Focused
-	if e.sidebar.Focused && e.aiPanel != nil {
-		e.aiPanel.Focused = false
-	}
 	if !e.sidebar.Focused {
 		e.clearFileTreePreview()
 	}
@@ -2218,45 +1928,12 @@ func (e *Editor) focusSidebar() {
 		return
 	}
 	e.sidebar.Focused = true
-	if e.aiPanel != nil {
-		e.aiPanel.Focused = false
-	}
-	e.exitCommandLine()
-}
-
-func (e *Editor) toggleAIPanelFocus() {
-	e.ensureAIPanel()
-	if !e.aiPanel.Visible {
-		e.aiPanel.Open()
-		e.syncAIPanelProviderState()
-	} else {
-		e.aiPanel.Focused = !e.aiPanel.Focused
-	}
-	if e.aiPanel.Focused && e.sidebar != nil {
-		e.sidebar.Focused = false
-	}
-}
-
-func (e *Editor) focusAIPanel() {
-	e.ensureAIPanel()
-	if !e.aiPanel.Visible {
-		e.aiPanel.Open()
-		e.syncAIPanelProviderState()
-	}
-	e.aiPanel.Focused = true
-	if e.sidebar != nil {
-		e.sidebar.Focused = false
-	}
-	e.clearFileTreePreview()
 	e.exitCommandLine()
 }
 
 func (e *Editor) focusEditor() {
 	if e.sidebar != nil {
 		e.sidebar.Focused = false
-	}
-	if e.aiPanel != nil {
-		e.aiPanel.Focused = false
 	}
 	e.clearFileTreePreview()
 	e.exitCommandLine()
@@ -2265,9 +1942,6 @@ func (e *Editor) focusEditor() {
 func (e *Editor) focusCommandLine() {
 	if e.sidebar != nil {
 		e.sidebar.Focused = false
-	}
-	if e.aiPanel != nil {
-		e.aiPanel.Focused = false
 	}
 	e.clearFileTreePreview()
 	if e.mode == ModeCommand {
@@ -2290,27 +1964,20 @@ type focusPane int
 const (
 	focusPaneSidebar focusPane = iota
 	focusPaneEditor
-	focusPaneAIPanel
 )
 
 func (e *Editor) focusablePanes() []focusPane {
-	panes := make([]focusPane, 0, 3)
+	panes := make([]focusPane, 0, 2)
 	if e.sidebar != nil && e.sidebar.Visible {
 		panes = append(panes, focusPaneSidebar)
 	}
 	panes = append(panes, focusPaneEditor)
-	if e.aiPanel != nil && e.aiPanel.Visible {
-		panes = append(panes, focusPaneAIPanel)
-	}
 	return panes
 }
 
 func (e *Editor) currentPane() focusPane {
 	if e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused {
 		return focusPaneSidebar
-	}
-	if e.aiPanel != nil && e.aiPanel.Visible && e.aiPanel.Focused {
-		return focusPaneAIPanel
 	}
 	return focusPaneEditor
 }
@@ -2322,11 +1989,6 @@ func (e *Editor) focusPane(target focusPane) {
 			return
 		}
 		e.focusSidebar()
-	case focusPaneAIPanel:
-		if e.aiPanel == nil || !e.aiPanel.Visible {
-			return
-		}
-		e.focusAIPanel()
 	default:
 		e.focusEditor()
 	}

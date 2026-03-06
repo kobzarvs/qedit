@@ -21,7 +21,6 @@ type EditorOptions struct {
 	SidebarMinWidth       int    `toml:"sidebar-min-width"`
 	SidebarMaxWidth       string `toml:"sidebar-max-width"`
 	SidebarCloseOnSelect  bool   `toml:"sidebar-close-on-select"`
-	AIPanelWidth          int    `toml:"ai-panel-width"`
 	FileTreeShowHidden    bool   `toml:"file-tree-show-hidden"`
 	FileTreeShowIgnored   bool   `toml:"file-tree-show-ignored"`
 	HighlightMaxBytes     int64  `toml:"highlight-max-bytes"`
@@ -73,12 +72,6 @@ type Theme struct {
 	SyntaxYAMLKey                  string `toml:"syntax-yaml-key"`
 	SyntaxYAMLValue                string `toml:"syntax-yaml-value"`
 	SyntaxYAMLListItem             string `toml:"syntax-yaml-list-item"`
-	AIReasoningForeground          string `toml:"ai-reasoning-foreground"`
-	AIUserForeground               string `toml:"ai-user-foreground"`
-	AIAssistantForeground          string `toml:"ai-assistant-foreground"`
-	AIThinkingForeground           string `toml:"ai-thinking-foreground"`
-	AIStatusOnlineForeground       string `toml:"ai-status-online-foreground"`
-	AIHeaderForeground             string `toml:"ai-header-foreground"`
 	BranchForeground               string `toml:"branch-foreground"`
 	BranchBackground               string `toml:"branch-background"`
 	MainBranchForeground           string `toml:"main-branch-foreground"`
@@ -112,12 +105,6 @@ type Config struct {
 	Editor EditorOptions `toml:"editor"`
 	Theme  Theme         `toml:"theme"`
 	Keymap Keymap        `toml:"keymap"`
-	AI     AIOptions     `toml:"ai"`
-}
-
-type AIOptions struct {
-	ThinkingLevels        []string            `toml:"thinking-levels"`
-	ThinkingLevelsByModel map[string][]string `toml:"thinking-levels-by-model"`
 }
 
 func Default() Config {
@@ -130,7 +117,6 @@ func Default() Config {
 			SidebarMinWidth:       15,
 			SidebarMaxWidth:       "50",
 			SidebarCloseOnSelect:  false,
-			AIPanelWidth:          50,
 			FileTreeShowHidden:    false,
 			FileTreeShowIgnored:   false,
 			HighlightMaxBytes:     8 << 20,
@@ -178,12 +164,6 @@ func Default() Config {
 			SyntaxUnknown:                  "#FF0000",
 			SyntaxVariable:                 "#B3B1AD",
 			SyntaxParameter:                "#B3B1AD",
-			AIReasoningForeground:          "#5C6773",
-			AIUserForeground:               "#59C2FF",
-			AIAssistantForeground:          "#B3B1AD",
-			AIThinkingForeground:           "#898989",
-			AIStatusOnlineForeground:       "#7FD962",
-			AIHeaderForeground:             "#E6B450",
 			SidebarForeground:              "#B3B1AD",
 			SidebarBackground:              "#0A0E14",
 			SidebarDirForeground:           "#59C2FF",
@@ -236,15 +216,12 @@ func Default() Config {
 				"alt+down":      "focus_command",
 				"alt+1":         "toggle_sidebar",
 				"alt+2":         "focus_editor",
-				"alt+3":         "ai_panel",
 				"cmd+y":         "delete_line",
 				"del":           "delete_char",
 				"cmd+backspace": "delete_word_left",
 				"cmd+del":       "delete_word_right",
 				"ctrl+home":     "file_start",
 				"ctrl+end":      "file_end",
-				"ctrl+o":        "ai_toggle_reason",
-				"ctrl+t":        "ai_toggle_thinking",
 				"ctrl+y":        "scroll_up",
 				"ctrl+e":        "scroll_down",
 				"pgup":          "page_up",
@@ -325,9 +302,7 @@ func Default() Config {
 				// File operations
 				"cmd+s": "save",
 
-				// AI integration
-				"cmd+i": "ai_send",
-				"M":     "merge_mode",
+				"M": "merge_mode",
 			},
 			Insert: map[string]string{
 				"esc":           "enter_normal",
@@ -357,7 +332,6 @@ func Default() Config {
 				"alt+down":      "focus_command",
 				"alt+1":         "toggle_sidebar",
 				"alt+2":         "focus_editor",
-				"alt+3":         "ai_panel",
 				"cmd+y":         "delete_line",
 				"del":           "delete_char",
 				"cmd+backspace": "delete_word_left",
@@ -365,8 +339,6 @@ func Default() Config {
 				"cmd+enter":     "insert_line_below",
 				"ctrl+home":     "file_start",
 				"ctrl+end":      "file_end",
-				"ctrl+o":        "ai_toggle_reason",
-				"ctrl+t":        "ai_toggle_thinking",
 				"ctrl+y":        "scroll_up",
 				"ctrl+e":        "scroll_down",
 				"pgup":          "page_up",
@@ -383,9 +355,6 @@ func Default() Config {
 				// File operations
 				"cmd+s": "save",
 			},
-		},
-		AI: AIOptions{
-			ThinkingLevels: []string{"auto", "low", "medium", "high", "on", "off"},
 		},
 	}
 }
@@ -427,11 +396,6 @@ func Load() (Config, error) {
 	}
 	if userCfg.Editor.SidebarMaxWidth != "" {
 		cfg.Editor.SidebarMaxWidth = userCfg.Editor.SidebarMaxWidth
-	}
-	if md.IsDefined("editor", "ai-panel-width") {
-		if userCfg.Editor.AIPanelWidth > 0 {
-			cfg.Editor.AIPanelWidth = userCfg.Editor.AIPanelWidth
-		}
 	}
 	if md.IsDefined("editor", "sidebar-close-on-select") {
 		cfg.Editor.SidebarCloseOnSelect = userCfg.Editor.SidebarCloseOnSelect
@@ -477,12 +441,6 @@ func Load() (Config, error) {
 		mergeTheme(&cfg.Theme, theme)
 	}
 	mergeTheme(&cfg.Theme, userCfg.Theme)
-	if md.IsDefined("ai", "thinking-levels") {
-		cfg.AI.ThinkingLevels = userCfg.AI.ThinkingLevels
-	}
-	if md.IsDefined("ai", "thinking-levels-by-model") {
-		cfg.AI.ThinkingLevelsByModel = userCfg.AI.ThinkingLevelsByModel
-	}
 	if userCfg.Keymap.Normal != nil {
 		for k, v := range userCfg.Keymap.Normal {
 			cfg.Keymap.Normal[k] = v
@@ -620,24 +578,6 @@ func mergeTheme(dst *Theme, src Theme) {
 	}
 	if src.SyntaxYAMLListItem != "" {
 		dst.SyntaxYAMLListItem = src.SyntaxYAMLListItem
-	}
-	if src.AIReasoningForeground != "" {
-		dst.AIReasoningForeground = src.AIReasoningForeground
-	}
-	if src.AIUserForeground != "" {
-		dst.AIUserForeground = src.AIUserForeground
-	}
-	if src.AIAssistantForeground != "" {
-		dst.AIAssistantForeground = src.AIAssistantForeground
-	}
-	if src.AIThinkingForeground != "" {
-		dst.AIThinkingForeground = src.AIThinkingForeground
-	}
-	if src.AIStatusOnlineForeground != "" {
-		dst.AIStatusOnlineForeground = src.AIStatusOnlineForeground
-	}
-	if src.AIHeaderForeground != "" {
-		dst.AIHeaderForeground = src.AIHeaderForeground
 	}
 	if src.BranchForeground != "" {
 		dst.BranchForeground = src.BranchForeground
@@ -802,36 +742,6 @@ func UpdateEditorSidebarWidth(width string) error {
 		cfg["editor"] = section
 	}
 	section["sidebar-width"] = width
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	var buf bytes.Buffer
-	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
-		return err
-	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
-}
-
-// UpdateEditorAIPanelWidth persists ai-panel-width in config.
-func UpdateEditorAIPanelWidth(width int) error {
-	path, err := ConfigPath()
-	if err != nil {
-		return err
-	}
-	cfg := map[string]interface{}{}
-	if data, err := os.ReadFile(path); err == nil {
-		if _, err := toml.Decode(string(data), &cfg); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	section, ok := cfg["editor"].(map[string]interface{})
-	if !ok || section == nil {
-		section = map[string]interface{}{}
-		cfg["editor"] = section
-	}
-	section["ai-panel-width"] = width
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

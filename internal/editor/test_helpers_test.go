@@ -115,7 +115,6 @@ func optionsFromConfig(cfg config.Config) Options {
 		SidebarMinWidth:      cfg.Editor.SidebarMinWidth,
 		SidebarMaxWidth:      cfg.Editor.SidebarMaxWidth,
 		SidebarCloseOnSelect: cfg.Editor.SidebarCloseOnSelect,
-		AIPanelWidth:         cfg.Editor.AIPanelWidth,
 		AutoReloadOnChanges:  cfg.Editor.AutoReloadOnChanges,
 		KeymapNormal:         cfg.Keymap.Normal,
 		KeymapInsert:         cfg.Keymap.Insert,

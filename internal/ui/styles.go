@@ -66,12 +66,6 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	colors["syntax-yaml-key"] = resolve(theme.SyntaxYAMLKey, colors["syntax-field"])
 	colors["syntax-yaml-value"] = resolve(theme.SyntaxYAMLValue, colors["foreground"])
 	colors["syntax-yaml-list-item"] = resolve(theme.SyntaxYAMLListItem, colors["syntax-parameter"])
-	colors["ai-reasoning-foreground"] = resolve(theme.AIReasoningForeground, colors["syntax-comment"])
-	colors["ai-user-foreground"] = resolve(theme.AIUserForeground, tcell.NewRGBColor(89, 194, 255)) // #59C2FF
-	colors["ai-assistant-foreground"] = resolve(theme.AIAssistantForeground, colors["foreground"])
-	colors["ai-thinking-foreground"] = resolve(theme.AIThinkingForeground, colors["syntax-comment"])
-	colors["ai-status-online-foreground"] = resolve(theme.AIStatusOnlineForeground, tcell.NewRGBColor(127, 217, 98)) // #7FD962
-	colors["ai-header-foreground"] = resolve(theme.AIHeaderForeground, tcell.NewRGBColor(230, 180, 80))              // #E6B450
 	colors["branch-foreground"] = resolve(theme.BranchForeground, colors["statusline-foreground"])
 	colors["branch-background"] = resolve(theme.BranchBackground, colors["statusline-background"])
 
@@ -139,12 +133,6 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	syntaxYAMLValue := style(colors["syntax-yaml-value"], colors["background"])
 	syntaxYAMLListItem := style(colors["syntax-yaml-list-item"], colors["background"])
 	tableBorder := style(tcell.ColorWhite, colors["background"])
-	aiReasoning := style(colors["ai-reasoning-foreground"], colors["sidebar-background"])
-	aiUser := style(colors["ai-user-foreground"], colors["sidebar-background"])
-	aiAssistant := style(colors["ai-assistant-foreground"], colors["sidebar-background"])
-	aiThinking := style(colors["ai-thinking-foreground"], colors["sidebar-background"])
-	aiStatusOnline := style(colors["ai-status-online-foreground"], colors["sidebar-background"])
-	aiHeader := style(colors["ai-header-foreground"], colors["sidebar-background"])
 	branch := style(colors["branch-foreground"], colors["branch-background"])
 	mainBranch := style(colors["main-branch-foreground"], colors["main-branch-background"])
 	layoutUS := style(colors["layout-us-foreground"], colors["statusline-background"])
@@ -173,8 +161,6 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	sidebarHidden := style(colors["sidebar-hidden-foreground"], colors["sidebar-background"])
 	sidebarIgnored := style(colors["sidebar-ignored-foreground"], colors["sidebar-background"])
 	sidebarIndicator := style(colors["sidebar-indicator-foreground"], colors["sidebar-background"])
-	sidebarStatusOnline := style(colors["sidebar-status-online-foreground"], colors["sidebar-background"])
-	sidebarStatusOffline := style(colors["sidebar-status-offline-foreground"], colors["sidebar-background"])
 	sidebarHotkey := style(colors["sidebar-hotkey-foreground"], colors["sidebar-background"])
 	sidebarUnavailable := style(colors["sidebar-unavailable-foreground"], colors["sidebar-background"])
 	sidebarDiffAdd := style(colors["sidebar-diff-add-foreground"], colors["sidebar-background"])
@@ -213,12 +199,6 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 		SyntaxYAMLValue:         syntaxYAMLValue,
 		SyntaxYAMLListItem:      syntaxYAMLListItem,
 		TableBorder:             tableBorder,
-		AIReasoning:             aiReasoning,
-		AIUser:                  aiUser,
-		AIAssistant:             aiAssistant,
-		AIThinking:              aiThinking,
-		AIStatusOnline:          aiStatusOnline,
-		AIHeader:                aiHeader,
 		Branch:                  branch,
 		MainBranch:              mainBranch,
 		LayoutUS:                layoutUS,
@@ -247,8 +227,6 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 			Hotkey:             sidebarHotkey,
 			Unavailable:        sidebarUnavailable,
 			Current:            sidebarIndicator,
-			StatusOnline:       sidebarStatusOnline,
-			StatusOffline:      sidebarStatusOffline,
 			DiffAdd:            sidebarDiffAdd,
 			DiffDel:            sidebarDiffDel,
 			SearchMatch:        searchMatch,

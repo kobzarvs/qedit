@@ -64,7 +64,7 @@ func TestSidebarSelectionKeepsForegrounds(t *testing.T) {
 	screen := newFakeScreen(20, 4)
 
 	sidebar := NewSidebar("20", 10, "20", false)
-	sidebar.Content = NewSidebarMenuContent(true, true)
+	sidebar.Content = NewSidebarMenuContent(true)
 	sidebar.Focused = true
 	sidebar.Content.SetIndex(0)
 

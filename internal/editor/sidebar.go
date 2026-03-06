@@ -16,7 +16,6 @@ const (
 	SidebarModeMenu                      // main menu for mode selection
 	SidebarModeFileTree                  // file tree (future)
 	SidebarModeBranches                  // git branch selection (v1)
-	SidebarModeAI                        // AI providers/models
 	SidebarModeRecentHistory             // line-by-line history (future)
 	SidebarModeLocalChanges              // git changes
 	SidebarModeWorktrees                 // git worktrees (future)
@@ -35,8 +34,6 @@ const (
 	SidebarActionRefresh                      // refresh current mode
 	SidebarActionFocusEditor                  // return focus to editor
 	SidebarActionSwitchMode                   // switch to different mode
-	SidebarActionOpenAIModels                 // open AI models list for provider
-	SidebarActionSetAIModel                   // set AI model
 	SidebarActionSwitchWorktree               // switch git worktree
 	SidebarActionSwitchBuffer                 // switch to buffer
 )
@@ -47,8 +44,6 @@ type SidebarActionData struct {
 	Path        string      // for OpenFile
 	Branch      string      // for CheckoutBranch
 	Mode        SidebarMode // for SwitchMode
-	Provider    string      // for AI provider selection
-	Model       string      // for AI model selection
 	Worktree    string      // for worktree selection (path)
 	BufferIndex int         // for SwitchBuffer
 }
@@ -68,8 +63,6 @@ type SidebarItem struct {
 	RightSegments []SidebarTextSegment
 	Available     bool
 	Mode          SidebarMode // for menu items
-	ShowStatus    bool
-	Status        AIProviderStatus
 }
 
 // SidebarTextSegment represents a styled text segment (used for right-aligned info).
@@ -122,8 +115,6 @@ type SidebarStyles struct {
 	Hotkey             Style // hotkey hints in menu
 	Unavailable        Style // greyed out items
 	Current            Style // current branch marker
-	StatusOnline       Style // provider online
-	StatusOffline      Style // provider offline
 	DiffAdd            Style // diff additions (+)
 	DiffDel            Style // diff deletions (-)
 	SearchMatch        Style // match highlight
@@ -553,13 +544,6 @@ func (s *Sidebar) Render(screen Screen, styles SidebarStyles, x, y, w, h int) {
 			indicator = item.Icon
 			if item.IconStyle != nil {
 				indicatorStyle = item.IconStyle
-			} else if item.ShowStatus {
-				switch item.Status {
-				case AIProviderStatusOnline:
-					indicatorStyle = styles.StatusOnline
-				default:
-					indicatorStyle = styles.StatusOffline
-				}
 			}
 		} else if item.IsCurrent {
 			indicator = '*'
@@ -573,7 +557,7 @@ func (s *Sidebar) Render(screen Screen, styles SidebarStyles, x, y, w, h int) {
 		}
 		col++
 		gapCols := 0
-		if indicator != 0 && item.ShowStatus {
+		if indicator != 0 {
 			gapCols = 1
 			col++
 		}

@@ -61,14 +61,6 @@ syntax-yaml-key = "#E6B673"       # Same as field by default (gold)
 syntax-yaml-value = "#B3B1AD"     # Same as foreground (plain text)
 syntax-yaml-list-item = "#77B9E2" # Same as parameter (light blue)
 
-# AI
-ai-reasoning-foreground = "syntax-comment"
-ai-user-foreground = "#59C2FF"
-ai-assistant-foreground = "#B3B1AD"
-ai-thinking-foreground = "#898989"
-ai-status-online-foreground = "#7FD962"
-ai-header-foreground = "#E6B450"
-
 # branches
 branch-foreground = "#FFDD8E"
 branch-background = "statusline-background"

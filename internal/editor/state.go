@@ -45,35 +45,12 @@ func New(opts Options) *Editor {
 			opts.SidebarMaxWidth,
 			opts.SidebarCloseOnSelect,
 		),
-		fileTreeShowHidden:      opts.FileTreeShowHidden,
-		fileTreeShowIgnored:     opts.FileTreeShowIgnored,
-		aiThinkingLevels:        append([]string(nil), opts.AIThinkingLevels...),
-		aiThinkingLevelsByModel: copyStringSliceMap(opts.AIThinkingLevelsByModel),
-		aiPanelDefaultWidth:     opts.AIPanelWidth,
-		buffers:                 NewBufferManager(),
+		fileTreeShowHidden:  opts.FileTreeShowHidden,
+		fileTreeShowIgnored: opts.FileTreeShowIgnored,
+		buffers:             NewBufferManager(),
 	}
 	e.SetStyles(defaultEditorStyles())
 	return e
-}
-
-func copyStringSliceMap(src map[string][]string) map[string][]string {
-	if src == nil {
-		return nil
-	}
-	dst := make(map[string][]string, len(src))
-	for k, v := range src {
-		key := strings.ToLower(strings.TrimSpace(k))
-		if key == "" {
-			continue
-		}
-		if v == nil {
-			dst[key] = nil
-			continue
-		}
-		copySlice := append([]string(nil), v...)
-		dst[key] = copySlice
-	}
-	return dst
 }
 func (e *Editor) OpenFile(path string) error {
 	absPath := path
@@ -266,7 +243,7 @@ func (e *Editor) openSidebarBuffers() {
 		e.closeRefsPicker(false)
 	}
 	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo(), e.aiManager != nil)
+		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
 	}
 	content := NewSidebarBuffersContent(e)
 	// Position cursor on active buffer
@@ -482,9 +459,6 @@ func (e *Editor) SetLSPGotoFunc(fn LSPGotoFunc) {
 func (e *Editor) SetHighlightRangeFunc(fn HighlightRangeFunc) {
 	e.highlightRangeFunc = fn
 }
-func (e *Editor) SetAIMarkdownHighlightFunc(fn MarkdownHighlightFunc) {
-	e.aiMarkdownHighlight = fn
-}
 func (e *Editor) SetStatusMessage(msg string) {
 	e.setStatus(msg)
 	e.Notify(msg)
@@ -505,6 +479,14 @@ func (e *Editor) ConsumeLastEdit() (TextEdit, bool) {
 	edit := e.lastEdit
 	e.lastEdit.Valid = false
 	return edit, true
+}
+
+// PeekLastEdit returns the last edit info without consuming it.
+func (e *Editor) PeekLastEdit() (TextEdit, bool) {
+	if !e.lastEdit.Valid {
+		return TextEdit{}, false
+	}
+	return e.lastEdit, true
 }
 func (e *Editor) LineCount() int {
 	if e.text == nil {
@@ -543,4 +525,32 @@ func (e *Editor) SetHighlights(startLine, endLine int, spans map[int][]Highlight
 }
 func (e *Editor) HasHighlights() bool {
 	return e.highlights != nil && e.highlightStart >= 0 && e.highlightEnd >= e.highlightStart
+}
+
+// AdjustHighlights shifts the cached highlight map in-place after an edit.
+// Lines in [editStart, oldEnd) are removed; lines >= oldEnd shift by (newEnd - oldEnd).
+func (e *Editor) AdjustHighlights(editStart, oldEnd, newEnd int) {
+	if e.highlights == nil {
+		return
+	}
+	delta := newEnd - oldEnd // negative for deletions, positive for insertions
+	if delta == 0 && editStart == oldEnd {
+		return
+	}
+	updated := make(map[int][]HighlightSpan, len(e.highlights))
+	for line, spans := range e.highlights {
+		if line < editStart {
+			updated[line] = spans
+		} else if line >= oldEnd {
+			updated[line+delta] = spans
+		}
+		// lines in [editStart, oldEnd) are dropped
+	}
+	e.highlights = updated
+	e.highlightEnd += delta
+	if e.highlightEnd < e.highlightStart {
+		e.highlights = nil
+		e.highlightStart = -1
+		e.highlightEnd = -1
+	}
 }

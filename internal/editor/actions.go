@@ -75,10 +75,6 @@ func (e *Editor) execAction(action string) bool {
 		e.focusPrevPane()
 	case actionFocusNextPane:
 		e.focusNextPane()
-	case actionToggleAIPanelFocus:
-		e.toggleAIPanelFocus()
-	case actionFocusAIPanel:
-		e.focusAIPanel()
 	case actionFocusEditor:
 		e.focusEditor()
 	case actionFocusCommandLine:
@@ -96,10 +92,6 @@ func (e *Editor) execAction(action string) bool {
 	case actionMergeMode:
 		return e.enterMergeMode()
 	case actionQuit:
-		if e.aiEditBufferPath != "" {
-			e.cancelAIEdit()
-			return false
-		}
 		if e.buffers != nil && e.buffers.Count() > 0 {
 			bs := e.snapshotBufferState()
 			e.buffers.UpdateActive(bs)
@@ -305,15 +297,10 @@ func (e *Editor) execAction(action string) bool {
 
 	// File operations
 	case actionSave:
-		aiEditSave := e.aiEditBufferPath != "" && e.filename == e.aiEditBufferPath
 		if err := e.Save(""); err != nil {
 			e.setStatus(err.Error())
 		} else {
-			if aiEditSave {
-				e.setStatus("AI conversation updated")
-			} else {
-				e.setStatus("saved " + e.filename)
-			}
+			e.setStatus("saved " + e.filename)
 			// Update buffer manager with saved state
 			if e.buffers != nil && e.buffers.Count() > 0 {
 				bs := e.snapshotBufferState()
@@ -337,33 +324,6 @@ func (e *Editor) execAction(action string) bool {
 		return false
 	case actionCloseBuffer:
 		e.closeCurrentBuffer(false)
-		return false
-
-	// AI integration
-	case actionAIPanel:
-		e.toggleAIPanel()
-		return false
-	case actionAISend:
-		if e.aiPanel != nil && e.aiPanel.Visible {
-			e.aiPanel.Close()
-			return false
-		}
-		e.sendToAI()
-		return false
-	case actionAIToggleReason:
-		e.toggleAIReasoning()
-		return false
-	case actionAIToggleThinking:
-		e.toggleAIThinkingLevel()
-		return false
-	case actionAIApply:
-		e.applyAIEdit()
-		return false
-	case actionAIReject:
-		e.rejectAIEdit()
-		return false
-	case actionAIEdit:
-		e.editAIConversation()
 		return false
 	}
 	if !e.selectMode {
@@ -514,9 +474,6 @@ func (e *Editor) execCommand(cmd string) bool {
 	case "sidebar-focus":
 		e.toggleSidebarFocus()
 		return false
-	case "ai-focus":
-		e.toggleAIPanelFocus()
-		return false
 	case "focus-editor":
 		e.focusEditor()
 		return false
@@ -553,11 +510,6 @@ func (e *Editor) execCommand(cmd string) bool {
 			return false
 		}
 		return e.enterMergeMode()
-	case "ide":
-		e.toggleAIPanel()
-		return false
-	case "ai":
-		return e.handleAICommand(args)
 	case "worktree", "worktrees":
 		return e.handleWorktreeCommand(args)
 	default:
@@ -567,160 +519,6 @@ func (e *Editor) execCommand(cmd string) bool {
 			return false
 		}
 		e.setStatus("unknown command: " + name)
-		return false
-	}
-}
-
-// handleAICommand handles :ai subcommands
-func (e *Editor) handleAICommand(args []string) bool {
-	if e.aiManager == nil {
-		e.setStatus("AI not configured")
-		return false
-	}
-
-	if len(args) == 0 {
-		// :ai - show current provider and model
-		name := e.aiManager.ActiveName()
-		model := e.aiManager.CurrentModel()
-		if name == "" {
-			e.setStatus("AI: no provider active")
-		} else {
-			e.setStatus(fmt.Sprintf("AI: %s / %s", name, model))
-		}
-		return false
-	}
-
-	switch args[0] {
-	case "list":
-		// :ai list - show available providers
-		providers := e.aiManager.ListProviders()
-		if len(providers) == 0 {
-			e.setStatus("AI: no providers configured")
-			return false
-		}
-		var names []string
-		for _, p := range providers {
-			status := "offline"
-			if p.Available {
-				status = "online"
-			}
-			if p.Name == e.aiManager.ActiveName() {
-				names = append(names, "*"+p.Name+"("+status+")")
-			} else {
-				names = append(names, p.Name+"("+status+")")
-			}
-		}
-		e.setStatus("AI providers: " + strings.Join(names, ", "))
-		return false
-
-	case "model":
-		if len(args) < 2 {
-			// :ai model - show available models
-			models, err := e.aiManager.ListModels()
-			if err != nil {
-				e.setStatus("AI: " + err.Error())
-				return false
-			}
-			if len(models) == 0 {
-				e.setStatus("AI: no models available")
-				return false
-			}
-			var names []string
-			current := e.aiManager.CurrentModel()
-			for _, m := range models {
-				if m.ID == current {
-					names = append(names, "*"+m.ID)
-				} else {
-					names = append(names, m.ID)
-				}
-			}
-			e.setStatus("Models: " + strings.Join(names, ", "))
-			return false
-		}
-		// :ai model <name> - set model
-		model := args[1]
-		if err := e.aiManager.SetModel(model); err != nil {
-			e.setStatus("AI: " + err.Error())
-			return false
-		}
-		e.saveAIState()
-		e.setStatus("AI model: " + model)
-		if e.aiPanel != nil {
-			e.aiPanel.ModelName = model
-			e.syncAIPanelProviderState()
-		}
-		return false
-
-	case "thinking":
-		e.ensureAIPanel()
-		if len(args) >= 2 && args[1] == "list" {
-			model := e.aiManager.CurrentModel()
-			levels := e.aiThinkingLevelsForModel(model)
-			label := "AI thinking levels"
-			if model != "" {
-				label += " (" + model + ")"
-			}
-			if len(levels) == 0 {
-				e.setStatus(label + ": any")
-				return false
-			}
-			e.setStatus(label + ": " + strings.Join(levels, ", "))
-			return false
-		}
-		if len(args) < 2 {
-			level := e.aiPanel.ThinkingLevel
-			if level == "" {
-				level = "auto"
-			}
-			e.setStatus("AI thinking: " + level)
-			return false
-		}
-		level := args[1]
-		if !e.aiPanel.SetThinkingLevel(level) {
-			e.setStatus("AI: invalid thinking level")
-			return false
-		}
-		e.saveAIState()
-		e.setStatus("AI thinking: " + e.aiPanel.ThinkingLevel)
-		return false
-
-	case "max":
-		e.ensureAIPanel()
-		if len(args) > 1 {
-			switch strings.ToLower(args[1]) {
-			case "on", "true", "1":
-				if !e.aiPanel.Maximized {
-					e.toggleAIPanelMaximize()
-				}
-				return false
-			case "off", "false", "0":
-				if e.aiPanel.Maximized {
-					e.toggleAIPanelMaximize()
-				}
-				return false
-			}
-		}
-		e.toggleAIPanelMaximize()
-		return false
-
-	case "edit":
-		e.editAIConversation()
-		return false
-
-	default:
-		// :ai <provider> - switch provider
-		provider := args[0]
-		if err := e.aiManager.SetActive(provider); err != nil {
-			e.setStatus("AI: " + err.Error())
-			return false
-		}
-		e.saveAIState()
-		e.setStatus("AI provider: " + provider)
-		if e.aiPanel != nil {
-			e.aiPanel.ProviderName = provider
-			e.aiPanel.ModelName = e.aiManager.CurrentModel()
-			e.refreshAIPanelProviderState()
-		}
 		return false
 	}
 }
@@ -885,9 +683,6 @@ func (e *Editor) Save(path string) error {
 	data := []byte(e.Content())
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err
-	}
-	if e.aiEditBufferPath != "" && path == e.aiEditBufferPath {
-		_ = e.saveAIEdit()
 	}
 	e.filename = path
 	e.savePoint = len(e.undo)

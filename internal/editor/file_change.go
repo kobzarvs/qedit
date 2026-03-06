@@ -161,11 +161,6 @@ func (e *Editor) SetSidebarWidthConfigHook(hook func(width string) error) {
 	e.sidebarWidthConfigHook = hook
 }
 
-// SetAIPanelWidthConfigHook registers a persistence hook for AI panel width.
-func (e *Editor) SetAIPanelWidthConfigHook(hook func(width int) error) {
-	e.aiPanelWidthConfigHook = hook
-}
-
 // IsDirty reports whether the buffer has unsaved changes.
 func (e *Editor) IsDirty() bool {
 	return e.dirty

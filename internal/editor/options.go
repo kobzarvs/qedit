@@ -9,7 +9,6 @@ type Options struct {
 	SidebarMinWidth      int
 	SidebarMaxWidth      string
 	SidebarCloseOnSelect bool
-	AIPanelWidth         int
 	FileTreeShowHidden   bool
 	FileTreeShowIgnored  bool
 	AutoReloadOnChanges  bool
@@ -21,7 +20,4 @@ type Options struct {
 	SearchHistoryPath string
 
 	SessionStore SessionStore
-
-	AIThinkingLevels        []string
-	AIThinkingLevelsByModel map[string][]string
 }

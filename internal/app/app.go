@@ -12,8 +12,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 	sitter "github.com/smacker/go-tree-sitter"
 
-	"github.com/kobzarvs/qedit/internal/ai"
-	"github.com/kobzarvs/qedit/internal/ai/providers"
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
@@ -101,56 +99,24 @@ func (a *App) Run() error {
 
 	highlightMaxBytes := cfg.Editor.HighlightMaxBytes
 	ed := editor.New(editor.Options{
-		TabWidth:                cfg.Editor.TabWidth,
-		LineNumbers:             cfg.Editor.LineNumbers,
-		GitBranchSymbol:         cfg.Editor.GitBranchSymbol,
-		SidebarWidth:            cfg.Editor.SidebarWidth,
-		SidebarMinWidth:         cfg.Editor.SidebarMinWidth,
-		SidebarMaxWidth:         cfg.Editor.SidebarMaxWidth,
-		SidebarCloseOnSelect:    cfg.Editor.SidebarCloseOnSelect,
-		FileTreeShowHidden:      cfg.Editor.FileTreeShowHidden,
-		FileTreeShowIgnored:     cfg.Editor.FileTreeShowIgnored,
-		AutoReloadOnChanges:     cfg.Editor.AutoReloadOnChanges,
-		KeymapNormal:            cfg.Keymap.Normal,
-		KeymapInsert:            cfg.Keymap.Insert,
-		CmdHistoryPath:          cmdHistoryPath,
-		SearchHistoryPath:       searchHistoryPath,
-		SessionStore:            sessionStore,
-		AIThinkingLevels:        cfg.AI.ThinkingLevels,
-		AIThinkingLevelsByModel: cfg.AI.ThinkingLevelsByModel,
+		TabWidth:             cfg.Editor.TabWidth,
+		LineNumbers:          cfg.Editor.LineNumbers,
+		GitBranchSymbol:      cfg.Editor.GitBranchSymbol,
+		SidebarWidth:         cfg.Editor.SidebarWidth,
+		SidebarMinWidth:      cfg.Editor.SidebarMinWidth,
+		SidebarMaxWidth:      cfg.Editor.SidebarMaxWidth,
+		SidebarCloseOnSelect: cfg.Editor.SidebarCloseOnSelect,
+		FileTreeShowHidden:   cfg.Editor.FileTreeShowHidden,
+		FileTreeShowIgnored:  cfg.Editor.FileTreeShowIgnored,
+		AutoReloadOnChanges:  cfg.Editor.AutoReloadOnChanges,
+		KeymapNormal:         cfg.Keymap.Normal,
+		KeymapInsert:         cfg.Keymap.Insert,
+		CmdHistoryPath:       cmdHistoryPath,
+		SearchHistoryPath:    searchHistoryPath,
+		SessionStore:         sessionStore,
 	})
 	defer ed.Shutdown()
 	ed.SetStyles(ui.StylesFromConfig(cfg))
-	ed.SetAIMarkdownHighlightFunc(func(text string) map[int][]editor.HighlightSpan {
-		if text == "" {
-			return nil
-		}
-		if highlightMaxBytes > 0 && int64(len(text)) > highlightMaxBytes {
-			return nil
-		}
-		const aiPath = "__ai__.md"
-		if ok := ts.ParseSync(aiPath, "markdown", text); !ok {
-			return nil
-		}
-		lineCount := strings.Count(text, "\n") + 1
-		spans := ts.Highlights(aiPath, 0, lineCount-1)
-		if spans == nil {
-			return nil
-		}
-		out := make(map[int][]editor.HighlightSpan, len(spans))
-		for line, lineSpans := range spans {
-			dst := make([]editor.HighlightSpan, len(lineSpans))
-			for i, span := range lineSpans {
-				dst[i] = editor.HighlightSpan{
-					StartCol: span.StartCol,
-					EndCol:   span.EndCol,
-					Kind:     span.Kind,
-				}
-			}
-			out[line] = dst
-		}
-		return out
-	})
 	ed.SetHighlightRangeFunc(func(path string, startLine, endLine int) map[int][]editor.HighlightSpan {
 		if path == "" || startLine < 0 || endLine < startLine {
 			return nil
@@ -203,47 +169,11 @@ func (a *App) Run() error {
 		cfg.Editor.SidebarWidth = width
 		return nil
 	})
-	ed.SetAIPanelWidthConfigHook(func(width int) error {
-		if err := config.UpdateEditorAIPanelWidth(width); err != nil {
-			return err
-		}
-		cfg.Editor.AIPanelWidth = width
-		return nil
-	})
 	ed.SetFormatter(integrations.GoFormatter{})
 	if runtime.GOOS == "darwin" {
 		ed.SetClipboard(integrations.MacClipboard{})
 		ed.SetTerminalZoomer(integrations.TerminalZoomer{})
 	}
-
-	// Initialize AI providers
-	aiMgr := ai.NewManager()
-
-	// Register Claude Code CLI provider (priority)
-	claudeProvider := providers.NewClaudeProvider()
-	aiMgr.Register(claudeProvider)
-
-	// Register preset API providers (Ollama, LM Studio, etc.)
-	for _, preset := range providers.GetPresets() {
-		var provider ai.Provider
-		if preset.Name == "lmstudio" {
-			provider = providers.NewLMStudioProvider(preset)
-		} else {
-			provider = providers.NewOpenAIAPIProvider(preset)
-		}
-		aiMgr.Register(provider)
-	}
-
-	// Set default provider: Claude if available, otherwise Ollama
-	if claudeProvider.Available() {
-		_ = aiMgr.SetActive("claude")
-	} else {
-		_ = aiMgr.SetActive("ollama")
-	}
-
-	// Set AI manager on editor
-	aiAdapter := integrations.NewAIManager(aiMgr)
-	ed.SetAIManager(aiAdapter)
 
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()
@@ -1067,13 +997,32 @@ func (a *App) Run() error {
 			lastFileCheck = time.Now()
 			applyExternalChange()
 		}
+		// Drain tree-sitter async parse events
+		tsParsed := false
+	drainTS:
+		for {
+			select {
+			case evt := <-ts.Events():
+				if evt.Kind == "parsed" && evt.Path == openPath {
+					tsParsed = true
+				}
+			default:
+				break drainTS
+			}
+		}
 		if openPath != "" && highlightEnabled && langName != "" {
 			tick := ed.ChangeTick()
 			changed := tick != lastChangeTick
+			asyncChanged := false
 			if changed {
 				lastChangeTick = tick
 				if isAsyncParseLang(langName) {
+					// Adjust existing highlights to match the edit before async reparse
+					if edit, ok := ed.PeekLastEdit(); ok {
+						ed.AdjustHighlights(edit.StartRow, edit.OldEndRow, edit.NewEndRow)
+					}
 					ts.Parse(openPath, langName, ed.Content())
+					asyncChanged = true
 				} else if edit, ok := ed.ConsumeLastEdit(); ok {
 					tsEdit := sitter.EditInput{
 						StartIndex:  uint32(edit.StartByte),
@@ -1098,7 +1047,9 @@ func (a *App) Run() error {
 				}
 			}
 			start, end := ed.VisibleRange()
-			if changed || start != lastHighlightStart || end != lastHighlightEnd {
+			if asyncChanged && !tsParsed {
+				// Async reparse queued but not done yet — keep current highlights as-is
+			} else if changed || tsParsed || start != lastHighlightStart || end != lastHighlightEnd {
 				spans := ts.Highlights(openPath, start, end)
 				if spans != nil {
 					editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
@@ -1137,23 +1088,6 @@ func (a *App) Run() error {
 		if highlightExpected && !ed.HasHighlights() {
 			if openPath != ed.Filename() {
 				highlightExpected = false
-			}
-		}
-
-		// Process AI events (non-blocking, drain backlog)
-		if aiAdapter != nil {
-			const maxAIEventsPerTick = 512
-		drainAI:
-			for i := 0; i < maxAIEventsPerTick; i++ {
-				select {
-				case aiEvent, ok := <-aiAdapter.Events():
-					if !ok {
-						break drainAI
-					}
-					ed.ProcessAIEvent(aiEvent)
-				default:
-					break drainAI
-				}
 			}
 		}
 
