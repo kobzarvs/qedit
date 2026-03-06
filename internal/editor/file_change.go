@@ -93,25 +93,18 @@ func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 
 // ReloadFromDisk replaces the buffer with on-disk contents.
 func (e *Editor) ReloadFromDisk(force bool) error {
-	if e.document.filename == "" {
-		return errors.New("no file name")
+	path, err := e.prepareReload(force)
+	if err != nil {
+		return err
 	}
 	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
 		return errFileStoreUnavailable()
 	}
-	if e.HasLocalChanges() && !force {
-		return errors.New("unsaved changes (use :e!)")
-	}
-	data, err := e.runtime.workspace.Read(e.document.filename)
+	data, err := e.runtime.workspace.Read(path)
 	if err != nil {
 		return err
 	}
-	e.file.externalChange = ExternalChangeNone
-	e.replaceBuffer(string(data), false)
-	e.selectionActive = false
-	e.file.diskContent = e.Content()
-	_ = e.syncFileSnapshot()
-	_ = e.LoadUndoHistory()
+	e.ApplyReloadedContent(data)
 	return nil
 }
 

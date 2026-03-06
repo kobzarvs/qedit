@@ -43,3 +43,13 @@ func (c *editorRuntimeController) activateExistingBuffer(path string) {
 	c.ed.SetGitRoot(gitinfo.Root(path))
 	c.state.lastGitCheck = time.Now()
 }
+
+func (c *editorRuntimeController) activateCurrentEditorFile(path string, resetMainBranch bool) {
+	path = normalizeAppPath(c.fileStore, path)
+	if path == "" {
+		return
+	}
+	state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, path, c.highlightMaxBytes)
+	c.applyActivatedFile(state)
+	c.refreshActiveRepoState(state.gitPath, resetMainBranch)
+}

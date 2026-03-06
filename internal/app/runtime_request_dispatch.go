@@ -29,6 +29,10 @@ func (c *editorRuntimeController) dispatchRuntimeRequest(req editor.RuntimeReque
 		c.handleOpenFileRequest(req)
 	case editor.RuntimeRequestBufferSwitched:
 		c.handleBufferSwitchedRequest()
+	case editor.RuntimeRequestSaveFile:
+		c.handleSaveFileRequest(req)
+	case editor.RuntimeRequestReloadFile:
+		c.handleReloadFileRequest(req)
 	case editor.RuntimeRequestPersistAutoReload:
 		c.handlePersistAutoReloadRequest(req)
 	case editor.RuntimeRequestPersistSidebarWidth:
@@ -84,6 +88,46 @@ func (c *editorRuntimeController) handleBufferSwitchedRequest() {
 		return
 	}
 	c.activateExistingBuffer(path)
+}
+
+func (c *editorRuntimeController) handleSaveFileRequest(req editor.RuntimeRequest) {
+	if req.Path == "" {
+		return
+	}
+	if err := c.fileStore.Write(req.Path, []byte(req.Content)); err != nil {
+		c.ed.SetStatusMessage(err.Error())
+		return
+	}
+
+	prevPath := normalizeAppPath(c.fileStore, c.state.openPath)
+	savedPath := normalizeAppPath(c.fileStore, req.Path)
+	c.ed.ApplySavedFile(savedPath)
+
+	if savedPath != prevPath {
+		c.activateCurrentEditorFile(savedPath, true)
+	} else {
+		c.state.openPath = savedPath
+		c.fileMonitor.Watch(savedPath)
+	}
+
+	c.ed.SetStatusMessage("written")
+	if req.QuitAfter {
+		c.state.quitRequested = true
+	}
+}
+
+func (c *editorRuntimeController) handleReloadFileRequest(req editor.RuntimeRequest) {
+	if req.Path == "" {
+		return
+	}
+	data, err := c.fileStore.Read(req.Path)
+	if err != nil {
+		c.ed.SetStatusMessage(err.Error())
+		return
+	}
+	c.ed.ApplyReloadedContent(data)
+	c.activateCurrentEditorFile(req.Path, false)
+	c.ed.SetStatusMessage("reloaded")
 }
 
 func (c *editorRuntimeController) handlePersistAutoReloadRequest(req editor.RuntimeRequest) {

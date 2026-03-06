@@ -388,3 +388,16 @@ func TestSaveHotkeyNoFilename(t *testing.T) {
 		t.Fatalf("status = %q, want %q", e.ui.statusMessage, "no file name")
 	}
 }
+
+func TestSaveHotkeyQueuesRequest(t *testing.T) {
+	e := newTestEditor("one")
+	e.document.filename = "/tmp/file.txt"
+	e.HandleKey(eventForKeyString(t, "cmd+s"))
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected save request")
+	}
+	if req.Kind != RuntimeRequestSaveFile || req.Path != "/tmp/file.txt" || req.Content != "one" || req.QuitAfter {
+		t.Fatalf("request = %#v, want save-file path=/tmp/file.txt content=one quitAfter=false", req)
+	}
+}

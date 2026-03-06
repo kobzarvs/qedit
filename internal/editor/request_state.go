@@ -9,6 +9,8 @@ const (
 	RuntimeRequestSwitchWorktree      RuntimeRequestKind = "switch_worktree"
 	RuntimeRequestOpenFile            RuntimeRequestKind = "open_file"
 	RuntimeRequestBufferSwitched      RuntimeRequestKind = "buffer_switched"
+	RuntimeRequestSaveFile            RuntimeRequestKind = "save_file"
+	RuntimeRequestReloadFile          RuntimeRequestKind = "reload_file"
 	RuntimeRequestPersistAutoReload   RuntimeRequestKind = "persist_auto_reload"
 	RuntimeRequestPersistSidebarWidth RuntimeRequestKind = "persist_sidebar_width"
 )
@@ -16,12 +18,15 @@ const (
 type RuntimeRequest struct {
 	Kind      RuntimeRequestKind
 	Path      string
+	Content   string
 	Value     string
 	PrevValue string
 	Line      int
 	Col       int
 	Bool      bool
 	PrevBool  bool
+	Force     bool
+	QuitAfter bool
 }
 
 type editorRequestState struct {

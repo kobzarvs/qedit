@@ -243,15 +243,27 @@ func TestExecCommandWriteAndSave(t *testing.T) {
 	if quit := e.execCommand("w " + path); quit {
 		t.Fatalf("execCommand w returned true")
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read file: %v", err)
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected save request")
 	}
-	if string(data) != "hello" {
-		t.Fatalf("file contents = %q, want %q", string(data), "hello")
+	if req.Kind != RuntimeRequestSaveFile || req.Path != path || req.Content != "hello" || req.QuitAfter {
+		t.Fatalf("request = %#v, want save-file path=%q content=hello quitAfter=false", req, path)
 	}
-	if e.document.dirty {
-		t.Fatalf("dirty = true, want false")
+}
+
+func TestExecCommandReloadQueuesRequest(t *testing.T) {
+	e := newTestEditor("hello")
+	e.document.filename = "/tmp/out.txt"
+	if quit := e.execCommand("e!"); quit {
+		t.Fatalf("execCommand e! returned true")
+	}
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected reload request")
+	}
+	if req.Kind != RuntimeRequestReloadFile || req.Path != "/tmp/out.txt" || !req.Force {
+		t.Fatalf("request = %#v, want reload-file path=/tmp/out.txt force=true", req)
 	}
 }
 
@@ -430,12 +442,12 @@ func TestHandleKeyCommandWriteQuit(t *testing.T) {
 	if quit := e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0))); quit {
 		t.Fatalf("write command returned quit")
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read file: %v", err)
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected save request")
 	}
-	if string(data) != "hi" {
-		t.Fatalf("file contents = %q, want %q", string(data), "hi")
+	if req.Kind != RuntimeRequestSaveFile || req.Path != path || req.Content != "hi" || req.QuitAfter {
+		t.Fatalf("request = %#v, want save-file path=%q content=hi quitAfter=false", req, path)
 	}
 
 	if quit := e.HandleKey(keyRune(':')); quit {

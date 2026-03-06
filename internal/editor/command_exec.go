@@ -24,38 +24,30 @@ func (e *Editor) execCommand(cmd string) bool {
 		if len(args) > 0 {
 			path = strings.Join(args, " ")
 		}
-		if err := e.Save(path); err != nil {
+		if err := e.queueSaveRequest(path, false); err != nil {
 			e.setStatus(err.Error())
 			return false
 		}
-		// Update buffer manager with saved state
-		if e.buffers != nil && e.buffers.Count() > 0 {
-			bs := e.snapshotBufferState()
-			e.buffers.UpdateActive(bs)
-		}
-		e.setStatus("written")
 		return false
 	case "e", "edit":
 		if len(args) > 0 {
 			e.setStatus("edit file not supported")
 			return false
 		}
-		if err := e.ReloadFromDisk(false); err != nil {
+		if err := e.queueReloadRequest(false); err != nil {
 			e.setStatus(err.Error())
 			return false
 		}
-		e.setStatus("reloaded")
 		return false
 	case "e!", "edit!":
 		if len(args) > 0 {
 			e.setStatus("edit file not supported")
 			return false
 		}
-		if err := e.ReloadFromDisk(true); err != nil {
+		if err := e.queueReloadRequest(true); err != nil {
 			e.setStatus(err.Error())
 			return false
 		}
-		e.setStatus("reloaded")
 		return false
 	case "q":
 		if e.buffers != nil && e.buffers.HasDirtyBuffers() {
@@ -90,11 +82,11 @@ func (e *Editor) execCommand(cmd string) bool {
 		if len(args) > 0 {
 			path = strings.Join(args, " ")
 		}
-		if err := e.Save(path); err != nil {
+		if err := e.queueSaveRequest(path, true); err != nil {
 			e.setStatus(err.Error())
 			return false
 		}
-		return true
+		return false
 	case "ln":
 		if len(args) == 0 {
 			e.toggleLineNumbers()

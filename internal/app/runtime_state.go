@@ -12,6 +12,7 @@ type editorRuntimeState struct {
 	langName           string
 	highlightEnabled   bool
 	highlightExpected  bool
+	quitRequested      bool
 	lastGitCheck       time.Time
 	lastChangeTick     uint64
 	lastHighlightStart int

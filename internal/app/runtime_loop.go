@@ -137,6 +137,9 @@ func (r *editorRuntime) Run() error {
 			r.ed.UpdateScroll()
 		}
 		r.HandleRequests()
+		if r.state.quitRequested {
+			return nil
+		}
 		r.Tick()
 		r.ed.Render(r.renderScreen)
 	}

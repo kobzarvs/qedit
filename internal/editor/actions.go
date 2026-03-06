@@ -292,15 +292,8 @@ func (e *Editor) execAction(action string) bool {
 
 	// File operations
 	case actionSave:
-		if err := e.Save(""); err != nil {
+		if err := e.queueSaveRequest("", false); err != nil {
 			e.setStatus(err.Error())
-		} else {
-			e.setStatus("saved " + e.document.filename)
-			// Update buffer manager with saved state
-			if e.buffers != nil && e.buffers.Count() > 0 {
-				bs := e.snapshotBufferState()
-				e.buffers.UpdateActive(bs)
-			}
 		}
 		return false
 
@@ -327,27 +320,17 @@ func (e *Editor) execAction(action string) bool {
 	return false
 }
 func (e *Editor) Save(path string) error {
-	if path == "" {
-		if e.document.filename == "" {
-			return errors.New("no file name")
-		}
-		path = e.document.filename
+	path, data, err := e.prepareSave(path)
+	if err != nil {
+		return err
 	}
 	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
 		return errFileStoreUnavailable()
 	}
-	data := []byte(e.Content())
 	if err := e.runtime.workspace.Write(path, data); err != nil {
 		return err
 	}
-	e.document.filename = path
-	e.savePoint = len(e.undo)
-	e.file.externalChange = ExternalChangeNone
-	e.file.diskContent = e.Content()
-	e.updateDirty()
-	_ = e.syncFileSnapshot()
-	_ = e.SaveUndoHistory()
-	e.saveSessionState()
+	e.ApplySavedFile(path)
 	return nil
 }
 func (e *Editor) FormatGo() error {
