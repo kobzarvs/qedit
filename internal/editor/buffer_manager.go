@@ -1,0 +1,283 @@
+package editor
+
+import "path/filepath"
+
+// BufferState captures all per-file state from the Editor so that multiple
+// buffers can be tracked independently.
+type BufferState struct {
+	// Core buffer
+	text   *TextBuffer
+	cursor Cursor
+
+	// File identity
+	filename       string
+	fileSnapshot   fileSnapshot
+	diskContent    string
+	externalChange ExternalChange
+	dirty          bool
+
+	// Undo/redo
+	undo            []action
+	redo            []action
+	savePoint       int
+	undoGroup       uint64
+	lineUndoRow     int
+	lineUndoContent []rune
+	lineUndoValid   bool
+
+	// Viewport
+	scroll  int
+	scrollX int
+
+	// Selection
+	selectionActive bool
+	selectionStart  Cursor
+	selectionEnd    Cursor
+
+	// Search matches (per-file)
+	searchMatches    []SearchMatch
+	searchMatchIndex int
+
+	// Mode
+	mode Mode
+
+	// Syntax highlight cache
+	highlights     map[int][]HighlightSpan
+	highlightStart int
+	highlightEnd   int
+
+	// Change tracking
+	changeTick uint64
+	lastEdit   TextEdit
+
+	// Merge conflicts
+	conflictBlocks      []conflictBlock
+	conflictBlocksDirty bool
+
+	// Per-buffer yank clipboard
+	clipboard [][]rune
+
+	// Selection scope
+	selectionScopeStack []NodeRange
+	selectionScopeIndex int
+}
+
+// BufferInfo provides read-only info about a buffer for display purposes.
+type BufferInfo struct {
+	Index    int
+	Filename string
+	Dirty    bool
+	Active   bool
+}
+
+// BufferManager tracks multiple open buffers.
+type BufferManager struct {
+	buffers     []*BufferState
+	activeIndex int
+	prevIndex   int // for "goto last accessed" (ga)
+}
+
+// NewBufferManager creates a new buffer manager.
+func NewBufferManager() *BufferManager {
+	return &BufferManager{
+		activeIndex: 0,
+		prevIndex:   -1,
+	}
+}
+
+// Add appends a new buffer and returns its index.
+func (bm *BufferManager) Add(bs *BufferState) int {
+	bm.buffers = append(bm.buffers, bs)
+	return len(bm.buffers) - 1
+}
+
+// Remove removes a buffer at the given index. Returns false if index is invalid
+// or if it's the last buffer.
+func (bm *BufferManager) Remove(index int) bool {
+	if index < 0 || index >= len(bm.buffers) || len(bm.buffers) <= 1 {
+		return false
+	}
+	bm.buffers = append(bm.buffers[:index], bm.buffers[index+1:]...)
+	if bm.activeIndex > index {
+		bm.activeIndex--
+	} else if bm.activeIndex >= len(bm.buffers) {
+		bm.activeIndex = len(bm.buffers) - 1
+	}
+	if bm.prevIndex == index {
+		bm.prevIndex = -1
+	} else if bm.prevIndex > index {
+		bm.prevIndex--
+	}
+	return true
+}
+
+// Active returns the currently active buffer state.
+func (bm *BufferManager) Active() *BufferState {
+	if len(bm.buffers) == 0 {
+		return nil
+	}
+	return bm.buffers[bm.activeIndex]
+}
+
+// Count returns the number of open buffers.
+func (bm *BufferManager) Count() int {
+	return len(bm.buffers)
+}
+
+// Next returns the index of the next buffer (wrapping around).
+func (bm *BufferManager) Next() int {
+	if len(bm.buffers) <= 1 {
+		return bm.activeIndex
+	}
+	return (bm.activeIndex + 1) % len(bm.buffers)
+}
+
+// Prev returns the index of the previous buffer (wrapping around).
+func (bm *BufferManager) Prev() int {
+	if len(bm.buffers) <= 1 {
+		return bm.activeIndex
+	}
+	return (bm.activeIndex - 1 + len(bm.buffers)) % len(bm.buffers)
+}
+
+// FindByPath returns the index of the buffer with the given absolute path,
+// or -1 if not found.
+func (bm *BufferManager) FindByPath(absPath string) int {
+	for i, bs := range bm.buffers {
+		bsAbs := bs.filename
+		if !filepath.IsAbs(bsAbs) {
+			if abs, err := filepath.Abs(bsAbs); err == nil {
+				bsAbs = abs
+			}
+		}
+		if bsAbs == absPath {
+			return i
+		}
+	}
+	return -1
+}
+
+// Items returns a list of BufferInfo for display.
+func (bm *BufferManager) Items() []BufferInfo {
+	items := make([]BufferInfo, len(bm.buffers))
+	for i, bs := range bm.buffers {
+		items[i] = BufferInfo{
+			Index:    i,
+			Filename: bs.filename,
+			Dirty:    bs.dirty,
+			Active:   i == bm.activeIndex,
+		}
+	}
+	return items
+}
+
+// HasDirtyBuffers returns true if any buffer has unsaved changes.
+func (bm *BufferManager) HasDirtyBuffers() bool {
+	for _, bs := range bm.buffers {
+		if bs.dirty {
+			return true
+		}
+	}
+	return false
+}
+
+// SetActive sets the active buffer index, updating prevIndex.
+func (bm *BufferManager) SetActive(index int) {
+	if index < 0 || index >= len(bm.buffers) || index == bm.activeIndex {
+		return
+	}
+	bm.prevIndex = bm.activeIndex
+	bm.activeIndex = index
+}
+
+// UpdateActive updates the active buffer state in the manager.
+func (bm *BufferManager) UpdateActive(bs *BufferState) {
+	if len(bm.buffers) == 0 {
+		return
+	}
+	bm.buffers[bm.activeIndex] = bs
+}
+
+// ActiveIndex returns the current active buffer index.
+func (bm *BufferManager) ActiveIndex() int {
+	return bm.activeIndex
+}
+
+// PrevIndex returns the previously active buffer index (-1 if none).
+func (bm *BufferManager) PrevIndex() int {
+	return bm.prevIndex
+}
+
+// snapshotBufferState copies per-file fields from the Editor into a BufferState.
+func (e *Editor) snapshotBufferState() *BufferState {
+	return &BufferState{
+		text:                e.text,
+		cursor:              e.cursor,
+		filename:            e.filename,
+		fileSnapshot:        e.fileSnapshot,
+		diskContent:         e.diskContent,
+		externalChange:      e.externalChange,
+		dirty:               e.dirty,
+		undo:                e.undo,
+		redo:                e.redo,
+		savePoint:           e.savePoint,
+		undoGroup:           e.undoGroup,
+		lineUndoRow:         e.lineUndoRow,
+		lineUndoContent:     e.lineUndoContent,
+		lineUndoValid:       e.lineUndoValid,
+		scroll:              e.scroll,
+		scrollX:             e.scrollX,
+		selectionActive:     e.selectionActive,
+		selectionStart:      e.selectionStart,
+		selectionEnd:        e.selectionEnd,
+		searchMatches:       e.searchMatches,
+		searchMatchIndex:    e.searchMatchIndex,
+		mode:                e.mode,
+		highlights:          e.highlights,
+		highlightStart:      e.highlightStart,
+		highlightEnd:        e.highlightEnd,
+		changeTick:          e.changeTick,
+		lastEdit:            e.lastEdit,
+		conflictBlocks:      e.conflictBlocks,
+		conflictBlocksDirty: e.conflictBlocksDirty,
+		clipboard:           e.clipboard,
+		selectionScopeStack: e.selectionScopeStack,
+		selectionScopeIndex: e.selectionScopeIndex,
+	}
+}
+
+// restoreBufferState writes per-file fields from a BufferState back into the Editor.
+func (e *Editor) restoreBufferState(bs *BufferState) {
+	e.text = bs.text
+	e.cursor = bs.cursor
+	e.filename = bs.filename
+	e.fileSnapshot = bs.fileSnapshot
+	e.diskContent = bs.diskContent
+	e.externalChange = bs.externalChange
+	e.dirty = bs.dirty
+	e.undo = bs.undo
+	e.redo = bs.redo
+	e.savePoint = bs.savePoint
+	e.undoGroup = bs.undoGroup
+	e.lineUndoRow = bs.lineUndoRow
+	e.lineUndoContent = bs.lineUndoContent
+	e.lineUndoValid = bs.lineUndoValid
+	e.scroll = bs.scroll
+	e.scrollX = bs.scrollX
+	e.selectionActive = bs.selectionActive
+	e.selectionStart = bs.selectionStart
+	e.selectionEnd = bs.selectionEnd
+	e.searchMatches = bs.searchMatches
+	e.searchMatchIndex = bs.searchMatchIndex
+	e.mode = bs.mode
+	e.highlights = bs.highlights
+	e.highlightStart = bs.highlightStart
+	e.highlightEnd = bs.highlightEnd
+	e.changeTick = bs.changeTick
+	e.lastEdit = bs.lastEdit
+	e.conflictBlocks = bs.conflictBlocks
+	e.conflictBlocksDirty = bs.conflictBlocksDirty
+	e.clipboard = bs.clipboard
+	e.selectionScopeStack = bs.selectionScopeStack
+	e.selectionScopeIndex = bs.selectionScopeIndex
+}
