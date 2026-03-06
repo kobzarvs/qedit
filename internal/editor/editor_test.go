@@ -819,7 +819,7 @@ func TestMouseClickMovesCursorClearsSelection(t *testing.T) {
 	if e.selectionActive {
 		t.Fatalf("selectionActive = true, want false")
 	}
-	if e.freeScroll {
+	if e.interaction.freeScroll {
 		t.Fatalf("freeScroll = true, want false")
 	}
 }
@@ -844,7 +844,7 @@ func TestMouseWheelScrollChangesScroll(t *testing.T) {
 	if e.scroll != 1 {
 		t.Fatalf("scroll = %d, want 1", e.scroll)
 	}
-	if !e.freeScroll {
+	if !e.interaction.freeScroll {
 		t.Fatalf("freeScroll = false, want true")
 	}
 

@@ -324,7 +324,7 @@ func (e *Editor) gotoLineNumber(lineNum int) {
 	e.cursor.Row = lineNum - 1
 	e.cursor.Col = 0
 	e.selectionActive = false
-	e.freeScroll = false
+	e.interaction.freeScroll = false
 	e.scrollX = 0
 	e.setStatus(fmt.Sprintf("line %d", lineNum))
 }

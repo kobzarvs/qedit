@@ -46,7 +46,7 @@ func (e *Editor) Render(s Screen) {
 	editorWidth := w - sidebarWidth
 
 	gutterWidth := e.gutterWidth()
-	if !e.freeScroll {
+	if !e.interaction.freeScroll {
 		e.ensureCursorVisible(viewHeight)
 		e.ensureCursorVisibleHorizontal(editorWidth, gutterWidth)
 	}
@@ -171,7 +171,7 @@ func (e *Editor) renderScrollIndicator(s Screen, w, viewHeight int) {
 		return
 	}
 
-	e.drawScrollIndicator(s, w-1, 0, viewHeight, e.LineCount(), e.scroll, e.lastScrollTime)
+	e.drawScrollIndicator(s, w-1, 0, viewHeight, e.LineCount(), e.scroll, e.interaction.lastScrollTime)
 }
 
 func (e *Editor) drawScrollIndicator(s Screen, x, y, height int, totalLines int, scroll int, lastScroll time.Time) {

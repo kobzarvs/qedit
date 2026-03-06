@@ -113,7 +113,7 @@ func (e *Editor) ChangeTick() uint64 {
 	return e.changeTick
 }
 func (e *Editor) UpdateScroll() {
-	if e.freeScroll {
+	if e.interaction.freeScroll {
 		return
 	}
 	e.ensureCursorVisible(e.viewHeightCached())

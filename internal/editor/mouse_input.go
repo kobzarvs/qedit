@@ -31,12 +31,12 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 
 	if ev.Buttons() == WheelUp {
 		e.scrollUp(1)
-		e.freeScroll = true
-		e.lastScrollTime = time.Now()
+		e.interaction.freeScroll = true
+		e.interaction.lastScrollTime = time.Now()
 	} else if ev.Buttons() == WheelDown {
 		e.scrollDown(1)
-		e.freeScroll = true
-		e.lastScrollTime = time.Now()
+		e.interaction.freeScroll = true
+		e.interaction.lastScrollTime = time.Now()
 	} else if ev.Buttons() == WheelLeft {
 		e.scrollLeft(1)
 	} else if ev.Buttons() == WheelRight {
@@ -49,7 +49,7 @@ func (e *Editor) HandleMouse(ev EventMouse) {
 
 func (e *Editor) handleMouseResize(ev EventMouse) bool {
 	buttons := ev.Buttons()
-	if e.resizeDragging {
+	if e.interaction.resizeDragging {
 		if buttons == 0 {
 			e.finishMouseResize()
 			return true
@@ -89,14 +89,14 @@ func (e *Editor) tryStartSidebarResize(x int) bool {
 	if x != sidebarWidth-1 {
 		return false
 	}
-	e.resizeDragging = true
-	e.resizeTarget = resizeTargetSidebar
+	e.interaction.resizeDragging = true
+	e.interaction.resizeTarget = resizeTargetSidebar
 	e.updateSidebarWidthFromX(x)
 	return true
 }
 
 func (e *Editor) updateMouseResize(x int) {
-	switch e.resizeTarget {
+	switch e.interaction.resizeTarget {
 	case resizeTargetSidebar:
 		e.updateSidebarWidthFromX(x)
 	}
@@ -132,7 +132,7 @@ func (e *Editor) clampSidebarWidth(width int) int {
 }
 
 func (e *Editor) finishMouseResize() {
-	switch e.resizeTarget {
+	switch e.interaction.resizeTarget {
 	case resizeTargetSidebar:
 		if e.runtime.sidebarWidthConfigHook != nil && e.sidebar != nil {
 			if err := e.runtime.sidebarWidthConfigHook(e.sidebar.WidthConfig); err != nil {
@@ -140,8 +140,8 @@ func (e *Editor) finishMouseResize() {
 			}
 		}
 	}
-	e.resizeDragging = false
-	e.resizeTarget = resizeTargetNone
+	e.interaction.resizeDragging = false
+	e.interaction.resizeTarget = resizeTargetNone
 }
 
 func (e *Editor) scrollLeft(amount int) {
@@ -237,7 +237,7 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 
 	// Clear selection and free scroll mode
 	e.selectionActive = false
-	e.freeScroll = false
+	e.interaction.freeScroll = false
 }
 
 func (e *Editor) scrollUp(lines int) {
@@ -266,7 +266,7 @@ func (e *Editor) scrollViewUp() {
 		return
 	}
 	e.scroll--
-	e.lastScrollTime = time.Now()
+	e.interaction.lastScrollTime = time.Now()
 	// If cursor is now below visible area, move it up
 	viewHeight := e.viewHeightCached()
 	if e.cursor.Row >= e.scroll+viewHeight {
@@ -287,7 +287,7 @@ func (e *Editor) scrollViewDown() {
 		return
 	}
 	e.scroll++
-	e.lastScrollTime = time.Now()
+	e.interaction.lastScrollTime = time.Now()
 	// If cursor is now above visible area, move it down
 	if e.cursor.Row < e.scroll {
 		e.cursor.Row = e.scroll

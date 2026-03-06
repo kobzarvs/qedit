@@ -359,7 +359,7 @@ func (e *Editor) JumpToLocation(line, col int) {
 	e.cursor.Row = line
 	e.cursor.Col = col
 	e.selectionActive = false
-	e.freeScroll = false
+	e.interaction.freeScroll = false
 	e.ensureCursorVisible(e.viewHeightCached())
 	e.ensureCursorVisibleHorizontal(e.viewWidth, e.gutterWidth())
 }

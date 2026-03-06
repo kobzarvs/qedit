@@ -1,7 +1,7 @@
 package editor
 
 func (e *Editor) HandleKey(ev EventKey) bool {
-	e.freeScroll = false
+	e.interaction.freeScroll = false
 	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" && !e.file.autoReloadInProgress {
 		e.statusMessage = ""
 	}

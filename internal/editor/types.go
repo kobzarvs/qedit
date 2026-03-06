@@ -1,7 +1,5 @@
 package editor
 
-import "time"
-
 type Mode int
 
 const (
@@ -479,10 +477,7 @@ type Editor struct {
 	fileTreeShowHidden           bool
 	fileTreeShowIgnored          bool
 	fileTreePreview              fileTreePreviewState
-	freeScroll                   bool
-	lastScrollTime               time.Time
-	resizeDragging               bool
-	resizeTarget                 resizeTarget
+	interaction                  editorInteractionState
 	runtime                      editorRuntimeDeps
 
 	// Helix-style state
