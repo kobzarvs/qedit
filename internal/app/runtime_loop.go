@@ -29,6 +29,7 @@ type editorRuntime struct {
 	renderScreen       editor.Screen
 	ed                 *editor.Editor
 	ts                 *treesitter.Engine
+	gitRuntime         editor.GitRuntime
 	fileMonitor        *externalFileMonitor
 	controller         editorRuntimeController
 	state              editorRuntimeState
@@ -58,6 +59,7 @@ func newEditorRuntime(
 		renderScreen:       ui.WrapScreen(screen),
 		ed:                 ed,
 		ts:                 ts,
+		gitRuntime:         newEditorGitRuntime(),
 		state:              newEditorRuntimeState(ed),
 		lastLayoutRaw:      keyboard.CurrentLayoutRaw(),
 		fileChangeDebounce: opts.FileChangeDebounce,
@@ -83,7 +85,7 @@ func newEditorRuntime(
 	}
 
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
-	syncEditorRepoState(ed, rt.state.gitPath, sessionMgr)
+	syncEditorRepoState(ed, rt.state.gitPath, sessionMgr, rt.gitRuntime)
 
 	rt.controller = editorRuntimeController{
 		ed:                ed,
@@ -98,6 +100,7 @@ func newEditorRuntime(
 		sessionMgr:        sessionMgr,
 		fileMonitor:       rt.fileMonitor,
 		fileStore:         fileStore,
+		gitRuntime:        rt.gitRuntime,
 		state:             &rt.state,
 	}
 
@@ -122,6 +125,7 @@ func (r *editorRuntime) Tick() {
 		r.ts,
 		r.fileMonitor,
 		&r.state,
+		r.gitRuntime,
 		r.fileChangeDebounce,
 		r.filePollInterval,
 		&r.lastLayoutRaw,

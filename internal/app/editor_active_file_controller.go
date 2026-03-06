@@ -2,8 +2,6 @@ package app
 
 import (
 	"time"
-
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 )
 
 func (c *editorRuntimeController) applyActivatedFile(state activeFileState) {
@@ -18,7 +16,7 @@ func (c *editorRuntimeController) refreshActiveRepoState(gitPath string, resetMa
 	if resetMainBranch {
 		c.ed.SetGitMainBranch("")
 	}
-	syncEditorRepoState(c.ed, gitPath, c.sessionMgr)
+	syncEditorRepoState(c.ed, gitPath, c.sessionMgr, c.gitRuntime)
 	c.state.lastGitCheck = time.Now()
 }
 
@@ -39,8 +37,8 @@ func (c *editorRuntimeController) activateExistingBuffer(path string) {
 	}
 	state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, path, c.highlightMaxBytes)
 	c.applyActivatedFile(state)
-	c.ed.SetGitBranch(gitinfo.Branch(path))
-	c.ed.SetGitRoot(gitinfo.Root(path))
+	c.ed.SetGitBranch(c.gitRuntime.Branch(path))
+	c.ed.SetGitRoot(c.gitRuntime.Root(path))
 	c.state.lastGitCheck = time.Now()
 }
 

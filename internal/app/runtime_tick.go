@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/kobzarvs/qedit/internal/editor"
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/platform/keyboard"
 	"github.com/kobzarvs/qedit/internal/treesitter"
 )
@@ -14,6 +13,7 @@ func runEditorRuntimeTick(
 	ts *treesitter.Engine,
 	fileMonitor *externalFileMonitor,
 	state *editorRuntimeState,
+	gitRuntime editor.GitRuntime,
 	fileChangeDebounce time.Duration,
 	filePollInterval time.Duration,
 	lastLayoutRaw *string,
@@ -44,7 +44,7 @@ func runEditorRuntimeTick(
 
 	if state.gitPath != "" && now.Sub(state.lastGitCheck) > 2*time.Second {
 		state.lastGitCheck = now
-		ed.SetGitBranch(gitinfo.Branch(state.gitPath))
+		ed.SetGitBranch(gitRuntime.Branch(state.gitPath))
 	}
 
 	if state.highlightExpected && !ed.HasHighlights() && state.openPath != ed.Filename() {

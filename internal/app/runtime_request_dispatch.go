@@ -53,11 +53,11 @@ func (c *editorRuntimeController) handleShowFileTreeRequest(req editor.RuntimeRe
 }
 
 func (c *editorRuntimeController) handleShowBranchPickerRequest() {
-	showSidebarBranches(c.ed, c.state.gitPath)
+	showSidebarBranches(c.ed, c.gitRuntime, c.state.gitPath)
 }
 
 func (c *editorRuntimeController) handleShowWorktreesRequest() {
-	showSidebarWorktrees(c.ed, c.fileStore, c.state.gitPath)
+	showSidebarWorktrees(c.ed, c.gitRuntime, c.fileStore, c.state.gitPath)
 }
 
 func (c *editorRuntimeController) handleSelectBranchRequest(req editor.RuntimeRequest) {
@@ -65,7 +65,7 @@ func (c *editorRuntimeController) handleSelectBranchRequest(req editor.RuntimeRe
 		return
 	}
 	logger.Debug("branch selected", "branch", req.Value)
-	checkoutBranch(c.ed, c.state.gitPath, req.Value)
+	checkoutBranch(c.ed, c.gitRuntime, c.state.gitPath, req.Value)
 }
 
 func (c *editorRuntimeController) handleSwitchWorktreeRequest(req editor.RuntimeRequest) {

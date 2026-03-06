@@ -5,11 +5,10 @@ import (
 	"strings"
 
 	"github.com/kobzarvs/qedit/internal/editor"
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/logger"
 )
 
-func showSidebarBranches(ed *editor.Editor, gitPath string) {
+func showSidebarBranches(ed *editor.Editor, gitRuntime editor.GitRuntime, gitPath string) {
 	logger.Debug("branch picker requested")
 	if gitPath == "" {
 		logger.Debug("not a git repository")
@@ -17,7 +16,7 @@ func showSidebarBranches(ed *editor.Editor, gitPath string) {
 		return
 	}
 
-	branches, current, err := gitinfo.ListBranches(gitPath)
+	branches, current, err := gitRuntime.ListBranches(gitPath)
 	if err != nil {
 		logger.Error("failed to list branches", "error", err)
 		ed.SetStatusMessage(err.Error())
@@ -28,7 +27,7 @@ func showSidebarBranches(ed *editor.Editor, gitPath string) {
 	ed.ShowSidebarBranches(branches, current)
 }
 
-func showSidebarWorktrees(ed *editor.Editor, fileStore editor.FileStore, gitPath string) {
+func showSidebarWorktrees(ed *editor.Editor, gitRuntime editor.GitRuntime, fileStore editor.FileStore, gitPath string) {
 	logger.Debug("worktree list requested")
 	if gitPath == "" {
 		logger.Debug("not a git repository")
@@ -36,29 +35,22 @@ func showSidebarWorktrees(ed *editor.Editor, fileStore editor.FileStore, gitPath
 		return
 	}
 
-	worktrees, active, err := gitinfo.ListWorktrees(gitPath)
+	worktrees, active, err := gitRuntime.ListWorktrees(gitPath)
 	if err != nil {
 		logger.Error("failed to list worktrees", "error", err)
 		ed.SetStatusMessage(err.Error())
 		return
 	}
 
-	items := make([]editor.WorktreeInfo, 0, len(worktrees))
-	for _, wt := range worktrees {
-		items = append(items, editor.WorktreeInfo{
-			Path:   wt.Path,
-			Branch: wt.Branch,
-		})
-	}
-	ed.ShowSidebarWorktrees(fileStore, items, active)
+	ed.ShowSidebarWorktrees(fileStore, worktrees, active)
 }
 
-func checkoutBranch(ed *editor.Editor, gitPath, branch string) {
+func checkoutBranch(ed *editor.Editor, gitRuntime editor.GitRuntime, gitPath, branch string) {
 	if gitPath == "" {
 		ed.SetStatusMessage("not a git repository")
 		return
 	}
-	if err := gitinfo.Checkout(gitPath, branch); err != nil {
+	if err := gitRuntime.Checkout(gitPath, branch); err != nil {
 		logger.Error("failed to checkout branch", "branch", branch, "error", err)
 		ed.SetStatusMessage(err.Error())
 		return
@@ -67,7 +59,7 @@ func checkoutBranch(ed *editor.Editor, gitPath, branch string) {
 	ed.SetStatusMessage("checked out " + branch)
 }
 
-func pickWorktreeFile(fileStore editor.FileStore, targetRoot, openPath string) string {
+func pickWorktreeFile(gitRuntime editor.GitRuntime, fileStore editor.FileStore, targetRoot, openPath string) string {
 	targetRoot = strings.TrimSpace(targetRoot)
 	if targetRoot == "" {
 		return ""
@@ -75,7 +67,7 @@ func pickWorktreeFile(fileStore editor.FileStore, targetRoot, openPath string) s
 	targetRoot = normalizeAppPath(fileStore, targetRoot)
 
 	if openPath != "" {
-		currentRoot := gitinfo.Root(openPath)
+		currentRoot := gitRuntime.Root(openPath)
 		if currentRoot != "" {
 			if rel, err := filepath.Rel(currentRoot, openPath); err == nil && !strings.HasPrefix(rel, "..") {
 				candidate := filepath.Join(targetRoot, rel)

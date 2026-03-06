@@ -15,6 +15,36 @@ type testAppFileStore struct {
 	stats      map[string]editor.FileMetadata
 }
 
+type testAppGitRuntime struct {
+	root string
+}
+
+func (r testAppGitRuntime) Root(path string) string { return r.root }
+func (r testAppGitRuntime) Branch(path string) string {
+	return ""
+}
+func (r testAppGitRuntime) MainBranch(path string) string {
+	return ""
+}
+func (r testAppGitRuntime) ListBranches(root string) ([]string, string, error) {
+	return nil, "", nil
+}
+func (r testAppGitRuntime) ListWorktrees(root string) ([]editor.WorktreeInfo, string, error) {
+	return nil, "", nil
+}
+func (r testAppGitRuntime) Checkout(root, branch string) error {
+	return nil
+}
+func (r testAppGitRuntime) AddWorktree(root, name string) (string, error) {
+	return "", nil
+}
+func (r testAppGitRuntime) RemoveWorktree(root, path string) error {
+	return nil
+}
+func (r testAppGitRuntime) Changes(root string) ([]editor.GitFileChange, []editor.GitChangeHunk, error) {
+	return nil, nil, nil
+}
+
 func (s testAppFileStore) Abs(path string) (string, error) {
 	if abs, ok := s.absPaths[path]; ok {
 		return abs, nil
@@ -62,7 +92,7 @@ func TestPickWorktreeFileUsesFileStore(t *testing.T) {
 		},
 	}
 
-	got := pickWorktreeFile(fileStore, "feature", "")
+	got := pickWorktreeFile(testAppGitRuntime{}, fileStore, "feature", "")
 
 	if got != "/repo-feature/go.mod" {
 		t.Fatalf("pickWorktreeFile = %q, want %q", got, "/repo-feature/go.mod")

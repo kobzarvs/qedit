@@ -7,7 +7,6 @@ import (
 
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
@@ -27,6 +26,7 @@ type editorRuntimeController struct {
 	fileMonitor       *externalFileMonitor
 	state             *editorRuntimeState
 	fileStore         editor.FileStore
+	gitRuntime        editor.GitRuntime
 }
 
 func (c *editorRuntimeController) openFile(path string) error {
@@ -47,10 +47,10 @@ func (c *editorRuntimeController) switchToWorktree(targetPath string) {
 		return
 	}
 	targetPath = normalizeAppPath(c.fileStore, targetPath)
-	candidate := pickWorktreeFile(c.fileStore, targetPath, c.state.openPath)
+	candidate := pickWorktreeFile(c.gitRuntime, c.fileStore, targetPath, c.state.openPath)
 	if candidate == "" {
-		c.ed.SetGitBranch(gitinfo.Branch(targetPath))
-		c.ed.SetGitRoot(gitinfo.Root(targetPath))
+		c.ed.SetGitBranch(c.gitRuntime.Branch(targetPath))
+		c.ed.SetGitRoot(c.gitRuntime.Root(targetPath))
 		c.state.gitPath = targetPath
 		c.ed.SetStatusMessage("worktree switched (open a file)")
 		return
@@ -59,7 +59,7 @@ func (c *editorRuntimeController) switchToWorktree(targetPath string) {
 		c.ed.SetStatusMessage(err.Error())
 		return
 	}
-	c.ed.SetGitBranch(gitinfo.Branch(candidate))
-	c.ed.SetGitRoot(gitinfo.Root(candidate))
+	c.ed.SetGitBranch(c.gitRuntime.Branch(candidate))
+	c.ed.SetGitRoot(c.gitRuntime.Root(candidate))
 	c.ed.SetStatusMessage("worktree switched")
 }
