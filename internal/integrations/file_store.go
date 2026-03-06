@@ -14,6 +14,10 @@ func (FileStore) Abs(path string) (string, error) {
 	return filepath.Abs(path)
 }
 
+func (FileStore) HomeDir() (string, error) {
+	return os.UserHomeDir()
+}
+
 func (FileStore) Read(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }

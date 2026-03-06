@@ -54,6 +54,7 @@ type DirEntry struct {
 // FileStore provides editor filesystem operations.
 type FileStore interface {
 	Abs(path string) (string, error)
+	HomeDir() (string, error)
 	Read(path string) ([]byte, error)
 	ReadDir(path string) ([]DirEntry, error)
 	Write(path string, data []byte) error

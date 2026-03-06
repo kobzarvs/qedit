@@ -10,6 +10,7 @@ var errTestFileStoreNotExist = errors.New("file store entry not found")
 type testFileStore struct {
 	absPath        string
 	absPaths       map[string]string
+	homeDir        string
 	readData       []byte
 	readDataByPath map[string][]byte
 	dirEntries     map[string][]DirEntry
@@ -26,6 +27,10 @@ func (s *testFileStore) Abs(path string) (string, error) {
 		return s.absPath, nil
 	}
 	return path, nil
+}
+
+func (s *testFileStore) HomeDir() (string, error) {
+	return s.homeDir, nil
 }
 
 func (s *testFileStore) Read(path string) ([]byte, error) {

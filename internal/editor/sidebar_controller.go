@@ -413,7 +413,7 @@ func (e *Editor) ShowSidebarWorktrees(worktrees []WorktreeInfo, activePath strin
 		content.UpdateWorktrees(worktrees, activePath)
 		e.sidebar.SetContent(content)
 	} else {
-		content := NewSidebarWorktreesContent(worktrees, activePath)
+		content := NewSidebarWorktreesContent(e.runtime.fileStore, worktrees, activePath)
 		e.sidebar.SetContent(content)
 	}
 	e.sidebar.Visible = true

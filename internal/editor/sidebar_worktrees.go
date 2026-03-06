@@ -1,23 +1,24 @@
 package editor
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 )
 
 // SidebarWorktreesContent implements SidebarContent for git worktrees.
 type SidebarWorktreesContent struct {
+	fs         FileStore
 	worktrees  []WorktreeInfo
 	activePath string
 	index      int
 }
 
 // NewSidebarWorktreesContent creates a new worktrees content.
-func NewSidebarWorktreesContent(worktrees []WorktreeInfo, activePath string) *SidebarWorktreesContent {
+func NewSidebarWorktreesContent(fs FileStore, worktrees []WorktreeInfo, activePath string) *SidebarWorktreesContent {
 	w := &SidebarWorktreesContent{
+		fs:         fs,
 		worktrees:  append([]WorktreeInfo(nil), worktrees...),
-		activePath: normalizeWorktreePath(activePath),
+		activePath: normalizeWorktreePath(fs, activePath),
 		index:      0,
 	}
 	w.syncIndex()
@@ -43,7 +44,7 @@ func (w *SidebarWorktreesContent) Items() []SidebarItem {
 		isCurrent := w.isCurrentPath(path)
 		label := branch
 		if path != "" {
-			displayPath := worktreeDisplayPath(path, w.activePath)
+			displayPath := worktreeDisplayPath(w.fs, path, w.activePath)
 			if displayPath != "" {
 				label = branch + "  " + displayPath
 			}
@@ -108,7 +109,7 @@ func (w *SidebarWorktreesContent) Refresh() error {
 }
 
 func (w *SidebarWorktreesContent) SetCurrentPath(path string) {
-	w.activePath = normalizeWorktreePath(path)
+	w.activePath = normalizeWorktreePath(w.fs, path)
 	w.syncIndex()
 }
 
@@ -127,7 +128,7 @@ func (w *SidebarWorktreesContent) SetCurrentBranch(branch string) {
 
 func (w *SidebarWorktreesContent) UpdateWorktrees(worktrees []WorktreeInfo, activePath string) {
 	w.worktrees = append(w.worktrees[:0], worktrees...)
-	w.activePath = normalizeWorktreePath(activePath)
+	w.activePath = normalizeWorktreePath(w.fs, activePath)
 	w.syncIndex()
 }
 
@@ -154,22 +155,20 @@ func (w *SidebarWorktreesContent) isCurrentPath(path string) bool {
 	if w.activePath == "" || strings.TrimSpace(path) == "" {
 		return false
 	}
-	return normalizeWorktreePath(path) == w.activePath
+	return normalizeWorktreePath(w.fs, path) == w.activePath
 }
 
-func normalizeWorktreePath(path string) string {
+func normalizeWorktreePath(fs FileStore, path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return ""
 	}
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
+	path = normalizedPathWithStore(fs, path)
 	return filepath.Clean(path)
 }
 
-func worktreeDisplayPath(path, activePath string) string {
-	path = normalizeWorktreePath(path)
+func worktreeDisplayPath(fs FileStore, path, activePath string) string {
+	path = normalizeWorktreePath(fs, path)
 	if path == "" {
 		return ""
 	}
@@ -181,14 +180,16 @@ func worktreeDisplayPath(path, activePath string) string {
 			}
 		}
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		home = filepath.Clean(home)
-		if path == home {
-			return "~"
-		}
-		prefix := home + string(filepath.Separator)
-		if strings.HasPrefix(path, prefix) {
-			return "~" + string(filepath.Separator) + strings.TrimPrefix(path, prefix)
+	if fs != nil {
+		if home, err := fs.HomeDir(); err == nil && home != "" {
+			home = filepath.Clean(home)
+			if path == home {
+				return "~"
+			}
+			prefix := home + string(filepath.Separator)
+			if strings.HasPrefix(path, prefix) {
+				return "~" + string(filepath.Separator) + strings.TrimPrefix(path, prefix)
+			}
 		}
 	}
 	return path
