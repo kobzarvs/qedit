@@ -126,7 +126,7 @@ func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {
 	if e.fileTreePreview.text == nil || width <= 0 || viewHeight <= 0 {
 		return
 	}
-	if e.runtime.languageRuntime != nil && e.fileTreePreview.highlight.end >= 0 &&
+	if e.hasLanguageRuntime() && e.fileTreePreview.highlight.end >= 0 &&
 		e.fileTreePreview.highlight.end < e.fileTreePreview.scroll+viewHeight-1 {
 		e.updateFileTreePreviewHighlights()
 	}

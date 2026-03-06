@@ -77,7 +77,7 @@ func (e *Editor) handleGotoKey(ch rune) bool {
 
 // lspGoto performs an LSP goto operation
 func (e *Editor) lspGoto(method string) bool {
-	if e.runtime.languageRuntime == nil {
+	if !e.hasLanguageRuntime() {
 		e.setStatus("LSP: callback not set")
 		return false
 	}
@@ -86,7 +86,7 @@ func (e *Editor) lspGoto(method string) bool {
 		return false
 	}
 
-	locations, err := e.runtime.languageRuntime.Goto(method, e.document.filename, e.cursor.Row, e.cursor.Col)
+	locations, err := e.languageGoto(method, e.document.filename, e.cursor.Row, e.cursor.Col)
 	if err != nil {
 		e.setStatus("LSP: " + err.Error())
 		return false
