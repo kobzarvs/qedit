@@ -7,7 +7,7 @@ import (
 )
 
 func (e *Editor) renderSpaceMenu(s Screen, w, viewHeight int) {
-	if !e.spaceMenuActive {
+	if !e.modal.spaceMenuActive {
 		return
 	}
 	if w < 20 || viewHeight < 5 {

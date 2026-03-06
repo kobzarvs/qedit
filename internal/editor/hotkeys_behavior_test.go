@@ -278,8 +278,8 @@ func TestYankPasteHotkeys(t *testing.T) {
 		if len(e.clipboard) != 1 || string(e.clipboard[0]) != "a" {
 			t.Fatalf("clipboard = %#v, want [\"a\"]", e.clipboard)
 		}
-		if e.selectionActive || e.selectMode {
-			t.Fatalf("selectionActive=%v selectMode=%v, want false/false", e.selectionActive, e.selectMode)
+		if e.selectionActive || e.modal.selectMode {
+			t.Fatalf("selectionActive=%v selectMode=%v, want false/false", e.selectionActive, e.modal.selectMode)
 		}
 	})
 	t.Run("paste after", func(t *testing.T) {

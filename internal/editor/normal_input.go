@@ -19,7 +19,7 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle space menu
-	if e.spaceMenuActive {
+	if e.modal.spaceMenuActive {
 		return e.handleSpaceMenu(ev)
 	}
 
@@ -37,9 +37,9 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle goto mode (g prefix)
-	if e.gotoMode {
-		e.gotoMode = false
-		e.pendingKeys = ""
+	if e.modal.gotoMode {
+		e.modal.gotoMode = false
+		e.modal.pendingKeys = ""
 		if ev.Key() == KeyEscape {
 			return false
 		}
@@ -50,9 +50,9 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle match mode (m prefix)
-	if e.matchMode {
-		e.matchMode = false
-		e.pendingKeys = ""
+	if e.modal.matchMode {
+		e.modal.matchMode = false
+		e.modal.pendingKeys = ""
 		if ev.Key() == KeyEscape {
 			return false
 		}
@@ -63,9 +63,9 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle view mode (z prefix)
-	if e.viewMode {
-		e.viewMode = false
-		e.pendingKeys = ""
+	if e.modal.viewMode {
+		e.modal.viewMode = false
+		e.modal.pendingKeys = ""
 		if ev.Key() == KeyEscape {
 			return false
 		}
@@ -76,9 +76,9 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle window mode (space-w prefix)
-	if e.windowMode {
-		e.windowMode = false
-		e.pendingKeys = ""
+	if e.modal.windowMode {
+		e.modal.windowMode = false
+		e.modal.pendingKeys = ""
 		if ev.Key() == KeyEscape {
 			return false
 		}
@@ -89,16 +89,16 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle pending char input (f/F/t/T/r)
-	if e.pendingAction != "" {
-		pendingKey := e.pendingKeys
-		e.pendingKeys = ""
+	if e.modal.pendingAction != "" {
+		pendingKey := e.modal.pendingKeys
+		e.modal.pendingKeys = ""
 		if ev.Key() == KeyEscape {
-			e.pendingAction = ""
+			e.modal.pendingAction = ""
 			return false
 		}
 		if ev.Key() == KeyRune {
 			e.handlePendingChar(ev.Rune())
-			e.lastCommand = pendingKey + string(ev.Rune())
+			e.modal.lastCommand = pendingKey + string(ev.Rune())
 			return false
 		}
 		// Ignore other keys while waiting for char
@@ -128,13 +128,13 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 			e.selectionActive = true
 			e.selectionStart = anchor
 			e.selectionEnd = e.cursor
-			e.selectMode = true
+			e.modal.selectMode = true
 		}
 		return result
 	}
 
 	// In select mode, extend selection for other motion commands
-	if e.selectMode && isMotionAction(action) {
+	if e.modal.selectMode && isMotionAction(action) {
 		before := e.cursor
 		result := e.execAction(action)
 		if before != e.cursor {

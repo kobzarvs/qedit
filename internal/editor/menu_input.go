@@ -2,7 +2,7 @@ package editor
 
 // handleViewKey handles the second key after 'z' prefix
 func (e *Editor) handleViewKey(ch rune) bool {
-	e.lastCommand = "z" + string(ch)
+	e.modal.lastCommand = "z" + string(ch)
 
 	switch ch {
 	case 'c':
@@ -23,7 +23,7 @@ func (e *Editor) handleViewKey(ch rune) bool {
 
 // handleWindowKey handles the second key after 'space-w' prefix
 func (e *Editor) handleWindowKey(ch rune) bool {
-	e.lastCommand = "SPC w" + string(ch)
+	e.modal.lastCommand = "SPC w" + string(ch)
 	e.setStatus("window mode (not implemented)")
 	return false
 }
@@ -98,8 +98,8 @@ func (e *Editor) handleKeybindingsHelp(ev EventKey) bool {
 // handleSpaceMenu handles key input when space menu is active
 func (e *Editor) handleSpaceMenu(ev EventKey) bool {
 	if ev.Key() == KeyEscape {
-		e.spaceMenuActive = false
-		e.pendingKeys = ""
+		e.modal.spaceMenuActive = false
+		e.modal.pendingKeys = ""
 		return false
 	}
 
@@ -107,17 +107,17 @@ func (e *Editor) handleSpaceMenu(ev EventKey) bool {
 		ch := ev.Rune()
 		for _, item := range SpaceMenuItems {
 			if item.Key == ch {
-				e.spaceMenuActive = false
-				e.pendingKeys = ""
-				e.lastCommand = "SPC " + string(ch)
+				e.modal.spaceMenuActive = false
+				e.modal.pendingKeys = ""
+				e.modal.lastCommand = "SPC " + string(ch)
 				return e.executeSpaceAction(item)
 			}
 		}
 	}
 
 	// Unknown key - close menu
-	e.spaceMenuActive = false
-	e.pendingKeys = ""
+	e.modal.spaceMenuActive = false
+	e.modal.pendingKeys = ""
 	return false
 }
 
@@ -138,8 +138,8 @@ func (e *Editor) executeSpaceAction(item SpaceMenuItem) bool {
 	case "paste_clipboard_before":
 		e.pasteFromSystemClipboard(true)
 	case "window_mode":
-		e.windowMode = true
-		e.pendingKeys = "SPC w"
+		e.modal.windowMode = true
+		e.modal.pendingKeys = "SPC w"
 		return false
 	case "toggle_comment":
 		e.toggleLineComment()

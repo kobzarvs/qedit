@@ -130,7 +130,7 @@ func (e *Editor) deleteLine() {
 	if start, end, ok := e.selectionRange(); ok {
 		e.deleteSelection(start, end, true) // Restore selection on undo
 		e.clearSelection()
-		e.selectMode = false
+		e.modal.selectMode = false
 		return
 	}
 
@@ -695,7 +695,7 @@ func (e *Editor) helixDelete() {
 	if start, end, ok := e.selectionRange(); ok {
 		e.deleteSelection(start, end, true) // Restore selection on undo
 		e.clearSelection()
-		e.selectMode = false
+		e.modal.selectMode = false
 		return
 	}
 	// No selection - delete char at cursor
@@ -707,7 +707,7 @@ func (e *Editor) helixChange() {
 	if start, end, ok := e.selectionRange(); ok {
 		e.deleteSelection(start, end, true) // Restore selection on undo
 		e.clearSelection()
-		e.selectMode = false
+		e.modal.selectMode = false
 	}
 	e.mode = ModeInsert
 	e.saveLineState()
@@ -739,7 +739,7 @@ func (e *Editor) yankSelection() {
 			e.clipboard = [][]rune{append([]rune(nil), e.line(e.cursor.Row)...)}
 		}
 		e.copyToSystemClipboard()
-		e.lastCommand = "y"
+		e.modal.lastCommand = "y"
 		e.ui.copiedMessageTime = time.Now()
 		return
 	}
@@ -768,10 +768,10 @@ func (e *Editor) yankSelection() {
 		e.clipboard = append(e.clipboard, append([]rune(nil), line[startCol:endCol]...))
 	}
 	e.copyToSystemClipboard()
-	e.lastCommand = "y"
+	e.modal.lastCommand = "y"
 	e.ui.copiedMessageTime = time.Now()
 	e.clearSelection()
-	e.selectMode = false
+	e.modal.selectMode = false
 }
 
 // Helix-style paste (p) - paste after cursor
@@ -1008,8 +1008,8 @@ func (e *Editor) joinLinesCmd() {
 
 // Helix-style toggle select (v) - toggle selection mode
 func (e *Editor) toggleSelectMode() {
-	e.selectMode = !e.selectMode
-	if e.selectMode {
+	e.modal.selectMode = !e.modal.selectMode
+	if e.modal.selectMode {
 		// Start selection at cursor
 		e.selectionStart = e.cursor
 		e.selectionEnd = e.cursor
@@ -1049,13 +1049,13 @@ func (e *Editor) extendLine() {
 	e.selectionEnd = Cursor{Row: e.cursor.Row, Col: lineLen}
 	e.cursor.Col = lineLen
 	e.selectionActive = true
-	e.selectMode = true
+	e.modal.selectMode = true
 }
 
 // Helix-style collapse selection (;) - collapse selection to cursor
 func (e *Editor) collapseSelection() {
 	e.clearSelection()
-	e.selectMode = false
+	e.modal.selectMode = false
 }
 
 // Helix-style flip selection (Alt+;) - swap anchor and cursor
@@ -1107,7 +1107,7 @@ func (e *Editor) expandSelection() {
 		e.selectionStart = Cursor{Row: nr.StartRow, Col: nr.StartCol}
 		e.selectionEnd = Cursor{Row: nr.EndRow, Col: nr.EndCol}
 		e.selectionActive = true
-		e.selectMode = true
+		e.modal.selectMode = true
 		e.selectionScopeIndex++
 	}
 }
@@ -1127,7 +1127,7 @@ func (e *Editor) shrinkSelection() {
 	} else {
 		// Can't shrink further, clear selection
 		e.clearSelection()
-		e.selectMode = false
+		e.modal.selectMode = false
 		e.selectionScopeStack = nil
 		e.selectionScopeIndex = 0
 	}

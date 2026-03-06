@@ -121,19 +121,19 @@ func (e *Editor) Render(s Screen) {
 	if e.branchPicker.active {
 		e.renderBranchPicker(s, w, viewHeight)
 	}
-	if e.spaceMenuActive {
+	if e.modal.spaceMenuActive {
 		e.renderSpaceMenu(s, w, viewHeight)
 	}
-	if e.gotoMode {
+	if e.modal.gotoMode {
 		e.renderMenu(s, w, viewHeight, "Goto", GotoMenuItems)
 	}
-	if e.matchMode {
+	if e.modal.matchMode {
 		e.renderMenu(s, w, viewHeight, "Match", MatchMenuItems)
 	}
-	if e.viewMode {
+	if e.modal.viewMode {
 		e.renderMenu(s, w, viewHeight, "View", ViewMenuItems)
 	}
-	if e.windowMode {
+	if e.modal.windowMode {
 		e.renderMenu(s, w, viewHeight, "Window", WindowMenuItems)
 	}
 	if e.keybindingsHelp.active {
@@ -147,7 +147,7 @@ func (e *Editor) Render(s Screen) {
 		}
 	}
 	sidebarFocused := e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
-	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelp.active || sidebarFocused || !cursorVisible {
+	if e.mode == ModeBranchPicker || e.modal.spaceMenuActive || e.keybindingsHelp.active || sidebarFocused || !cursorVisible {
 		s.HideCursor()
 		s.Show()
 		return

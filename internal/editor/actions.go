@@ -146,8 +146,8 @@ func (e *Editor) execAction(action string) bool {
 	case actionWordEnd:
 		e.wordEnd()
 	case actionGotoMode:
-		e.gotoMode = true
-		e.pendingKeys = "g"
+		e.modal.gotoMode = true
+		e.modal.pendingKeys = "g"
 		return false // Don't clear selection, wait for next key
 	case actionGotoLine:
 		e.gotoLastLine()
@@ -162,19 +162,19 @@ func (e *Editor) execAction(action string) bool {
 		e.gotoFileEnd()
 	case actionFindChar:
 		e.setPendingFindChar(action)
-		e.pendingKeys = "f"
+		e.modal.pendingKeys = "f"
 		return false // Don't clear selection, wait for char input
 	case actionFindCharBackward:
 		e.setPendingFindChar(action)
-		e.pendingKeys = "F"
+		e.modal.pendingKeys = "F"
 		return false
 	case actionTillChar:
 		e.setPendingFindChar(action)
-		e.pendingKeys = "t"
+		e.modal.pendingKeys = "t"
 		return false
 	case actionTillCharBackward:
 		e.setPendingFindChar(action)
-		e.pendingKeys = "T"
+		e.modal.pendingKeys = "T"
 		return false
 
 	// Helix-style editing
@@ -207,7 +207,7 @@ func (e *Editor) execAction(action string) bool {
 		return false // Entering insert mode
 	case actionReplaceChar:
 		e.setPendingFindChar(action)
-		e.pendingKeys = "r"
+		e.modal.pendingKeys = "r"
 		return false // Wait for char input
 	case actionJoinLines:
 		e.joinLinesCmd()
@@ -227,20 +227,20 @@ func (e *Editor) execAction(action string) bool {
 
 	// Space mode
 	case actionSpaceMode:
-		e.spaceMenuActive = true
-		e.pendingKeys = "SPC"
+		e.modal.spaceMenuActive = true
+		e.modal.pendingKeys = "SPC"
 		return false
 
 	// Match mode
 	case actionMatchMode:
-		e.matchMode = true
-		e.pendingKeys = "m"
+		e.modal.matchMode = true
+		e.modal.pendingKeys = "m"
 		return false
 
 	// View mode
 	case actionViewMode:
-		e.viewMode = true
-		e.pendingKeys = "z"
+		e.modal.viewMode = true
+		e.modal.pendingKeys = "z"
 		return false
 
 	// Search
@@ -322,7 +322,7 @@ func (e *Editor) execAction(action string) bool {
 		e.closeCurrentBuffer(false)
 		return false
 	}
-	if !e.selectMode {
+	if !e.modal.selectMode {
 		e.clearSelection()
 	}
 	return false

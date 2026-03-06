@@ -10,30 +10,30 @@ func (e *Editor) handleGotoKey(ch rune) bool {
 	// Handle LSP goto commands
 	switch ch {
 	case 'd':
-		e.lastCommand = "gd"
+		e.modal.lastCommand = "gd"
 		return e.lspGoto("definition")
 	case 'D':
-		e.lastCommand = "gD"
+		e.modal.lastCommand = "gD"
 		return e.lspGoto("declaration")
 	case 'y':
-		e.lastCommand = "gy"
+		e.modal.lastCommand = "gy"
 		return e.lspGoto("typeDefinition")
 	case 'r':
-		e.lastCommand = "gr"
+		e.modal.lastCommand = "gr"
 		return e.lspGoto("references")
 	case 'i':
-		e.lastCommand = "gi"
+		e.modal.lastCommand = "gi"
 		return e.lspGoto("implementation")
 	case 't':
-		e.lastCommand = "gt"
+		e.modal.lastCommand = "gt"
 		e.scrollCursorToTop()
 		return false
 	case 'c':
-		e.lastCommand = "gc"
+		e.modal.lastCommand = "gc"
 		e.centerCursorLine()
 		return false
 	case 'b':
-		e.lastCommand = "gb"
+		e.modal.lastCommand = "gb"
 		e.scrollCursorToBottom()
 		return false
 	}
@@ -61,10 +61,10 @@ func (e *Editor) handleGotoKey(ch rune) bool {
 	}
 
 	// Record the executed command
-	e.lastCommand = "g" + string(ch)
+	e.modal.lastCommand = "g" + string(ch)
 
 	// In select mode, extend selection
-	if e.selectMode && isMotionAction(action) {
+	if e.modal.selectMode && isMotionAction(action) {
 		before := e.cursor
 		result := e.execAction(action)
 		if before != e.cursor {
@@ -130,7 +130,7 @@ func (e *Editor) lspGoto(method string) bool {
 
 // handleMatchKey handles the second key after 'm' prefix
 func (e *Editor) handleMatchKey(ch rune) bool {
-	e.lastCommand = "m" + string(ch)
+	e.modal.lastCommand = "m" + string(ch)
 
 	switch ch {
 	case 'm':
@@ -153,13 +153,13 @@ func (e *Editor) handleMatchKey(ch rune) bool {
 
 // setPendingFindChar sets up pending char find (f/F/t/T)
 func (e *Editor) setPendingFindChar(action string) {
-	e.pendingAction = action
+	e.modal.pendingAction = action
 }
 
 // handlePendingChar processes char input for pending action
 func (e *Editor) handlePendingChar(ch rune) bool {
-	action := e.pendingAction
-	e.pendingAction = ""
+	action := e.modal.pendingAction
+	e.modal.pendingAction = ""
 
 	// For f, F, t, T - Helix style: anchor moves to old cursor, selection covers jump
 	isSelectingAction := action == actionFindChar || action == actionFindCharBackward ||
@@ -170,24 +170,24 @@ func (e *Editor) handlePendingChar(ch rune) bool {
 	var result bool
 	switch action {
 	case actionFindChar:
-		e.lastFindChar = ch
-		e.lastFindForward = true
-		e.lastFindTill = false
+		e.modal.lastFindChar = ch
+		e.modal.lastFindForward = true
+		e.modal.lastFindTill = false
 		result = e.findCharForward(ch, false)
 	case actionFindCharBackward:
-		e.lastFindChar = ch
-		e.lastFindForward = false
-		e.lastFindTill = false
+		e.modal.lastFindChar = ch
+		e.modal.lastFindForward = false
+		e.modal.lastFindTill = false
 		result = e.findCharBackward(ch, false)
 	case actionTillChar:
-		e.lastFindChar = ch
-		e.lastFindForward = true
-		e.lastFindTill = true
+		e.modal.lastFindChar = ch
+		e.modal.lastFindForward = true
+		e.modal.lastFindTill = true
 		result = e.findCharForward(ch, true)
 	case actionTillCharBackward:
-		e.lastFindChar = ch
-		e.lastFindForward = false
-		e.lastFindTill = true
+		e.modal.lastFindChar = ch
+		e.modal.lastFindForward = false
+		e.modal.lastFindTill = true
 		result = e.findCharBackward(ch, true)
 	case actionReplaceChar:
 		return e.replaceCharAtCursor(ch)
@@ -201,7 +201,7 @@ func (e *Editor) handlePendingChar(ch rune) bool {
 		e.selectionStart = anchor
 		// Selection end is exclusive, so add 1 to include the character at cursor
 		e.selectionEnd = Cursor{Row: e.cursor.Row, Col: e.cursor.Col + 1}
-		e.selectMode = true
+		e.modal.selectMode = true
 	}
 
 	return result

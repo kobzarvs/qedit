@@ -266,8 +266,8 @@ func TestGotoModeHotkeys(t *testing.T) {
 			if e.cursor.Row != tt.wantRow || e.cursor.Col != tt.wantCol {
 				t.Fatalf("cursor=%+v, want row=%d col=%d", e.cursor, tt.wantRow, tt.wantCol)
 			}
-			if e.lastCommand != tt.lastCmd {
-				t.Fatalf("lastCommand = %q, want %q", e.lastCommand, tt.lastCmd)
+			if e.modal.lastCommand != tt.lastCmd {
+				t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, tt.lastCmd)
 			}
 		})
 	}
@@ -281,8 +281,8 @@ func TestMatchModeHotkeys(t *testing.T) {
 	if e.cursor.Col != 3 {
 		t.Fatalf("match cursor col = %d, want 3", e.cursor.Col)
 	}
-	if e.lastCommand != "mm" {
-		t.Fatalf("lastCommand = %q, want %q", e.lastCommand, "mm")
+	if e.modal.lastCommand != "mm" {
+		t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "mm")
 	}
 
 	cases := []struct {
@@ -330,8 +330,8 @@ func TestViewModeHotkeys(t *testing.T) {
 			if e.scroll != tt.want {
 				t.Fatalf("scroll = %d, want %d", e.scroll, tt.want)
 			}
-			if e.lastCommand != "z"+string(tt.key) {
-				t.Fatalf("lastCommand = %q, want %q", e.lastCommand, "z"+string(tt.key))
+			if e.modal.lastCommand != "z"+string(tt.key) {
+				t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "z"+string(tt.key))
 			}
 		})
 	}
@@ -343,22 +343,22 @@ func TestSpaceMenuHotkeys(t *testing.T) {
 			e := newTestEditor("line")
 			e.filename = "test.go"
 			e.HandleKey(keyRune(' '))
-			if !e.spaceMenuActive {
+			if !e.modal.spaceMenuActive {
 				t.Fatalf("spaceMenuActive = false, want true")
 			}
 			e.HandleKey(keyRune(item.Key))
-			if e.spaceMenuActive {
+			if e.modal.spaceMenuActive {
 				t.Fatalf("spaceMenuActive = true, want false")
 			}
-			if item.Action != "window_mode" && e.pendingKeys != "" {
-				t.Fatalf("pendingKeys = %q, want empty", e.pendingKeys)
+			if item.Action != "window_mode" && e.modal.pendingKeys != "" {
+				t.Fatalf("pendingKeys = %q, want empty", e.modal.pendingKeys)
 			}
 			wantLast := "SPC " + string(item.Key)
 			if item.Action == "yank_clipboard" || item.Action == "yank_main_clipboard" {
 				wantLast = "y"
 			}
-			if e.lastCommand != wantLast {
-				t.Fatalf("lastCommand = %q, want %q", e.lastCommand, wantLast)
+			if e.modal.lastCommand != wantLast {
+				t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, wantLast)
 			}
 			if !item.Implemented {
 				want := item.Label + " (not implemented)"
@@ -367,8 +367,8 @@ func TestSpaceMenuHotkeys(t *testing.T) {
 				}
 			}
 			if item.Action == "window_mode" {
-				if !e.windowMode || e.pendingKeys != "SPC w" {
-					t.Fatalf("windowMode=%v pendingKeys=%q, want true/\"SPC w\"", e.windowMode, e.pendingKeys)
+				if !e.modal.windowMode || e.modal.pendingKeys != "SPC w" {
+					t.Fatalf("windowMode=%v pendingKeys=%q, want true/\"SPC w\"", e.modal.windowMode, e.modal.pendingKeys)
 				}
 			}
 			if item.Action == "show_keybindings" {
@@ -389,18 +389,18 @@ func TestWindowModeHotkeys(t *testing.T) {
 	e := newTestEditor("one")
 	e.HandleKey(keyRune(' '))
 	e.HandleKey(keyRune('w'))
-	if !e.windowMode {
+	if !e.modal.windowMode {
 		t.Fatalf("windowMode = false, want true")
 	}
 	e.HandleKey(keyRune('v'))
-	if e.windowMode {
+	if e.modal.windowMode {
 		t.Fatalf("windowMode = true, want false")
 	}
 	if e.statusMessage != "window mode (not implemented)" {
 		t.Fatalf("status = %q, want %q", e.statusMessage, "window mode (not implemented)")
 	}
-	if e.lastCommand != "SPC wv" {
-		t.Fatalf("lastCommand = %q, want %q", e.lastCommand, "SPC wv")
+	if e.modal.lastCommand != "SPC wv" {
+		t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "SPC wv")
 	}
 }
 
@@ -447,8 +447,8 @@ func TestSelectModeToggleAndCollapseHotkeys(t *testing.T) {
 	e := newTestEditor("abcd")
 
 	e.HandleKey(keyRune('v'))
-	if !e.selectMode || !e.selectionActive {
-		t.Fatalf("selectMode=%v selectionActive=%v, want true/true", e.selectMode, e.selectionActive)
+	if !e.modal.selectMode || !e.selectionActive {
+		t.Fatalf("selectMode=%v selectionActive=%v, want true/true", e.modal.selectMode, e.selectionActive)
 	}
 	if e.selectionStart.Col != 0 || e.selectionEnd.Col != 0 {
 		t.Fatalf("selection start/end = %v/%v, want 0/0", e.selectionStart.Col, e.selectionEnd.Col)
@@ -460,8 +460,8 @@ func TestSelectModeToggleAndCollapseHotkeys(t *testing.T) {
 	}
 
 	e.HandleKey(keyRune(';'))
-	if e.selectionActive || e.selectMode {
-		t.Fatalf("selectionActive=%v selectMode=%v, want false/false", e.selectionActive, e.selectMode)
+	if e.selectionActive || e.modal.selectMode {
+		t.Fatalf("selectionActive=%v selectMode=%v, want false/false", e.selectionActive, e.modal.selectMode)
 	}
 }
 
@@ -471,8 +471,8 @@ func TestHelixSelectingMotionHotkeys(t *testing.T) {
 	if e.cursor.Col != 4 {
 		t.Fatalf("cursor col = %d, want 4", e.cursor.Col)
 	}
-	if !e.selectionActive || !e.selectMode {
-		t.Fatalf("selectionActive=%v selectMode=%v, want true/true", e.selectionActive, e.selectMode)
+	if !e.selectionActive || !e.modal.selectMode {
+		t.Fatalf("selectionActive=%v selectMode=%v, want true/true", e.selectionActive, e.modal.selectMode)
 	}
 	if e.selectionStart.Col != 0 || e.selectionEnd.Col != 4 {
 		t.Fatalf("selection = %d..%d, want 0..4", e.selectionStart.Col, e.selectionEnd.Col)
@@ -486,8 +486,8 @@ func TestFindCharHotkeyChainCreatesSelection(t *testing.T) {
 	if e.cursor.Col != 3 {
 		t.Fatalf("cursor col = %d, want 3", e.cursor.Col)
 	}
-	if !e.selectionActive || !e.selectMode {
-		t.Fatalf("selectionActive=%v selectMode=%v, want true/true", e.selectionActive, e.selectMode)
+	if !e.selectionActive || !e.modal.selectMode {
+		t.Fatalf("selectionActive=%v selectMode=%v, want true/true", e.selectionActive, e.modal.selectMode)
 	}
 	if e.selectionStart.Col != 0 || e.selectionEnd.Col != 4 {
 		t.Fatalf("selection = %d..%d, want 0..4", e.selectionStart.Col, e.selectionEnd.Col)
@@ -511,8 +511,8 @@ func TestChangeHotkeyChainEntersInsert(t *testing.T) {
 	if e.mode != ModeInsert {
 		t.Fatalf("mode = %v, want insert", e.mode)
 	}
-	if e.selectionActive || e.selectMode {
-		t.Fatalf("selectionActive=%v selectMode=%v, want false/false", e.selectionActive, e.selectMode)
+	if e.selectionActive || e.modal.selectMode {
+		t.Fatalf("selectionActive=%v selectMode=%v, want false/false", e.selectionActive, e.modal.selectMode)
 	}
 	if e.Content() != "bc" {
 		t.Fatalf("content = %q, want %q", e.Content(), "bc")

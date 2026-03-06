@@ -556,11 +556,11 @@ func (e *Editor) enterSearchMode(forward bool, fuzzy bool, regex bool) {
 	e.searchFuzzy = fuzzy
 	e.searchRegex = regex
 	if regex {
-		e.pendingKeys = "E"
+		e.modal.pendingKeys = "E"
 	} else if fuzzy {
-		e.pendingKeys = "F"
+		e.modal.pendingKeys = "F"
 	} else {
-		e.pendingKeys = "/"
+		e.modal.pendingKeys = "/"
 	}
 }
 

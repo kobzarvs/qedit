@@ -32,20 +32,20 @@ func (e *Editor) renderCommandline(s Screen, w, y int) int {
 	// Prepare right side: pending keys or last command (if not in search mode)
 	// Check if "copied" message should be shown (within 2 seconds)
 	const copiedMessageDuration = 2 * time.Second
-	showCopiedMessage := time.Since(e.ui.copiedMessageTime) < copiedMessageDuration && e.lastCommand == "y"
+	showCopiedMessage := time.Since(e.ui.copiedMessageTime) < copiedMessageDuration && e.modal.lastCommand == "y"
 	checkmarkPos := -1 // position of ✓ in rightRunes for green coloring
 
 	if rightText == "" {
-		if e.pendingKeys != "" {
+		if e.modal.pendingKeys != "" {
 			// Show pending keys while waiting for next key (e.g., "g", "f")
-			rightText = " " + e.pendingKeys + "_ "
+			rightText = " " + e.modal.pendingKeys + "_ "
 		} else if showCopiedMessage {
 			// Show "copied [✓] | y"
 			rightText = " copied [✓] | y "
 			checkmarkPos = 9 // position of ✓ in " copied [✓] | y "
-		} else if e.lastCommand != "" {
+		} else if e.modal.lastCommand != "" {
 			// Show last executed command (e.g., "gg", "fw")
-			rightText = " " + e.lastCommand + " "
+			rightText = " " + e.modal.lastCommand + " "
 		} else if e.ui.lastKeyCombo != "" {
 			// Fallback to last key combo
 			rightText = " " + e.ui.lastKeyCombo + " "

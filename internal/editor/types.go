@@ -480,18 +480,7 @@ type Editor struct {
 
 	// Helix-style state
 	clipboard       [][]rune // yanked text (lines)
-	pendingAction   string   // pending action waiting for char input (f/F/t/T/r)
-	selectMode      bool     // whether in visual/select mode
-	lastFindChar    rune     // last char used in f/F/t/T
-	lastFindForward bool     // direction of last find
-	lastFindTill    bool     // whether last find was till (t/T)
-	gotoMode        bool     // whether in goto mode (g prefix)
-	matchMode       bool     // whether in match mode (m prefix)
-	viewMode        bool     // whether in view mode (z prefix)
-	windowMode      bool     // whether in window mode (space-w prefix)
-	pendingKeys     string   // keys typed so far in a sequence (e.g., "g" waiting for second key)
-	lastCommand     string   // last executed command for display (e.g., "gg", "ge", "fw")
-	spaceMenuActive bool     // whether space menu is open
+	modal           editorModalState
 	keybindingsHelp keybindingsHelpState
 
 	// Terminal zoom state
