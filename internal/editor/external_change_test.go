@@ -119,10 +119,10 @@ func TestMergeExternalContentConflict(t *testing.T) {
 	if got := e.Content(); got != "alpha\nlocal\nremote\ncharlie\n" {
 		t.Fatalf("content=%q", got)
 	}
-	if len(e.conflictBlocks) != 1 {
-		t.Fatalf("conflict blocks=%d, want 1", len(e.conflictBlocks))
+	if len(e.conflicts.blocks) != 1 {
+		t.Fatalf("conflict blocks=%d, want 1", len(e.conflicts.blocks))
 	}
-	block := e.conflictBlocks[0]
+	block := e.conflicts.blocks[0]
 	if block.localStart != 1 || block.localEnd != 1 {
 		t.Fatalf("local range=%d..%d, want 1..1", block.localStart, block.localEnd)
 	}
@@ -159,7 +159,7 @@ func TestMergeExternalContentNoConflict(t *testing.T) {
 	if got := e.Content(); got != "alpha\nmerged\ncharlie\n" {
 		t.Fatalf("content=%q", got)
 	}
-	if len(e.conflictBlocks) != 0 {
+	if len(e.conflicts.blocks) != 0 {
 		t.Fatalf("expected no conflict blocks")
 	}
 }
@@ -179,8 +179,8 @@ func TestResolveConflictAcceptLocal(t *testing.T) {
 
 	e := newTestEditor()
 	e.replaceBuffer(cleaned, true)
-	e.conflictBlocks = blocks
-	e.conflictBlocksDirty = false
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
 	e.cursor = Cursor{Row: 1, Col: 0}
 
 	if !e.resolveConflictAtCursor(true) {
@@ -189,7 +189,7 @@ func TestResolveConflictAcceptLocal(t *testing.T) {
 	if got := e.Content(); got != "alpha\nlocal\ncharlie\n" {
 		t.Fatalf("content=%q", got)
 	}
-	if len(e.conflictBlocks) != 0 {
+	if len(e.conflicts.blocks) != 0 {
 		t.Fatalf("expected conflict blocks cleared")
 	}
 }
@@ -209,8 +209,8 @@ func TestResolveConflictRejectLocal(t *testing.T) {
 
 	e := newTestEditor()
 	e.replaceBuffer(cleaned, true)
-	e.conflictBlocks = blocks
-	e.conflictBlocksDirty = false
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
 	e.cursor = Cursor{Row: 1, Col: 0}
 
 	if !e.resolveConflictAtCursor(false) {
@@ -219,7 +219,7 @@ func TestResolveConflictRejectLocal(t *testing.T) {
 	if got := e.Content(); got != "alpha\nremote\ncharlie\n" {
 		t.Fatalf("content=%q", got)
 	}
-	if len(e.conflictBlocks) != 0 {
+	if len(e.conflicts.blocks) != 0 {
 		t.Fatalf("expected conflict blocks cleared")
 	}
 }

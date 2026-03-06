@@ -28,31 +28,31 @@ type conflictBlock struct {
 }
 
 func (e *Editor) resetConflictBlocks() {
-	e.conflictBlocks = nil
-	e.conflictBlocksDirty = true
+	e.conflicts.blocks = nil
+	e.conflicts.dirty = true
 }
 
 func (e *Editor) hasConflictBlocks() bool {
-	return len(e.conflictBlocks) > 0
+	return len(e.conflicts.blocks) > 0
 }
 
 func (e *Editor) markConflictBlocksDirty(startRow, endRow int) {
-	if len(e.conflictBlocks) == 0 {
+	if len(e.conflicts.blocks) == 0 {
 		return
 	}
 	if startRow > endRow {
 		startRow, endRow = endRow, startRow
 	}
-	for _, block := range e.conflictBlocks {
+	for _, block := range e.conflicts.blocks {
 		if endRow >= block.start && startRow <= block.end {
-			e.conflictBlocksDirty = true
+			e.conflicts.dirty = true
 			return
 		}
 	}
 }
 
 func (e *Editor) adjustConflictBlocksForEdit(startRow, oldEndRow, newEndRow int) {
-	if len(e.conflictBlocks) == 0 {
+	if len(e.conflicts.blocks) == 0 {
 		return
 	}
 	editStart := startRow
@@ -64,8 +64,8 @@ func (e *Editor) adjustConflictBlocksForEdit(startRow, oldEndRow, newEndRow int)
 	if delta == 0 && (editEnd < editStart || editStart > editEnd) {
 		return
 	}
-	updated := make([]conflictBlock, 0, len(e.conflictBlocks))
-	for _, block := range e.conflictBlocks {
+	updated := make([]conflictBlock, 0, len(e.conflicts.blocks))
+	for _, block := range e.conflicts.blocks {
 		if editEnd < block.start {
 			if delta != 0 {
 				shiftBlock(&block, delta)
@@ -78,20 +78,20 @@ func (e *Editor) adjustConflictBlocksForEdit(startRow, oldEndRow, newEndRow int)
 			continue
 		}
 	}
-	e.conflictBlocks = updated
-	if len(e.conflictBlocks) == 0 && e.mode == ModeMerge {
+	e.conflicts.blocks = updated
+	if len(e.conflicts.blocks) == 0 && e.mode == ModeMerge {
 		e.mode = ModeNormal
 	}
 }
 
 func (e *Editor) ensureConflictBlocks() {
-	if !e.conflictBlocksDirty {
+	if !e.conflicts.dirty {
 		return
 	}
 	lineCount := e.LineCount()
 	if lineCount == 0 {
-		e.conflictBlocks = nil
-		e.conflictBlocksDirty = false
+		e.conflicts.blocks = nil
+		e.conflicts.dirty = false
 		return
 	}
 	blocks := make([]conflictBlock, 0, 1)
@@ -159,21 +159,21 @@ func (e *Editor) ensureConflictBlocks() {
 			}
 		}
 	}
-	e.conflictBlocks = blocks
-	e.conflictBlocksDirty = false
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
 }
 
 func (e *Editor) conflictLineInfo(lineIdx int) (conflictLineKind, *conflictBlock) {
-	if len(e.conflictBlocks) == 0 {
+	if len(e.conflicts.blocks) == 0 {
 		return conflictNone, nil
 	}
-	idx := sort.Search(len(e.conflictBlocks), func(i int) bool {
-		return e.conflictBlocks[i].start > lineIdx
+	idx := sort.Search(len(e.conflicts.blocks), func(i int) bool {
+		return e.conflicts.blocks[i].start > lineIdx
 	}) - 1
 	if idx < 0 {
 		return conflictNone, nil
 	}
-	block := &e.conflictBlocks[idx]
+	block := &e.conflicts.blocks[idx]
 	if lineIdx < block.start || lineIdx > block.end {
 		return conflictNone, nil
 	}
@@ -187,16 +187,16 @@ func (e *Editor) conflictLineInfo(lineIdx int) (conflictLineKind, *conflictBlock
 }
 
 func (e *Editor) conflictBlockIndexAtRow(lineIdx int) (int, conflictLineKind) {
-	if len(e.conflictBlocks) == 0 {
+	if len(e.conflicts.blocks) == 0 {
 		return -1, conflictNone
 	}
-	idx := sort.Search(len(e.conflictBlocks), func(i int) bool {
-		return e.conflictBlocks[i].start > lineIdx
+	idx := sort.Search(len(e.conflicts.blocks), func(i int) bool {
+		return e.conflicts.blocks[i].start > lineIdx
 	}) - 1
 	if idx < 0 {
 		return -1, conflictNone
 	}
-	block := &e.conflictBlocks[idx]
+	block := &e.conflicts.blocks[idx]
 	if lineIdx < block.start || lineIdx > block.end {
 		return -1, conflictNone
 	}
@@ -290,7 +290,7 @@ func shiftBlock(block *conflictBlock, delta int) {
 func (e *Editor) conflictLineOffsets(row int) (int, int) {
 	localBefore := 0
 	remoteBefore := 0
-	for _, block := range e.conflictBlocks {
+	for _, block := range e.conflicts.blocks {
 		if block.localStart >= 0 {
 			if row > block.localEnd {
 				localBefore += block.localEnd - block.localStart + 1

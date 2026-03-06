@@ -40,7 +40,7 @@ func (e *Editor) resolveConflictAtCursor(accept bool) bool {
 	if idx < 0 {
 		return false
 	}
-	block := e.conflictBlocks[idx]
+	block := e.conflicts.blocks[idx]
 	deleteStart := -1
 	deleteEnd := -1
 	if kind == conflictLocal {
@@ -67,8 +67,8 @@ func (e *Editor) resolveConflictAtCursor(accept bool) bool {
 		deletedLines = e.deleteConflictLines(deleteStart, deleteEnd)
 	}
 	e.removeConflictBlock(idx, deleteEnd, deletedLines)
-	e.conflictBlocksDirty = false
-	if len(e.conflictBlocks) == 0 && e.mode == ModeMerge {
+	e.conflicts.dirty = false
+	if len(e.conflicts.blocks) == 0 && e.mode == ModeMerge {
 		e.mode = ModeNormal
 	}
 	return true
@@ -104,15 +104,15 @@ func (e *Editor) deleteConflictLines(startLine, endLine int) int {
 }
 
 func (e *Editor) removeConflictBlock(idx int, deleteEnd, deletedLines int) {
-	if idx < 0 || idx >= len(e.conflictBlocks) {
+	if idx < 0 || idx >= len(e.conflicts.blocks) {
 		return
 	}
-	e.conflictBlocks = append(e.conflictBlocks[:idx], e.conflictBlocks[idx+1:]...)
+	e.conflicts.blocks = append(e.conflicts.blocks[:idx], e.conflicts.blocks[idx+1:]...)
 	if deletedLines == 0 {
 		return
 	}
-	for i := idx; i < len(e.conflictBlocks); i++ {
-		block := &e.conflictBlocks[i]
+	for i := idx; i < len(e.conflicts.blocks); i++ {
+		block := &e.conflicts.blocks[i]
 		if block.start > deleteEnd {
 			shiftBlock(block, deletedLines)
 		}

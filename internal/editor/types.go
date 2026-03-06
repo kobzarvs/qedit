@@ -403,8 +403,6 @@ type Editor struct {
 	filename                     string
 	file                         editorFileState
 	dirty                        bool
-	conflictBlocks               []conflictBlock
-	conflictBlocksDirty          bool
 	keymap                       keymapSet
 	commandLine                  editorCommandLineState
 	searchHistoryPath            string // search history file path
@@ -461,6 +459,7 @@ type Editor struct {
 	ui                           editorUIFeedbackState
 	git                          editorGitState
 	highlight                    editorHighlightState
+	conflicts                    editorConflictState
 	change                       editorChangeState
 	branchPicker                 branchPickerState
 	sidebar                      *Sidebar

@@ -210,8 +210,8 @@ func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 	if conflict {
 		cleaned, blocks := buildConflictView(merged)
 		e.replaceBuffer(cleaned, true)
-		e.conflictBlocks = blocks
-		e.conflictBlocksDirty = false
+		e.conflicts.blocks = blocks
+		e.conflicts.dirty = false
 		if e.mode == ModeNormal {
 			e.mode = ModeMerge
 		}

@@ -229,8 +229,8 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		highlight:           e.highlight,
 		changeTick:          e.change.tick,
 		lastEdit:            e.change.lastEdit,
-		conflictBlocks:      e.conflictBlocks,
-		conflictBlocksDirty: e.conflictBlocksDirty,
+		conflictBlocks:      e.conflicts.blocks,
+		conflictBlocksDirty: e.conflicts.dirty,
 		clipboard:           e.clipboard,
 		selectionScope:      e.selectionScope,
 	}
@@ -261,8 +261,10 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.highlight = bs.highlight
 	e.change.tick = bs.changeTick
 	e.change.lastEdit = bs.lastEdit
-	e.conflictBlocks = bs.conflictBlocks
-	e.conflictBlocksDirty = bs.conflictBlocksDirty
+	e.conflicts = editorConflictState{
+		blocks: bs.conflictBlocks,
+		dirty:  bs.conflictBlocksDirty,
+	}
 	e.clipboard = bs.clipboard
 	e.selectionScope = bs.selectionScope
 }
