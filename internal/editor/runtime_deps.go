@@ -2,10 +2,8 @@ package editor
 
 type editorRuntimeDeps struct {
 	systemClipboard Clipboard
-	formatter       Formatter
-	merger          Merger
 	terminalZoomer  TerminalZoomer
+	workspace       WorkspaceRuntime
 	persistence     PersistenceRuntime
-	fileStore       FileStore
 	languageRuntime LanguageRuntime
 }

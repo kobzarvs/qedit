@@ -63,6 +63,22 @@ type LanguageRuntime interface {
 	HighlightRange(path string, startLine, endLine int) map[int][]HighlightSpan
 }
 
+// WorkspaceRuntime provides file, merge, and formatting operations.
+type WorkspaceRuntime interface {
+	HasFileStore() bool
+	HasFormatter() bool
+	HasMerger() bool
+	Abs(path string) (string, error)
+	HomeDir() (string, error)
+	Read(path string) ([]byte, error)
+	ReadDir(path string) ([]DirEntry, error)
+	Write(path string, data []byte) error
+	Stat(path string) (FileMetadata, error)
+	IsNotExist(err error) bool
+	FormatGo(src string) (string, error)
+	Merge(base, local, remote string) (string, bool, error)
+}
+
 // PersistenceRuntime provides editor state persistence.
 type PersistenceRuntime interface {
 	HasSessionState() bool
@@ -82,9 +98,10 @@ type PersistenceRuntime interface {
 // RuntimeServices groups external editor runtime dependencies.
 type RuntimeServices struct {
 	SystemClipboard    Clipboard
+	TerminalZoomer     TerminalZoomer
+	WorkspaceRuntime   WorkspaceRuntime
 	Formatter          Formatter
 	Merger             Merger
-	TerminalZoomer     TerminalZoomer
 	PersistenceRuntime PersistenceRuntime
 	SessionStore       SessionStore
 	HistoryStore       HistoryStore
@@ -124,12 +141,101 @@ type storeBackedPersistenceRuntime struct {
 	undoStore    UndoStore
 }
 
+type storeBackedWorkspaceRuntime struct {
+	fileStore FileStore
+	formatter Formatter
+	merger    Merger
+}
+
+func NewStoreBackedWorkspaceRuntime(fileStore FileStore, formatter Formatter, merger Merger) WorkspaceRuntime {
+	return &storeBackedWorkspaceRuntime{
+		fileStore: fileStore,
+		formatter: formatter,
+		merger:    merger,
+	}
+}
+
 func NewStoreBackedPersistenceRuntime(sessionStore SessionStore, historyStore HistoryStore, undoStore UndoStore) PersistenceRuntime {
 	return &storeBackedPersistenceRuntime{
 		sessionStore: sessionStore,
 		historyStore: historyStore,
 		undoStore:    undoStore,
 	}
+}
+
+func (r *storeBackedWorkspaceRuntime) HasFileStore() bool {
+	return r != nil && r.fileStore != nil
+}
+
+func (r *storeBackedWorkspaceRuntime) HasFormatter() bool {
+	return r != nil && r.formatter != nil
+}
+
+func (r *storeBackedWorkspaceRuntime) HasMerger() bool {
+	return r != nil && r.merger != nil
+}
+
+func (r *storeBackedWorkspaceRuntime) Abs(path string) (string, error) {
+	if r == nil || r.fileStore == nil {
+		return path, nil
+	}
+	return r.fileStore.Abs(path)
+}
+
+func (r *storeBackedWorkspaceRuntime) HomeDir() (string, error) {
+	if r == nil || r.fileStore == nil {
+		return "", nil
+	}
+	return r.fileStore.HomeDir()
+}
+
+func (r *storeBackedWorkspaceRuntime) Read(path string) ([]byte, error) {
+	if r == nil || r.fileStore == nil {
+		return nil, nil
+	}
+	return r.fileStore.Read(path)
+}
+
+func (r *storeBackedWorkspaceRuntime) ReadDir(path string) ([]DirEntry, error) {
+	if r == nil || r.fileStore == nil {
+		return nil, nil
+	}
+	return r.fileStore.ReadDir(path)
+}
+
+func (r *storeBackedWorkspaceRuntime) Write(path string, data []byte) error {
+	if r == nil || r.fileStore == nil {
+		return nil
+	}
+	return r.fileStore.Write(path, data)
+}
+
+func (r *storeBackedWorkspaceRuntime) Stat(path string) (FileMetadata, error) {
+	if r == nil || r.fileStore == nil {
+		return FileMetadata{}, nil
+	}
+	return r.fileStore.Stat(path)
+}
+
+func (r *storeBackedWorkspaceRuntime) IsNotExist(err error) bool {
+	if r == nil || r.fileStore == nil {
+		return false
+	}
+	return r.fileStore.IsNotExist(err)
+}
+
+func (r *storeBackedWorkspaceRuntime) FormatGo(src string) (string, error) {
+	if r == nil || r.formatter == nil {
+		return "", nil
+	}
+	return r.formatter.FormatGo(src)
+}
+
+func (r *storeBackedWorkspaceRuntime) Merge(base, local, remote string) (string, bool, error) {
+	if r == nil || r.merger == nil {
+		return "", false, nil
+	}
+	return r.merger.Merge(base, local, remote)
 }
 
 func (r *storeBackedPersistenceRuntime) GetFileState(path string) (FileState, bool) {
@@ -216,20 +322,33 @@ func (e *Editor) ensureStoreBackedPersistenceRuntime() *storeBackedPersistenceRu
 	return runtime
 }
 
+func (e *Editor) ensureStoreBackedWorkspaceRuntime() *storeBackedWorkspaceRuntime {
+	if runtime, ok := e.runtime.workspace.(*storeBackedWorkspaceRuntime); ok {
+		return runtime
+	}
+	runtime := &storeBackedWorkspaceRuntime{}
+	e.runtime.workspace = runtime
+	return runtime
+}
+
 func (e *Editor) SetClipboard(c Clipboard) {
 	e.runtime.systemClipboard = c
 }
 
 func (e *Editor) SetFormatter(f Formatter) {
-	e.runtime.formatter = f
+	e.ensureStoreBackedWorkspaceRuntime().formatter = f
 }
 
 func (e *Editor) SetMerger(m Merger) {
-	e.runtime.merger = m
+	e.ensureStoreBackedWorkspaceRuntime().merger = m
 }
 
 func (e *Editor) SetTerminalZoomer(z TerminalZoomer) {
 	e.runtime.terminalZoomer = z
+}
+
+func (e *Editor) SetWorkspaceRuntime(r WorkspaceRuntime) {
+	e.runtime.workspace = r
 }
 
 func (e *Editor) SetPersistenceRuntime(r PersistenceRuntime) {
@@ -245,7 +364,7 @@ func (e *Editor) SetHistoryStore(s HistoryStore) {
 }
 
 func (e *Editor) SetFileStore(s FileStore) {
-	e.runtime.fileStore = s
+	e.ensureStoreBackedWorkspaceRuntime().fileStore = s
 	if e.buffers != nil {
 		e.buffers.SetPathNormalizer(e.normalizedPath)
 	}
@@ -263,11 +382,14 @@ func (e *Editor) ApplyRuntimeServices(services RuntimeServices) {
 	if services.SystemClipboard != nil {
 		e.runtime.systemClipboard = services.SystemClipboard
 	}
+	if services.WorkspaceRuntime != nil {
+		e.runtime.workspace = services.WorkspaceRuntime
+	}
 	if services.Formatter != nil {
-		e.runtime.formatter = services.Formatter
+		e.ensureStoreBackedWorkspaceRuntime().formatter = services.Formatter
 	}
 	if services.Merger != nil {
-		e.runtime.merger = services.Merger
+		e.ensureStoreBackedWorkspaceRuntime().merger = services.Merger
 	}
 	if services.TerminalZoomer != nil {
 		e.runtime.terminalZoomer = services.TerminalZoomer
@@ -282,7 +404,7 @@ func (e *Editor) ApplyRuntimeServices(services RuntimeServices) {
 		e.ensureStoreBackedPersistenceRuntime().historyStore = services.HistoryStore
 	}
 	if services.FileStore != nil {
-		e.runtime.fileStore = services.FileStore
+		e.ensureStoreBackedWorkspaceRuntime().fileStore = services.FileStore
 		if e.buffers != nil {
 			e.buffers.SetPathNormalizer(e.normalizedPath)
 		}

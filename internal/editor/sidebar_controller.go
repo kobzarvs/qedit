@@ -311,13 +311,13 @@ func (e *Editor) openSidebarFileTree(path string) {
 	if startDir == "" {
 		startDir = "."
 	}
-	if e.runtime.fileStore != nil {
-		if info, err := e.runtime.fileStore.Stat(startDir); err == nil && !info.IsDir {
+	if e.runtime.workspace != nil && e.runtime.workspace.HasFileStore() {
+		if info, err := e.runtime.workspace.Stat(startDir); err == nil && !info.IsDir {
 			startDir = filepath.Dir(startDir)
 		}
 	}
 
-	content := NewSidebarFileTreeContent(e.runtime.fileStore, startDir, e.fileTree.showHidden, e.fileTree.showIgnored)
+	content := NewSidebarFileTreeContent(e.runtime.workspace, startDir, e.fileTree.showHidden, e.fileTree.showIgnored)
 	e.sidebar.Open(content)
 }
 
@@ -423,7 +423,7 @@ func (e *Editor) ShowSidebarWorktrees(worktrees []WorktreeInfo, activePath strin
 		content.UpdateWorktrees(worktrees, activePath)
 		e.sidebar.SetContent(content)
 	} else {
-		content := NewSidebarWorktreesContent(e.runtime.fileStore, worktrees, activePath)
+		content := NewSidebarWorktreesContent(e.runtime.workspace, worktrees, activePath)
 		e.sidebar.SetContent(content)
 	}
 	e.sidebar.Visible = true

@@ -1,11 +1,11 @@
 package editor
 
 func (e *Editor) OpenFile(path string) error {
-	if e.runtime.fileStore == nil {
+	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
 		return errFileStoreUnavailable()
 	}
 	absPath := path
-	if abs, err := e.runtime.fileStore.Abs(path); err == nil {
+	if abs, err := e.runtime.workspace.Abs(path); err == nil {
 		absPath = abs
 	}
 
@@ -26,7 +26,7 @@ func (e *Editor) OpenFile(path string) error {
 	}
 
 	// Load the new file
-	data, err := e.runtime.fileStore.Read(absPath)
+	data, err := e.runtime.workspace.Read(absPath)
 	if err != nil {
 		return err
 	}

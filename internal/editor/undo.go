@@ -261,8 +261,8 @@ func (e *Editor) SaveUndoHistory() error {
 
 	// Get file mtime for validation
 	var mtime int64
-	if e.runtime.fileStore != nil {
-		if info, err := e.runtime.fileStore.Stat(e.document.filename); err == nil {
+	if e.runtime.workspace != nil && e.runtime.workspace.HasFileStore() {
+		if info, err := e.runtime.workspace.Stat(e.document.filename); err == nil {
 			mtime = info.ModTime.UnixNano()
 		}
 	}
@@ -309,8 +309,8 @@ func (e *Editor) LoadUndoHistory() error {
 
 	// Get current file mtime for validation
 	var currentMtime int64
-	if e.runtime.fileStore != nil {
-		if info, err := e.runtime.fileStore.Stat(e.document.filename); err == nil {
+	if e.runtime.workspace != nil && e.runtime.workspace.HasFileStore() {
+		if info, err := e.runtime.workspace.Stat(e.document.filename); err == nil {
 			currentMtime = info.ModTime.UnixNano()
 		}
 	}

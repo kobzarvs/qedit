@@ -50,14 +50,16 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 
 	ed.SetStyles(ui.StylesFromConfig(*cfg))
 	runtimeServices := editor.RuntimeServices{
-		Formatter: integrations.GoFormatter{},
-		Merger:    integrations.GitMerger{},
+		WorkspaceRuntime: editor.NewStoreBackedWorkspaceRuntime(
+			fileStore,
+			integrations.GoFormatter{},
+			integrations.GitMerger{},
+		),
 		PersistenceRuntime: editor.NewStoreBackedPersistenceRuntime(
 			sessionStore,
 			integrations.FileHistoryStore{},
 			integrations.FileUndoStore{},
 		),
-		FileStore:       fileStore,
 		LanguageRuntime: languageRuntime,
 	}
 	if runtime.GOOS == "darwin" {

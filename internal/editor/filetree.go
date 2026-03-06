@@ -185,8 +185,8 @@ func (e *Editor) isBinaryPath(path string) bool {
 }
 
 func (e *Editor) readFilePreview(path string) ([]byte, error) {
-	if e.runtime.fileStore == nil {
+	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
 		return nil, errFileStoreUnavailable()
 	}
-	return e.runtime.fileStore.Read(path)
+	return e.runtime.workspace.Read(path)
 }

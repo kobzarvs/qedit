@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// normalizedPath resolves a path through the runtime file store when available.
+// normalizedPath resolves a path through the runtime workspace when available.
 func (e *Editor) normalizedPath(path string) string {
-	return normalizedPathWithStore(e.runtime.fileStore, path)
+	return normalizedPathWithStore(e.runtime.workspace, path)
 }
 
 func normalizedPathWithStore(fs FileStore, path string) string {
