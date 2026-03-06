@@ -22,6 +22,21 @@ func (realTestFileStore) Read(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (realTestFileStore) ReadDir(path string) ([]DirEntry, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, DirEntry{
+			Name:  entry.Name(),
+			IsDir: entry.IsDir(),
+		})
+	}
+	return result, nil
+}
+
 func (realTestFileStore) Write(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }

@@ -46,10 +46,16 @@ type FileMetadata struct {
 	IsDir   bool
 }
 
-// FileStore provides current-buffer filesystem operations.
+type DirEntry struct {
+	Name  string
+	IsDir bool
+}
+
+// FileStore provides editor filesystem operations.
 type FileStore interface {
 	Abs(path string) (string, error)
 	Read(path string) ([]byte, error)
+	ReadDir(path string) ([]DirEntry, error)
 	Write(path string, data []byte) error
 	Stat(path string) (FileMetadata, error)
 	IsNotExist(err error) bool

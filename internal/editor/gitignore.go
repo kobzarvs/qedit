@@ -1,8 +1,6 @@
 package editor
 
 import (
-	"bufio"
-	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -18,21 +16,22 @@ type gitignorePattern struct {
 	regex     *regexp.Regexp
 }
 
-func findGitRoot(dir string) string {
+func findGitRoot(fs FileStore, dir string) string {
+	if fs == nil {
+		return ""
+	}
 	start := dir
-	info, err := os.Stat(start)
+	info, err := fs.Stat(start)
 	if err != nil {
 		return ""
 	}
-	if !info.IsDir() {
+	if !info.IsDir {
 		start = filepath.Dir(start)
 	}
 	for {
 		gitPath := filepath.Join(start, ".git")
-		if info, err := os.Stat(gitPath); err == nil {
-			if info.IsDir() || info.Mode().IsRegular() {
-				return start
-			}
+		if _, err := fs.Stat(gitPath); err == nil {
+			return start
 		}
 		parent := filepath.Dir(start)
 		if parent == start {
@@ -43,21 +42,19 @@ func findGitRoot(dir string) string {
 	return ""
 }
 
-func loadGitignore(gitRoot string) []gitignorePattern {
-	if gitRoot == "" {
+func loadGitignore(fs FileStore, gitRoot string) []gitignorePattern {
+	if fs == nil || gitRoot == "" {
 		return nil
 	}
 	filePath := filepath.Join(gitRoot, ".gitignore")
-	f, err := os.Open(filePath)
+	data, err := fs.Read(filePath)
 	if err != nil {
 		return nil
 	}
-	defer func() { _ = f.Close() }()
 
 	var patterns []gitignorePattern
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for _, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}

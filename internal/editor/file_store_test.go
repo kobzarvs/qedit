@@ -1,12 +1,18 @@
 package editor
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
+
+var errTestFileStoreNotExist = errors.New("file store entry not found")
 
 type testFileStore struct {
 	absPath        string
 	absPaths       map[string]string
 	readData       []byte
 	readDataByPath map[string][]byte
+	dirEntries     map[string][]DirEntry
 	writtenPath    string
 	writtenData    []byte
 	stats          map[string]FileMetadata
@@ -29,6 +35,14 @@ func (s *testFileStore) Read(path string) ([]byte, error) {
 	return append([]byte(nil), s.readData...), nil
 }
 
+func (s *testFileStore) ReadDir(path string) ([]DirEntry, error) {
+	entries, ok := s.dirEntries[path]
+	if !ok {
+		return nil, errTestFileStoreNotExist
+	}
+	return append([]DirEntry(nil), entries...), nil
+}
+
 func (s *testFileStore) Write(path string, data []byte) error {
 	s.writtenPath = path
 	s.writtenData = append([]byte(nil), data...)
@@ -39,11 +53,11 @@ func (s *testFileStore) Stat(path string) (FileMetadata, error) {
 	if meta, ok := s.stats[path]; ok {
 		return meta, nil
 	}
-	return FileMetadata{}, nil
+	return FileMetadata{}, errTestFileStoreNotExist
 }
 
 func (s *testFileStore) IsNotExist(err error) bool {
-	return false
+	return errors.Is(err, errTestFileStoreNotExist)
 }
 
 func TestSaveUsesRuntimeFileStore(t *testing.T) {
@@ -119,5 +133,37 @@ func TestIsBinaryPathUsesRuntimeFileStore(t *testing.T) {
 
 	if !e.isBinaryPath("/tmp/file.bin") {
 		t.Fatalf("isBinaryPath = false, want true")
+	}
+}
+
+func TestSidebarFileTreeContentUsesRuntimeFileStoreReadDir(t *testing.T) {
+	store := &testFileStore{
+		absPaths: map[string]string{
+			".":   "/project",
+			"rel": "/project",
+		},
+		dirEntries: map[string][]DirEntry{
+			"/project": {
+				{Name: "b.txt"},
+				{Name: "a", IsDir: true},
+			},
+		},
+		stats: map[string]FileMetadata{
+			"rel":      {IsDir: true},
+			"/project": {IsDir: true},
+		},
+	}
+
+	content := NewSidebarFileTreeContent(store, "rel", false, false)
+
+	items := content.Items()
+	if len(items) != 2 {
+		t.Fatalf("items len = %d, want 2", len(items))
+	}
+	if items[0].Label != "a" || !items[0].IsDir {
+		t.Fatalf("first item = %#v, want directory %q", items[0], "a")
+	}
+	if items[1].Label != "b.txt" || items[1].IsDir {
+		t.Fatalf("second item = %#v, want file %q", items[1], "b.txt")
 	}
 }

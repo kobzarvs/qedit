@@ -1,8 +1,7 @@
 package editor
 
 import (
-	"io/fs"
-	"os"
+	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 // SidebarFileTreeContent implements SidebarContent for file tree navigation.
 type SidebarFileTreeContent struct {
+	fs             FileStore
 	dir            string
 	projectRoot    string
 	showHidden     bool
@@ -24,29 +24,26 @@ type SidebarFileTreeContent struct {
 	searchPrevPath string
 }
 
-func NewSidebarFileTreeContent(dir string, showHidden, showIgnored bool) *SidebarFileTreeContent {
+func NewSidebarFileTreeContent(fs FileStore, dir string, showHidden, showIgnored bool) *SidebarFileTreeContent {
 	c := &SidebarFileTreeContent{
+		fs:          fs,
 		dir:         dir,
 		showHidden:  showHidden,
 		showIgnored: showIgnored,
 		index:       0,
 	}
-	c.gitRoot = findGitRoot(dir)
+	c.gitRoot = findGitRoot(fs, dir)
 	if c.gitRoot != "" {
-		if absRoot, err := filepath.Abs(c.gitRoot); err == nil {
-			c.gitRoot = absRoot
-		}
+		c.gitRoot = normalizedPathWithStore(fs, c.gitRoot)
 		c.projectRoot = c.gitRoot
-		c.ignorePatterns = loadGitignore(c.gitRoot)
-	} else if cwd, err := os.Getwd(); err == nil {
+		c.ignorePatterns = loadGitignore(fs, c.gitRoot)
+	} else if cwd := normalizedPathWithStore(fs, "."); cwd != "" {
 		c.projectRoot = cwd
 	} else {
 		c.projectRoot = dir
 	}
 	if c.projectRoot != "" {
-		if absRoot, err := filepath.Abs(c.projectRoot); err == nil {
-			c.projectRoot = absRoot
-		}
+		c.projectRoot = normalizedPathWithStore(fs, c.projectRoot)
 	}
 	_ = c.loadDir(dir)
 	return c
@@ -224,11 +221,8 @@ func (c *SidebarFileTreeContent) loadDir(dir string) error {
 	if dir == "" {
 		return nil
 	}
-	absDir, err := filepath.Abs(dir)
-	if err == nil {
-		dir = absDir
-	}
-	entries, err := os.ReadDir(dir)
+	dir = normalizedPathWithStore(c.fs, dir)
+	entries, err := c.readDir(dir)
 	if err != nil {
 		c.items = []SidebarItem{{Label: "Error: " + err.Error(), Available: false}}
 		c.index = 0
@@ -251,8 +245,8 @@ func (c *SidebarFileTreeContent) loadDir(dir string) error {
 	var dirs []SidebarItem
 	var files []SidebarItem
 	for _, entry := range entries {
-		name := entry.Name()
-		isDir := entry.IsDir()
+		name := entry.Name
+		isDir := entry.IsDir
 		fullPath := filepath.Join(dir, name)
 		if name == ".git" {
 			item := SidebarItem{
@@ -359,10 +353,7 @@ func (c *SidebarFileTreeContent) isWithinProject(path string) bool {
 	if c.projectRoot == "" {
 		return true
 	}
-	absPath, err := filepath.Abs(path)
-	if err == nil {
-		path = absPath
-	}
+	path = normalizedPathWithStore(c.fs, path)
 	rel, err := filepath.Rel(c.projectRoot, path)
 	if err != nil {
 		return false
@@ -508,22 +499,16 @@ func (c *SidebarFileTreeContent) loadSearchResults(preservePath string) {
 		return
 	}
 	var items []SidebarItem
-	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if path == root {
-			return nil
-		}
-		name := d.Name()
-		isDir := d.IsDir()
+	c.walkDir(root, func(path string, entry DirEntry) bool {
+		name := entry.Name
+		isDir := entry.IsDir
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			rel = path
 		}
 		if name == ".git" && isDir {
 			if !strings.Contains(strings.ToLower(rel), query) && !strings.Contains(strings.ToLower(name), query) {
-				return filepath.SkipDir
+				return true
 			}
 		}
 		isIgnored := false
@@ -542,17 +527,17 @@ func (c *SidebarFileTreeContent) loadSearchResults(preservePath string) {
 		}
 		if isIgnored && !c.showIgnored {
 			if isDir {
-				return filepath.SkipDir
+				return true
 			}
-			return nil
+			return false
 		}
 		nameLower := strings.ToLower(name)
 		relLower := strings.ToLower(rel)
 		if !strings.Contains(nameLower, query) && !strings.Contains(relLower, query) {
 			if name == ".git" && isDir {
-				return filepath.SkipDir
+				return true
 			}
-			return nil
+			return false
 		}
 		label := name
 		if isDir && !strings.HasSuffix(label, "/") {
@@ -569,12 +554,9 @@ func (c *SidebarFileTreeContent) loadSearchResults(preservePath string) {
 			MatchIndices: matchIndices,
 		})
 		if name == ".git" && isDir {
-			return filepath.SkipDir
+			return true
 		}
-		if isDir {
-			return nil
-		}
-		return nil
+		return false
 	})
 	sort.Slice(items, func(i, j int) bool {
 		return strings.ToLower(items[i].Label) < strings.ToLower(items[j].Label)
@@ -590,5 +572,26 @@ func (c *SidebarFileTreeContent) loadSearchResults(preservePath string) {
 	}
 	if c.index < 0 || c.index >= len(c.items) {
 		c.index = 0
+	}
+}
+
+func (c *SidebarFileTreeContent) readDir(path string) ([]DirEntry, error) {
+	if c.fs == nil {
+		return nil, errors.New("file store unavailable")
+	}
+	return c.fs.ReadDir(path)
+}
+
+func (c *SidebarFileTreeContent) walkDir(root string, visit func(path string, entry DirEntry) bool) {
+	entries, err := c.readDir(root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name)
+		skipDir := visit(path, entry)
+		if entry.IsDir && !skipDir {
+			c.walkDir(path, visit)
+		}
 	}
 }

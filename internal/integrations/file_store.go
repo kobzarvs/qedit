@@ -18,6 +18,21 @@ func (FileStore) Read(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+func (FileStore) ReadDir(path string) ([]editor.DirEntry, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]editor.DirEntry, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, editor.DirEntry{
+			Name:  entry.Name(),
+			IsDir: entry.IsDir(),
+		})
+	}
+	return result, nil
+}
+
 func (FileStore) Write(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }

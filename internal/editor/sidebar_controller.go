@@ -1,7 +1,6 @@
 package editor
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -295,18 +294,20 @@ func (e *Editor) openSidebarFileTree(path string) {
 	if startDir == "" {
 		if e.document.filename != "" {
 			startDir = filepath.Dir(e.document.filename)
-		} else if cwd, err := os.Getwd(); err == nil {
+		} else if cwd := e.normalizedPath("."); cwd != "" {
 			startDir = cwd
 		}
 	}
 	if startDir == "" {
 		startDir = "."
 	}
-	if info, err := os.Stat(startDir); err == nil && !info.IsDir() {
-		startDir = filepath.Dir(startDir)
+	if e.runtime.fileStore != nil {
+		if info, err := e.runtime.fileStore.Stat(startDir); err == nil && !info.IsDir {
+			startDir = filepath.Dir(startDir)
+		}
 	}
 
-	content := NewSidebarFileTreeContent(startDir, e.fileTree.showHidden, e.fileTree.showIgnored)
+	content := NewSidebarFileTreeContent(e.runtime.fileStore, startDir, e.fileTree.showHidden, e.fileTree.showIgnored)
 	e.sidebar.Open(content)
 }
 
