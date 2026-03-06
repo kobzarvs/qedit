@@ -4,9 +4,9 @@ func (e *Editor) exitCommandLine() {
 	switch e.mode {
 	case ModeCommand:
 		e.mode = ModeNormal
-		e.cmd = e.cmd[:0]
-		e.cmdCursor = 0
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:0]
+		e.commandLine.cursor = 0
+		e.commandLine.historyIndex = -1
 	case ModeSearch:
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
@@ -51,9 +51,9 @@ func (e *Editor) focusCommandLine() {
 		e.searchHistoryIndex = -1
 	}
 	e.mode = ModeCommand
-	e.cmd = e.cmd[:0]
-	e.cmdCursor = 0
-	e.cmdHistoryIndex = -1
+	e.commandLine.text = e.commandLine.text[:0]
+	e.commandLine.cursor = 0
+	e.commandLine.historyIndex = -1
 }
 
 type focusPane int

@@ -36,9 +36,12 @@ func New(opts Options) *Editor {
 		git: editorGitState{
 			branchSymbol: gitBranchSymbol,
 		},
-		highlight:         editorHighlightState{start: -1, end: -1},
-		fileTreePreview:   fileTreePreviewState{highlight: editorHighlightState{start: -1, end: -1}},
-		cmdHistoryPath:    opts.CmdHistoryPath,
+		highlight:       editorHighlightState{start: -1, end: -1},
+		fileTreePreview: fileTreePreviewState{highlight: editorHighlightState{start: -1, end: -1}},
+		commandLine: editorCommandLineState{
+			historyPath:  opts.CmdHistoryPath,
+			historyIndex: -1,
+		},
 		searchHistoryPath: opts.SearchHistoryPath,
 		runtime: editorRuntimeDeps{
 			sessionStore: opts.SessionStore,

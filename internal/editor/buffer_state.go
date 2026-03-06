@@ -40,7 +40,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.scrollX = 0
 	e.mode = ModeNormal
 	e.filename = absPath
-	e.cmd = e.cmd[:0]
+	e.commandLine.text = e.commandLine.text[:0]
 	e.statusMessage = ""
 	e.undo = nil
 	e.redo = nil

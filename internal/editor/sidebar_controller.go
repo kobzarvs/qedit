@@ -17,9 +17,9 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	if ev.Key() == KeyRune && ev.Rune() == ':' {
 		e.sidebar.Focused = false
 		e.mode = ModeCommand
-		e.cmd = e.cmd[:0]
-		e.cmdCursor = 0
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:0]
+		e.commandLine.cursor = 0
+		e.commandLine.historyIndex = -1
 		return false
 	}
 

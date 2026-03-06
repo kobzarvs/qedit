@@ -82,9 +82,9 @@ func (e *Editor) execAction(action string) bool {
 		e.mode = ModeNormal
 	case actionEnterCommand:
 		e.mode = ModeCommand
-		e.cmd = e.cmd[:0]
-		e.cmdCursor = 0
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:0]
+		e.commandLine.cursor = 0
+		e.commandLine.historyIndex = -1
 	case actionMergeMode:
 		return e.enterMergeMode()
 	case actionQuit:
@@ -153,8 +153,8 @@ func (e *Editor) execAction(action string) bool {
 		e.gotoLastLine()
 	case actionGotoLinePrompt:
 		e.mode = ModeCommand
-		e.cmd = []rune{}
-		e.cmdCursor = 0
+		e.commandLine.text = []rune{}
+		e.commandLine.cursor = 0
 		e.setStatus("goto line:")
 	case actionGotoFirstLine:
 		e.gotoFirstLine()

@@ -11,7 +11,7 @@ import (
 func TestRenderCommandlinePlacement(t *testing.T) {
 	e := newTestEditor("abc")
 	e.mode = ModeCommand
-	e.cmd = []rune("w")
+	e.commandLine.text = []rune("w")
 
 	s := tcell.NewSimulationScreen("UTF-8")
 	if err := s.Init(); err != nil {

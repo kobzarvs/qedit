@@ -9,57 +9,57 @@ import (
 func TestCommandModeEditingKeys(t *testing.T) {
 	e := newTestEditor("one")
 	e.mode = ModeCommand
-	e.cmd = []rune("hello world")
-	e.cmdCursor = 11
+	e.commandLine.text = []rune("hello world")
+	e.commandLine.cursor = 11
 
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlB, 0, 0)))
-	if e.cmdCursor != 10 {
-		t.Fatalf("ctrl+b cursor = %d, want 10", e.cmdCursor)
+	if e.commandLine.cursor != 10 {
+		t.Fatalf("ctrl+b cursor = %d, want 10", e.commandLine.cursor)
 	}
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlF, 0, 0)))
-	if e.cmdCursor != 11 {
-		t.Fatalf("ctrl+f cursor = %d, want 11", e.cmdCursor)
+	if e.commandLine.cursor != 11 {
+		t.Fatalf("ctrl+f cursor = %d, want 11", e.commandLine.cursor)
 	}
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyHome, 0, 0)))
-	if e.cmdCursor != 0 {
-		t.Fatalf("home cursor = %d, want 0", e.cmdCursor)
+	if e.commandLine.cursor != 0 {
+		t.Fatalf("home cursor = %d, want 0", e.commandLine.cursor)
 	}
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyEnd, 0, 0)))
-	if e.cmdCursor != len(e.cmd) {
-		t.Fatalf("end cursor = %d, want %d", e.cmdCursor, len(e.cmd))
+	if e.commandLine.cursor != len(e.commandLine.text) {
+		t.Fatalf("end cursor = %d, want %d", e.commandLine.cursor, len(e.commandLine.text))
 	}
 
-	e.cmdCursor = 5
+	e.commandLine.cursor = 5
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyBackspace, 0, 0)))
-	if string(e.cmd) != "hell world" {
-		t.Fatalf("backspace cmd = %q, want %q", string(e.cmd), "hell world")
+	if string(e.commandLine.text) != "hell world" {
+		t.Fatalf("backspace cmd = %q, want %q", string(e.commandLine.text), "hell world")
 	}
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyDelete, 0, 0)))
-	if string(e.cmd) != "hellworld" {
-		t.Fatalf("delete cmd = %q, want %q", string(e.cmd), "hellworld")
+	if string(e.commandLine.text) != "hellworld" {
+		t.Fatalf("delete cmd = %q, want %q", string(e.commandLine.text), "hellworld")
 	}
 
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlU, 0, 0)))
-	if len(e.cmd) != 0 || e.cmdCursor != 0 {
-		t.Fatalf("ctrl+u cmd=%q cursor=%d, want empty/0", string(e.cmd), e.cmdCursor)
+	if len(e.commandLine.text) != 0 || e.commandLine.cursor != 0 {
+		t.Fatalf("ctrl+u cmd=%q cursor=%d, want empty/0", string(e.commandLine.text), e.commandLine.cursor)
 	}
 
 	e.handleCommand(keyRune('a'))
 	e.handleCommand(keyRune('b'))
 	e.handleCommand(keyRune('c'))
-	e.cmdCursor = 3
+	e.commandLine.cursor = 3
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlW, 0, 0)))
-	if string(e.cmd) != "" {
-		t.Fatalf("ctrl+w cmd = %q, want empty", string(e.cmd))
+	if string(e.commandLine.text) != "" {
+		t.Fatalf("ctrl+w cmd = %q, want empty", string(e.commandLine.text))
 	}
 
 	e.handleCommand(keyRune('x'))
 	e.handleCommand(keyRune('y'))
 	e.handleCommand(keyRune('z'))
-	e.cmdCursor = 1
+	e.commandLine.cursor = 1
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlK, 0, 0)))
-	if string(e.cmd) != "x" {
-		t.Fatalf("ctrl+k cmd = %q, want %q", string(e.cmd), "x")
+	if string(e.commandLine.text) != "x" {
+		t.Fatalf("ctrl+k cmd = %q, want %q", string(e.commandLine.text), "x")
 	}
 }
 
@@ -86,31 +86,31 @@ func TestCommandModeHistoryAndExitKeys(t *testing.T) {
 
 	e.HandleKey(keyRune(':'))
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyUp, 0, 0)))
-	if string(e.cmd) != "ln rel" {
-		t.Fatalf("up history = %q, want %q", string(e.cmd), "ln rel")
+	if string(e.commandLine.text) != "ln rel" {
+		t.Fatalf("up history = %q, want %q", string(e.commandLine.text), "ln rel")
 	}
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, 0)))
-	if string(e.cmd) != "" {
-		t.Fatalf("down history = %q, want empty", string(e.cmd))
+	if string(e.commandLine.text) != "" {
+		t.Fatalf("down history = %q, want empty", string(e.commandLine.text))
 	}
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlP, 0, 0)))
-	if string(e.cmd) != "ln rel" {
-		t.Fatalf("ctrl+p history = %q, want %q", string(e.cmd), "ln rel")
+	if string(e.commandLine.text) != "ln rel" {
+		t.Fatalf("ctrl+p history = %q, want %q", string(e.commandLine.text), "ln rel")
 	}
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlN, 0, 0)))
-	if string(e.cmd) != "" {
-		t.Fatalf("ctrl+n history = %q, want empty", string(e.cmd))
+	if string(e.commandLine.text) != "" {
+		t.Fatalf("ctrl+n history = %q, want empty", string(e.commandLine.text))
 	}
 
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0)))
-	if e.mode != ModeNormal || len(e.cmd) != 0 {
-		t.Fatalf("esc exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.cmd))
+	if e.mode != ModeNormal || len(e.commandLine.text) != 0 {
+		t.Fatalf("esc exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.commandLine.text))
 	}
 
 	e.HandleKey(keyRune(':'))
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlC, 0, 0)))
-	if e.mode != ModeNormal || len(e.cmd) != 0 {
-		t.Fatalf("ctrl+c exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.cmd))
+	if e.mode != ModeNormal || len(e.commandLine.text) != 0 {
+		t.Fatalf("ctrl+c exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.commandLine.text))
 	}
 
 	e.HandleKey(keyRune(':'))
@@ -119,8 +119,8 @@ func TestCommandModeHistoryAndExitKeys(t *testing.T) {
 	e.HandleKey(keyRune('p'))
 	e.HandleKey(keyRune('e'))
 	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
-	if e.mode != ModeNormal || len(e.cmd) != 0 {
-		t.Fatalf("enter exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.cmd))
+	if e.mode != ModeNormal || len(e.commandLine.text) != 0 {
+		t.Fatalf("enter exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.commandLine.text))
 	}
 	if e.statusMessage == "" {
 		t.Fatalf("expected status for unknown command")
@@ -528,7 +528,7 @@ func TestGotoLinePromptHotkey(t *testing.T) {
 	if e.statusMessage != "goto line:" {
 		t.Fatalf("status = %q, want %q", e.statusMessage, "goto line:")
 	}
-	if len(e.cmd) != 0 || e.cmdCursor != 0 {
-		t.Fatalf("cmd=%q cursor=%d, want empty/0", string(e.cmd), e.cmdCursor)
+	if len(e.commandLine.text) != 0 || e.commandLine.cursor != 0 {
+		t.Fatalf("cmd=%q cursor=%d, want empty/0", string(e.commandLine.text), e.commandLine.cursor)
 	}
 }

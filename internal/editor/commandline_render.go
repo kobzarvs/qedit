@@ -24,9 +24,9 @@ func (e *Editor) renderCommandline(s Screen, w, y int) int {
 			rightText = " [no matches] "
 		}
 	} else if e.mode == ModeCommand {
-		cmdRunes = append([]rune{':'}, e.cmd...)
+		cmdRunes = append([]rune{':'}, e.commandLine.text...)
 	} else {
-		cmdRunes = e.cmd
+		cmdRunes = e.commandLine.text
 	}
 
 	// Prepare right side: pending keys or last command (if not in search mode)
@@ -72,7 +72,7 @@ func (e *Editor) renderCommandline(s Screen, w, y int) int {
 	// Calculate cursor position
 	var cursorX int
 	if e.mode == ModeCommand {
-		cursorX = e.cmdCursor + 1 // +1 for ':' prefix
+		cursorX = e.commandLine.cursor + 1 // +1 for ':' prefix
 	} else if e.mode == ModeSearch {
 		cursorX = e.searchCursor + 1 // +1 for '/' or '?' prefix
 	} else {

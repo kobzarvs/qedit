@@ -406,13 +406,8 @@ type Editor struct {
 	conflictBlocks               []conflictBlock
 	conflictBlocksDirty          bool
 	keymap                       keymapSet
-	cmd                          []rune
-	cmdCursor                    int      // cursor position within cmd
-	cmdHistory                   []string // command history
-	cmdHistoryIndex              int      // current position in history (-1 = not browsing)
-	cmdHistoryPrefix             string   // prefix for filtered history search
-	cmdHistoryPath               string   // command history file path
-	searchHistoryPath            string   // search history file path
+	commandLine                  editorCommandLineState
+	searchHistoryPath            string // search history file path
 	statusMessage                string
 	tabWidth                     int
 	viewHeight                   int

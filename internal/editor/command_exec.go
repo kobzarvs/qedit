@@ -307,9 +307,9 @@ func (e *Editor) resolveWorktreeTarget(root, target string) (string, error) {
 
 func (e *Editor) prefillCommand(text string) {
 	e.mode = ModeCommand
-	e.cmd = []rune(text)
-	e.cmdCursor = len(e.cmd)
-	e.cmdHistoryIndex = -1
+	e.commandLine.text = []rune(text)
+	e.commandLine.cursor = len(e.commandLine.text)
+	e.commandLine.historyIndex = -1
 	e.closeAutoComplete()
 }
 

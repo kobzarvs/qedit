@@ -11,19 +11,19 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 	case KeyEscape:
 		e.closeAutoComplete()
 		e.mode = ModeNormal
-		e.cmd = e.cmd[:0]
-		e.cmdCursor = 0
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:0]
+		e.commandLine.cursor = 0
+		e.commandLine.historyIndex = -1
 		return false
 	case KeyCtrlC:
 		e.closeAutoComplete()
 		e.mode = ModeNormal
-		e.cmd = e.cmd[:0]
-		e.cmdCursor = 0
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:0]
+		e.commandLine.cursor = 0
+		e.commandLine.historyIndex = -1
 		return false
 	case KeyTab:
-		prefix := string(e.cmd)
+		prefix := string(e.commandLine.text)
 		if !e.cmdAutoComplete.active {
 			e.cmdAutoComplete.items = filterCommands(prefix)
 			if len(e.cmdAutoComplete.items) == 0 {
@@ -61,32 +61,32 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 		return false
 	case KeyEnter:
 		e.closeAutoComplete()
-		cmd := strings.TrimSpace(string(e.cmd))
+		cmd := strings.TrimSpace(string(e.commandLine.text))
 		e.mode = ModeNormal
 		// Add to history if not empty and different from last
-		if cmd != "" && (len(e.cmdHistory) == 0 || e.cmdHistory[len(e.cmdHistory)-1] != cmd) {
-			e.cmdHistory = append(e.cmdHistory, cmd)
+		if cmd != "" && (len(e.commandLine.history) == 0 || e.commandLine.history[len(e.commandLine.history)-1] != cmd) {
+			e.commandLine.history = append(e.commandLine.history, cmd)
 			e.saveCmdHistory()
 		}
-		e.cmd = e.cmd[:0]
-		e.cmdCursor = 0
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:0]
+		e.commandLine.cursor = 0
+		e.commandLine.historyIndex = -1
 		return e.execCommand(cmd)
 	case KeyBackspace, KeyBackspace2:
 		e.closeAutoComplete()
-		if e.cmdCursor > 0 && len(e.cmd) > 0 {
+		if e.commandLine.cursor > 0 && len(e.commandLine.text) > 0 {
 			// Delete char before cursor
-			e.cmd = append(e.cmd[:e.cmdCursor-1], e.cmd[e.cmdCursor:]...)
-			e.cmdCursor--
-			e.cmdHistoryIndex = -1
+			e.commandLine.text = append(e.commandLine.text[:e.commandLine.cursor-1], e.commandLine.text[e.commandLine.cursor:]...)
+			e.commandLine.cursor--
+			e.commandLine.historyIndex = -1
 		}
 		return false
 	case KeyDelete:
 		e.closeAutoComplete()
-		if e.cmdCursor < len(e.cmd) {
+		if e.commandLine.cursor < len(e.commandLine.text) {
 			// Delete char at cursor
-			e.cmd = append(e.cmd[:e.cmdCursor], e.cmd[e.cmdCursor+1:]...)
-			e.cmdHistoryIndex = -1
+			e.commandLine.text = append(e.commandLine.text[:e.commandLine.cursor], e.commandLine.text[e.commandLine.cursor+1:]...)
+			e.commandLine.historyIndex = -1
 		}
 		return false
 	case KeyLeft, KeyCtrlB: // Ctrl+B = back (readline)
@@ -95,8 +95,8 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 			e.updateCmdFromAutocomplete()
 			return false
 		}
-		if e.cmdCursor > 0 {
-			e.cmdCursor--
+		if e.commandLine.cursor > 0 {
+			e.commandLine.cursor--
 		}
 		return false
 	case KeyRight, KeyCtrlF: // Ctrl+F = forward (readline)
@@ -105,15 +105,15 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 			e.updateCmdFromAutocomplete()
 			return false
 		}
-		if e.cmdCursor < len(e.cmd) {
-			e.cmdCursor++
+		if e.commandLine.cursor < len(e.commandLine.text) {
+			e.commandLine.cursor++
 		}
 		return false
 	case KeyHome, KeyCtrlA: // Ctrl+A = beginning of line
-		e.cmdCursor = 0
+		e.commandLine.cursor = 0
 		return false
 	case KeyEnd, KeyCtrlE: // Ctrl+E = end of line
-		e.cmdCursor = len(e.cmd)
+		e.commandLine.cursor = len(e.commandLine.text)
 		return false
 	case KeyUp, KeyCtrlP: // Ctrl+P = previous
 		if e.cmdAutoComplete.active {
@@ -132,35 +132,35 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 		e.cmdHistoryDown()
 		return false
 	case KeyCtrlU: // Ctrl+U = clear line
-		e.cmd = e.cmd[:0]
-		e.cmdCursor = 0
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:0]
+		e.commandLine.cursor = 0
+		e.commandLine.historyIndex = -1
 		return false
 	case KeyCtrlK: // Ctrl+K = kill to end of line
-		e.cmd = e.cmd[:e.cmdCursor]
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = e.commandLine.text[:e.commandLine.cursor]
+		e.commandLine.historyIndex = -1
 		return false
 	case KeyCtrlW: // Ctrl+W = delete word backward
-		if e.cmdCursor > 0 {
+		if e.commandLine.cursor > 0 {
 			// Find start of previous word
-			i := e.cmdCursor - 1
-			for i > 0 && e.cmd[i-1] == ' ' {
+			i := e.commandLine.cursor - 1
+			for i > 0 && e.commandLine.text[i-1] == ' ' {
 				i--
 			}
-			for i > 0 && e.cmd[i-1] != ' ' {
+			for i > 0 && e.commandLine.text[i-1] != ' ' {
 				i--
 			}
-			e.cmd = append(e.cmd[:i], e.cmd[e.cmdCursor:]...)
-			e.cmdCursor = i
-			e.cmdHistoryIndex = -1
+			e.commandLine.text = append(e.commandLine.text[:i], e.commandLine.text[e.commandLine.cursor:]...)
+			e.commandLine.cursor = i
+			e.commandLine.historyIndex = -1
 		}
 		return false
 	case KeyRune:
 		e.closeAutoComplete()
 		// Insert char at cursor position
-		e.cmd = append(e.cmd[:e.cmdCursor], append([]rune{ev.Rune()}, e.cmd[e.cmdCursor:]...)...)
-		e.cmdCursor++
-		e.cmdHistoryIndex = -1
+		e.commandLine.text = append(e.commandLine.text[:e.commandLine.cursor], append([]rune{ev.Rune()}, e.commandLine.text[e.commandLine.cursor:]...)...)
+		e.commandLine.cursor++
+		e.commandLine.historyIndex = -1
 		return false
 	}
 	return false
@@ -168,22 +168,22 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 
 // cmdHistoryUp navigates to older command in history
 func (e *Editor) cmdHistoryUp() {
-	if len(e.cmdHistory) == 0 {
+	if len(e.commandLine.history) == 0 {
 		return
 	}
 
 	// First time pressing up - save current prefix for filtering
-	if e.cmdHistoryIndex == -1 {
-		e.cmdHistoryPrefix = string(e.cmd)
-		e.cmdHistoryIndex = len(e.cmdHistory)
+	if e.commandLine.historyIndex == -1 {
+		e.commandLine.historyPrefix = string(e.commandLine.text)
+		e.commandLine.historyIndex = len(e.commandLine.history)
 	}
 
 	// Find previous matching command
-	for i := e.cmdHistoryIndex - 1; i >= 0; i-- {
-		if strings.HasPrefix(e.cmdHistory[i], e.cmdHistoryPrefix) {
-			e.cmdHistoryIndex = i
-			e.cmd = []rune(e.cmdHistory[i])
-			e.cmdCursor = len(e.cmd)
+	for i := e.commandLine.historyIndex - 1; i >= 0; i-- {
+		if strings.HasPrefix(e.commandLine.history[i], e.commandLine.historyPrefix) {
+			e.commandLine.historyIndex = i
+			e.commandLine.text = []rune(e.commandLine.history[i])
+			e.commandLine.cursor = len(e.commandLine.text)
 			return
 		}
 	}
@@ -191,29 +191,29 @@ func (e *Editor) cmdHistoryUp() {
 
 // cmdHistoryDown navigates to newer command in history
 func (e *Editor) cmdHistoryDown() {
-	if e.cmdHistoryIndex == -1 {
+	if e.commandLine.historyIndex == -1 {
 		return
 	}
 
 	// Find next matching command
-	for i := e.cmdHistoryIndex + 1; i < len(e.cmdHistory); i++ {
-		if strings.HasPrefix(e.cmdHistory[i], e.cmdHistoryPrefix) {
-			e.cmdHistoryIndex = i
-			e.cmd = []rune(e.cmdHistory[i])
-			e.cmdCursor = len(e.cmd)
+	for i := e.commandLine.historyIndex + 1; i < len(e.commandLine.history); i++ {
+		if strings.HasPrefix(e.commandLine.history[i], e.commandLine.historyPrefix) {
+			e.commandLine.historyIndex = i
+			e.commandLine.text = []rune(e.commandLine.history[i])
+			e.commandLine.cursor = len(e.commandLine.text)
 			return
 		}
 	}
 
 	// No more matches - restore original prefix
-	e.cmdHistoryIndex = -1
-	e.cmd = []rune(e.cmdHistoryPrefix)
-	e.cmdCursor = len(e.cmd)
+	e.commandLine.historyIndex = -1
+	e.commandLine.text = []rune(e.commandLine.historyPrefix)
+	e.commandLine.cursor = len(e.commandLine.text)
 }
 
 // LoadCmdHistory loads command history from file
 func (e *Editor) LoadCmdHistory() {
-	path := e.cmdHistoryPath
+	path := e.commandLine.historyPath
 	if path == "" {
 		return
 	}
@@ -224,14 +224,14 @@ func (e *Editor) LoadCmdHistory() {
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		if line != "" {
-			e.cmdHistory = append(e.cmdHistory, line)
+			e.commandLine.history = append(e.commandLine.history, line)
 		}
 	}
 }
 
 // saveCmdHistory saves command history to file
 func (e *Editor) saveCmdHistory() {
-	path := e.cmdHistoryPath
+	path := e.commandLine.historyPath
 	if path == "" {
 		return
 	}
@@ -241,7 +241,7 @@ func (e *Editor) saveCmdHistory() {
 		return
 	}
 	// Keep only last 1000 commands
-	history := e.cmdHistory
+	history := e.commandLine.history
 	if len(history) > 1000 {
 		history = history[len(history)-1000:]
 	}
@@ -431,8 +431,8 @@ func (e *Editor) updateCmdFromAutocomplete() {
 		return
 	}
 	selected := e.cmdAutoComplete.items[e.cmdAutoComplete.index]
-	e.cmd = []rune(commandInsertText(selected.Name))
-	e.cmdCursor = len(e.cmd)
+	e.commandLine.text = []rune(commandInsertText(selected.Name))
+	e.commandLine.cursor = len(e.commandLine.text)
 }
 
 func commandInsertText(name string) string {
