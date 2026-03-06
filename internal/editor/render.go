@@ -81,10 +81,10 @@ func (e *Editor) Render(s Screen) {
 	e.renderScrollIndicator(s, w, viewHeight)
 
 	var cx, cy int
-	if statusY >= 0 && !e.zoomPendingRestore {
+	if statusY >= 0 && !e.zoom.pendingRestore {
 		e.renderStatusline(s, w, statusY, showTopMessage)
 	}
-	if cmdY >= 0 && !e.zoomPendingRestore {
+	if cmdY >= 0 && !e.zoom.pendingRestore {
 		cmdCursor := e.renderCommandline(s, w, cmdY)
 		if e.mode == ModeCommand || e.mode == ModeSearch {
 			cx = cmdCursor

@@ -495,10 +495,7 @@ type Editor struct {
 	keybindingsHelp keybindingsHelpState
 
 	// Terminal zoom state
-	zoomPendingRestore bool // true = waiting for space to restore zoom
-	zoomAnimating      bool // true = zoom animation in progress, block new zooms
-	zoomSavedScroll    int  // original scroll (vertical) before zoom
-	zoomSavedScrollX   int  // original scrollX before zoom
+	zoom editorZoomState
 
 	// Selection scope (expand/shrink)
 	selectionScopeStack []NodeRange // stack of selection scopes for shrinking

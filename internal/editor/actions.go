@@ -273,14 +273,14 @@ func (e *Editor) execAction(action string) bool {
 
 	// Terminal zoom
 	case actionTerminalZoomIn:
-		if e.zoomPendingRestore {
+		if e.zoom.pendingRestore {
 			return false // already zoomed, ignore
 		}
 		// Save current scroll positions for restore
-		e.zoomSavedScroll = e.scroll
-		e.zoomSavedScrollX = e.scrollX
+		e.zoom.savedScroll = e.scroll
+		e.zoom.savedScrollX = e.scrollX
 		e.zoomWithAnimation(true, 20) // zoom in with scroll animation
-		e.zoomPendingRestore = true
+		e.zoom.pendingRestore = true
 		return false
 
 	// Selection scope
@@ -722,11 +722,11 @@ func (e *Editor) sendTerminalZoomStep(zoomIn bool) {
 // zoomWithAnimation performs zoom with synchronized scroll animation.
 // For zoom in: scrolls to center cursor. For zoom out: scrolls back to saved position.
 func (e *Editor) zoomWithAnimation(zoomIn bool, steps int) {
-	if e.zoomAnimating {
+	if e.zoom.animating {
 		return // already animating, ignore
 	}
-	e.zoomAnimating = true
-	defer func() { e.zoomAnimating = false }()
+	e.zoom.animating = true
+	defer func() { e.zoom.animating = false }()
 
 	// Calculate start and target scroll positions
 	startScroll := e.scroll
@@ -755,8 +755,8 @@ func (e *Editor) zoomWithAnimation(zoomIn bool, steps int) {
 		}
 	} else {
 		// Target: restore saved scroll positions
-		targetScroll = e.zoomSavedScroll
-		targetScrollX = e.zoomSavedScrollX
+		targetScroll = e.zoom.savedScroll
+		targetScrollX = e.zoom.savedScrollX
 	}
 
 	// Perform animated zoom + scroll

@@ -2,12 +2,12 @@ package editor
 
 func (e *Editor) handleNormal(ev EventKey) bool {
 	// Handle zoom mode - only allow = (more zoom) or space (restore)
-	if e.zoomPendingRestore {
+	if e.zoom.pendingRestore {
 		if ev.Key() == KeyRune {
 			switch ev.Rune() {
 			case ' ':
 				e.zoomWithAnimation(false, 20) // zoom out with scroll restore
-				e.zoomPendingRestore = false
+				e.zoom.pendingRestore = false
 				return false
 			case '=':
 				e.zoomWithAnimation(true, 20) // zoom in more, keep centering
