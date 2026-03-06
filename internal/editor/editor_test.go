@@ -457,9 +457,9 @@ func TestBranchPickerSelection(t *testing.T) {
 	}
 	_ = e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, 0)))
 	_ = e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
-	branch, ok := e.ConsumeBranchSelection()
-	if !ok || branch != "main" {
-		t.Fatalf("selection = %q ok=%v, want main", branch, ok)
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok || req.Kind != RuntimeRequestSelectBranch || req.Value != "main" {
+		t.Fatalf("request = %#v ok=%v, want select-branch main", req, ok)
 	}
 	if e.mode != ModeNormal {
 		t.Fatalf("mode = %v, want normal", e.mode)
@@ -470,7 +470,7 @@ func TestBranchPickerCancel(t *testing.T) {
 	e := newTestEditor("a")
 	e.ShowBranchPicker([]string{"dev", "main"}, "dev")
 	_ = e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0)))
-	if _, ok := e.ConsumeBranchSelection(); ok {
+	if _, ok := e.ConsumeRuntimeRequest(); ok {
 		t.Fatalf("expected no selection on cancel")
 	}
 	if e.mode != ModeNormal {

@@ -88,7 +88,7 @@ func (e *Editor) switchToBuffer(index int) {
 	e.restoreBufferState(e.buffers.Active())
 
 	// Signal runtime controller.
-	e.requests.bufferSwitched = true
+	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestBufferSwitched})
 }
 
 // gotoNextBuffer switches to the next buffer.
@@ -160,7 +160,7 @@ func (e *Editor) closeCurrentBuffer(force bool) {
 	// Explicitly set the active buffer and restore its state.
 	e.buffers.SetActive(nextIdx)
 	e.restoreBufferState(e.buffers.Active())
-	e.requests.bufferSwitched = true
+	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestBufferSwitched})
 }
 
 // closeBufferAtIndex closes a buffer at the given index (called from sidebar).
@@ -200,15 +200,6 @@ func (e *Editor) openSidebarBuffers() {
 	}
 	e.sidebar.Open(content)
 	e.clearFileTreePreview()
-}
-
-// ConsumeBufferSwitch returns true and resets the flag if a buffer switch occurred.
-func (e *Editor) ConsumeBufferSwitch() bool {
-	if !e.requests.bufferSwitched {
-		return false
-	}
-	e.requests.bufferSwitched = false
-	return true
 }
 
 // BufferCount returns the number of open buffers.

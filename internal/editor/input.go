@@ -57,13 +57,3 @@ func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
 		return false, false
 	}
 }
-
-// ConsumeSidebarOpenFile consumes the file path selected from sidebar.
-func (e *Editor) ConsumeSidebarOpenFile() (string, bool) {
-	if e.requests.sidebarOpenFilePath == "" {
-		return "", false
-	}
-	path := e.requests.sidebarOpenFilePath
-	e.requests.sidebarOpenFilePath = ""
-	return path, true
-}

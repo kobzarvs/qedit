@@ -1,14 +1,5 @@
 package editor
 
-import ()
-
-func (e *Editor) ConsumeBranchPickerRequest() bool {
-	if !e.requests.branchPickerRequested {
-		return false
-	}
-	e.requests.branchPickerRequested = false
-	return true
-}
 func (e *Editor) ShowBranchPicker(branches []string, current string) {
 	if len(branches) == 0 {
 		e.setStatus("no branches")
@@ -29,14 +20,6 @@ func (e *Editor) ShowBranchPicker(branches []string, current string) {
 	e.branchPicker.active = true
 	e.mode = ModeBranchPicker
 }
-func (e *Editor) ConsumeBranchSelection() (string, bool) {
-	if e.requests.branchSelection == "" {
-		return "", false
-	}
-	selection := e.requests.branchSelection
-	e.requests.branchSelection = ""
-	return selection, true
-}
 func (e *Editor) branchPickerPageSize() int {
 	size := e.viewHeightCached() - 4
 	if size < 1 {
@@ -47,7 +30,12 @@ func (e *Editor) branchPickerPageSize() int {
 func (e *Editor) closeBranchPicker(selection string) {
 	e.branchPicker = branchPickerState{}
 	e.mode = ModeNormal
-	e.requests.branchSelection = selection
+	if selection != "" {
+		e.enqueueRuntimeRequest(RuntimeRequest{
+			Kind:  RuntimeRequestSelectBranch,
+			Value: selection,
+		})
+	}
 }
 
 // showRefsPicker shows the references/implementations picker

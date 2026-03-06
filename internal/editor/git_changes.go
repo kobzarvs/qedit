@@ -306,22 +306,12 @@ func (e *Editor) requestOpenLocation(path string, line, col int) {
 	if path == "" {
 		return
 	}
-	e.requests.openLocation.active = true
-	e.requests.openLocation.path = path
-	e.requests.openLocation.line = line
-	e.requests.openLocation.col = col
-	e.requests.sidebarOpenFilePath = path
-}
-
-func (e *Editor) ConsumePendingOpenLocation() (string, int, int, bool) {
-	if !e.requests.openLocation.active {
-		return "", 0, 0, false
-	}
-	path := e.requests.openLocation.path
-	line := e.requests.openLocation.line
-	col := e.requests.openLocation.col
-	e.requests.openLocation = openLocationRequest{}
-	return path, line, col, true
+	e.enqueueRuntimeRequest(RuntimeRequest{
+		Kind: RuntimeRequestOpenFile,
+		Path: path,
+		Line: line,
+		Col:  col,
+	})
 }
 
 func (e *Editor) JumpToLocation(line, col int) {

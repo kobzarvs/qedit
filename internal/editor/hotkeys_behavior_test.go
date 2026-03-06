@@ -63,10 +63,11 @@ func TestBranchPickerHotkey(t *testing.T) {
 	e := newTestEditor("one")
 	e.SetGitBranch("main")
 	e.HandleKey(eventForKeyString(t, "cmd+b"))
-	if !e.ConsumeBranchPickerRequest() {
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok || req.Kind != RuntimeRequestShowBranchPicker {
 		t.Fatalf("expected branch picker request")
 	}
-	if e.ConsumeBranchPickerRequest() {
+	if _, ok := e.ConsumeRuntimeRequest(); ok {
 		t.Fatalf("expected request to be consumed")
 	}
 }

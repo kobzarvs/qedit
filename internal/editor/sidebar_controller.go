@@ -73,8 +73,10 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionCheckoutBranch:
 		logger.Debug("sidebar action: checkout branch", "branch", action.Branch)
 		if action.Branch != "" {
-			e.requests.branchPickerRequested = false
-			e.requests.branchSelection = action.Branch
+			e.enqueueRuntimeRequest(RuntimeRequest{
+				Kind:  RuntimeRequestSelectBranch,
+				Value: action.Branch,
+			})
 			if e.sidebar.CloseOnSelect {
 				e.closeSidebar()
 			} else {
@@ -90,7 +92,12 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 				e.Notify("Files: binary preview only")
 				return false
 			}
-			e.requests.sidebarOpenFilePath = action.Path
+			e.enqueueRuntimeRequest(RuntimeRequest{
+				Kind: RuntimeRequestOpenFile,
+				Path: action.Path,
+				Line: -1,
+				Col:  -1,
+			})
 			e.clearFileTreePreview()
 			if e.sidebar.CloseOnSelect {
 				e.closeSidebar()
@@ -103,7 +110,10 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionSwitchWorktree:
 		logger.Debug("sidebar action: switch worktree", "path", action.Worktree)
 		if action.Worktree != "" {
-			e.requests.worktreeSelection = action.Worktree
+			e.enqueueRuntimeRequest(RuntimeRequest{
+				Kind: RuntimeRequestSwitchWorktree,
+				Path: action.Worktree,
+			})
 			if e.sidebar.CloseOnSelect {
 				e.closeSidebar()
 			} else {
@@ -212,7 +222,7 @@ func (e *Editor) openSidebarBranches() {
 
 	e.sidebar.Open(NewSidebarLoadingContent("Branches", "Loading..."))
 	e.setStatus("loading branches...")
-	e.requests.branchPickerRequested = true
+	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestShowBranchPicker})
 	logger.Debug("openSidebarBranches: branch request set")
 }
 
@@ -243,7 +253,7 @@ func (e *Editor) openSidebarWorktrees() {
 
 	e.sidebar.Open(NewSidebarLoadingContent("Worktree", "Loading..."))
 	e.setStatus("loading worktrees...")
-	e.requests.worktreeListRequested = true
+	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestShowWorktrees})
 	logger.Debug("openSidebarWorktrees: list request set")
 }
 
@@ -256,7 +266,7 @@ func (e *Editor) refreshSidebarWorktrees() {
 		return
 	}
 	if e.sidebar.Visible && e.sidebar.Content != nil && e.sidebar.Content.Mode() == SidebarModeWorktrees {
-		e.requests.worktreeListRequested = true
+		e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestShowWorktrees})
 		e.setStatus("loading worktrees...")
 		return
 	}
@@ -268,7 +278,7 @@ func (e *Editor) requestWorktreeRefreshIfActive() {
 		return
 	}
 	if e.sidebar.Content.Mode() == SidebarModeWorktrees {
-		e.requests.worktreeListRequested = true
+		e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestShowWorktrees})
 	}
 }
 
@@ -422,37 +432,4 @@ func (e *Editor) ShowSidebarWorktrees(worktrees []WorktreeInfo, activePath strin
 
 func (e *Editor) isGitRepo() bool {
 	return e.git.branch != ""
-}
-
-func (e *Editor) IsSidebarBranchRequest() bool {
-	if e.sidebar == nil {
-		return false
-	}
-	return e.requests.branchPickerRequested
-}
-
-func (e *Editor) ConsumeWorktreeListRequest() bool {
-	if !e.requests.worktreeListRequested {
-		return false
-	}
-	e.requests.worktreeListRequested = false
-	return true
-}
-
-func (e *Editor) ConsumeSidebarBranchSelection() string {
-	if e.requests.branchSelection == "" {
-		return ""
-	}
-	selection := e.requests.branchSelection
-	e.requests.branchSelection = ""
-	return selection
-}
-
-func (e *Editor) ConsumeSidebarWorktreeSelection() string {
-	if e.requests.worktreeSelection == "" {
-		return ""
-	}
-	selection := e.requests.worktreeSelection
-	e.requests.worktreeSelection = ""
-	return selection
 }

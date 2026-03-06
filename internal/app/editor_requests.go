@@ -74,47 +74,54 @@ func (c *editorRuntimeController) switchToWorktree(targetPath string) {
 }
 
 func (c *editorRuntimeController) handleEditorRequests() {
-	if c.ed.ConsumeBranchPickerRequest() {
-		showSidebarBranches(c.ed, c.state.gitPath)
-	}
-	if c.ed.ConsumeWorktreeListRequest() {
-		showSidebarWorktrees(c.ed, c.state.gitPath)
-	}
-	if branch := c.ed.ConsumeSidebarBranchSelection(); branch != "" {
-		logger.Debug("sidebar branch selected", "branch", branch)
-		checkoutBranch(c.ed, c.state.gitPath, branch)
-	} else if branch, ok := c.ed.ConsumeBranchSelection(); ok {
-		checkoutBranch(c.ed, c.state.gitPath, branch)
-	}
-	if path := c.ed.ConsumeSidebarWorktreeSelection(); path != "" {
-		logger.Debug("sidebar worktree selected", "path", path)
-		if c.state.gitPath == "" {
-			c.ed.SetStatusMessage("not a git repository")
-		} else {
-			c.switchToWorktree(path)
+	for {
+		req, ok := c.ed.ConsumeRuntimeRequest()
+		if !ok {
+			return
 		}
-	}
-	if path, ok := c.ed.ConsumeSidebarOpenFile(); ok {
-		err := c.openFile(path)
-		if err != nil {
-			c.ed.SetStatusMessage(err.Error())
-		}
-		c.ed.ApplyPendingGitDiffJump()
-		if locPath, line, col, ok := c.ed.ConsumePendingOpenLocation(); ok {
-			if err == nil && (locPath == "" || locPath == path) {
-				c.ed.JumpToLocation(line, col)
+		switch req.Kind {
+		case editor.RuntimeRequestShowBranchPicker:
+			showSidebarBranches(c.ed, c.state.gitPath)
+		case editor.RuntimeRequestShowWorktrees:
+			showSidebarWorktrees(c.ed, c.state.gitPath)
+		case editor.RuntimeRequestSelectBranch:
+			if req.Value != "" {
+				logger.Debug("branch selected", "branch", req.Value)
+				checkoutBranch(c.ed, c.state.gitPath, req.Value)
 			}
-		}
-	}
-	if c.ed.ConsumeBufferSwitch() {
-		path := c.ed.Filename()
-		if path != c.state.openPath {
-			c.fileMonitor.Watch(path)
-			state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, path, c.highlightMaxBytes)
-			c.state.applyActiveFile(state)
+		case editor.RuntimeRequestSwitchWorktree:
+			if req.Path == "" {
+				continue
+			}
+			logger.Debug("worktree selected", "path", req.Path)
+			if c.state.gitPath == "" {
+				c.ed.SetStatusMessage("not a git repository")
+			} else {
+				c.switchToWorktree(req.Path)
+			}
+		case editor.RuntimeRequestOpenFile:
+			if req.Path == "" {
+				continue
+			}
+			err := c.openFile(req.Path)
+			if err != nil {
+				c.ed.SetStatusMessage(err.Error())
+				continue
+			}
+			c.ed.ApplyPendingGitDiffJump()
+			if req.Line >= 0 {
+				c.ed.JumpToLocation(req.Line, req.Col)
+			}
+		case editor.RuntimeRequestBufferSwitched:
+			path := c.ed.Filename()
+			if path != c.state.openPath {
+				c.fileMonitor.Watch(path)
+				state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, path, c.highlightMaxBytes)
+				c.state.applyActiveFile(state)
 
-			c.ed.SetGitBranch(gitinfo.Branch(path))
-			c.ed.SetGitRoot(gitinfo.Root(path))
+				c.ed.SetGitBranch(gitinfo.Branch(path))
+				c.ed.SetGitRoot(gitinfo.Root(path))
+			}
 		}
 	}
 }

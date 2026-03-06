@@ -104,8 +104,8 @@ func TestCloseRefsPickerUsesRuntimeFileStoreAbs(t *testing.T) {
 	if e.cursor.Row != 2 || e.cursor.Col != 3 {
 		t.Fatalf("cursor = (%d,%d), want (2,3)", e.cursor.Row, e.cursor.Col)
 	}
-	if e.requests.openLocation.active {
-		t.Fatalf("open location request = true, want false")
+	if _, ok := e.ConsumeRuntimeRequest(); ok {
+		t.Fatalf("runtime request still present, want queue drained")
 	}
 }
 
