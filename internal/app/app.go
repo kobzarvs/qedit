@@ -4,14 +4,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
-
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/logger"
-	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/session"
-	"github.com/kobzarvs/qedit/internal/treesitter"
-	"github.com/kobzarvs/qedit/internal/ui"
 )
 
 // App is the top-level runtime for qedit.
@@ -37,53 +32,21 @@ func (a *App) Run() error {
 	if err != nil {
 		return err
 	}
-
-	s, err := tcell.NewScreen()
+	services, err := newAppServices(langs)
 	if err != nil {
 		return err
 	}
-	if err := s.Init(); err != nil {
-		return err
-	}
-	s.EnableMouse()
-	defer s.Fini()
-
-	ls := lsp.NewManager(langs)
-	if err := ls.Start(); err != nil {
-		return err
-	}
-	defer func() { _ = ls.Stop() }()
-
-	ts := treesitter.New(langs)
-	if err := ts.Start(); err != nil {
-		return err
-	}
-	defer func() { _ = ts.Stop() }()
-
-	stopLayout := make(chan struct{})
-	defer close(stopLayout)
-	go func() {
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stopLayout:
-				return
-			case <-ticker.C:
-				_ = s.PostEvent(tcell.NewEventInterrupt(nil))
-			}
-		}
-	}()
+	defer services.Close()
 
 	sessionMgr, _ := session.NewManager()
 	sessionStore := newEditorSessionStore(sessionMgr)
-	ed := newConfiguredEditor(&cfg, langs, ts, sessionStore)
+	ed := newConfiguredEditor(&cfg, langs, services.ts, sessionStore)
 	defer ed.Shutdown()
 	autoReloadStabilizeDelay := time.Duration(cfg.Editor.AutoReloadStabilizeMS) * time.Millisecond
 	if autoReloadStabilizeDelay < 0 {
 		autoReloadStabilizeDelay = 0
 	}
-	rt, err := newEditorRuntime(s, ed, ls, ts, langs, sessionMgr, editorRuntimeOptions{
+	rt, err := newEditorRuntime(services.screen, ed, services.ls, services.ts, langs, sessionMgr, editorRuntimeOptions{
 		InitialPath:              firstArg(a.args),
 		HighlightMaxBytes:        cfg.Editor.HighlightMaxBytes,
 		AutoReloadMaxBytes:       int64(8 << 20),
@@ -96,21 +59,7 @@ func (a *App) Run() error {
 		return err
 	}
 	defer rt.Close()
-	screen := ui.WrapScreen(s)
-	ed.Render(screen)
-	for {
-		quit, isMouseScroll := rt.HandleScreenEvent(s.PollEvent())
-		if quit {
-			return nil
-		}
-		if !isMouseScroll {
-			ed.UpdateScroll()
-		}
-		rt.HandleRequests()
-		rt.Tick()
-
-		ed.Render(screen)
-	}
+	return rt.Run()
 }
 
 func firstArg(args []string) string {

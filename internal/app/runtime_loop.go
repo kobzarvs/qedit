@@ -12,6 +12,7 @@ import (
 	"github.com/kobzarvs/qedit/internal/platform/keyboard"
 	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
+	"github.com/kobzarvs/qedit/internal/ui"
 )
 
 type editorRuntimeOptions struct {
@@ -26,6 +27,7 @@ type editorRuntimeOptions struct {
 
 type editorRuntime struct {
 	screen             tcell.Screen
+	renderScreen       editor.Screen
 	ed                 *editor.Editor
 	ts                 *treesitter.Engine
 	fileMonitor        *externalFileMonitor
@@ -52,6 +54,7 @@ func newEditorRuntime(
 
 	rt := &editorRuntime{
 		screen:             screen,
+		renderScreen:       ui.WrapScreen(screen),
 		ed:                 ed,
 		ts:                 ts,
 		state:              newEditorRuntimeState(ed),
@@ -136,4 +139,20 @@ func (r *editorRuntime) Tick() {
 		r.filePollInterval,
 		&r.lastLayoutRaw,
 	)
+}
+
+func (r *editorRuntime) Run() error {
+	r.ed.Render(r.renderScreen)
+	for {
+		quit, isMouseScroll := r.HandleScreenEvent(r.screen.PollEvent())
+		if quit {
+			return nil
+		}
+		if !isMouseScroll {
+			r.ed.UpdateScroll()
+		}
+		r.HandleRequests()
+		r.Tick()
+		r.ed.Render(r.renderScreen)
+	}
 }
