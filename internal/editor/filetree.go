@@ -2,7 +2,6 @@ package editor
 
 import (
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -31,7 +30,7 @@ func (e *Editor) fileTreePreviewCurrent(content *SidebarFileTreeContent) {
 	if e.fileTreePreview.active && e.fileTreePreview.path == path && e.fileTreePreview.text != nil {
 		return
 	}
-	data, err := os.ReadFile(path)
+	data, err := e.readFilePreview(path)
 	if err != nil {
 		e.clearFileTreePreview()
 		return
@@ -177,16 +176,17 @@ func formatHexPreview(data []byte) string {
 	return b.String()
 }
 
-func isBinaryFile(path string) bool {
-	f, err := os.Open(path)
+func (e *Editor) isBinaryPath(path string) bool {
+	data, err := e.readFilePreview(path)
 	if err != nil {
 		return false
 	}
-	defer f.Close()
-	buf := make([]byte, 8000)
-	n, err := f.Read(buf)
-	if err != nil || n <= 0 {
-		return false
+	return isBinaryData(data)
+}
+
+func (e *Editor) readFilePreview(path string) ([]byte, error) {
+	if e.runtime.fileStore == nil {
+		return nil, errFileStoreUnavailable()
 	}
-	return isBinaryData(buf[:n])
+	return e.runtime.fileStore.Read(path)
 }
