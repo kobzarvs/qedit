@@ -119,22 +119,22 @@ func (c *SidebarGitChangesContent) ensureItems() {
 		return
 	}
 	_ = c.editor.refreshGitChangesIfStale(2 * time.Second)
-	version := c.editor.gitChangesVersion
-	root := c.editor.gitRoot
+	version := c.editor.git.changesVersion
+	root := c.editor.git.root
 	currentPath := strings.TrimSpace(c.currentPath)
 	if currentPath != "" {
 		currentPath = filepath.Clean(currentPath)
 	}
-	if version == c.lastVersion && c.viewTree == c.lastViewTree && root == c.lastGitRoot && c.lastItemCount == len(c.editor.gitChanges) && currentPath == c.lastCurrent {
+	if version == c.lastVersion && c.viewTree == c.lastViewTree && root == c.lastGitRoot && c.lastItemCount == len(c.editor.git.changes) && currentPath == c.lastCurrent {
 		return
 	}
 	c.lastVersion = version
 	c.lastViewTree = c.viewTree
 	c.lastGitRoot = root
-	c.lastItemCount = len(c.editor.gitChanges)
+	c.lastItemCount = len(c.editor.git.changes)
 	c.lastCurrent = currentPath
 
-	changes := c.editor.gitChanges
+	changes := c.editor.git.changes
 	if len(changes) == 0 {
 		c.items = []SidebarItem{{Label: "No changes", Available: false}}
 		c.index = 0

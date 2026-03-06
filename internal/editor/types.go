@@ -473,16 +473,7 @@ type Editor struct {
 	notificationFadeStyles        []Style
 	lineNumberMode                LineNumberMode
 	layoutName                    string
-	gitBranch                     string
-	gitMainBranch                 string // detected main branch (main/master)
-	gitBranchSymbol               string
-	gitRoot                       string
-	gitChanges                    []GitFileChange
-	gitChangeHunks                []GitChangeHunk
-	gitDiffHighlight              *GitChangeHunk
-	pendingGitDiffJump            bool
-	gitChangesUpdated             time.Time
-	gitChangesVersion             uint64
+	git                           editorGitState
 	highlights                    map[int][]HighlightSpan
 	highlightStart                int
 	highlightEnd                  int

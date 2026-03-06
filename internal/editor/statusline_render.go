@@ -128,8 +128,8 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	// Build right part, tracking branch position for styling
 	rightParts := []string{fmt.Sprintf(" Ln %d, Col %d", row, col)}
 	branchText := ""
-	if e.gitBranch != "" {
-		branchText = formatGitBranch(e.gitBranchSymbol, e.gitBranch)
+	if e.git.branch != "" {
+		branchText = formatGitBranch(e.git.branchSymbol, e.git.branch)
 		rightParts = append(rightParts, branchText)
 	}
 	layoutText := ""

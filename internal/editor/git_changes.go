@@ -33,14 +33,14 @@ type GitChangeHunk struct {
 // SetGitRoot sets the current git root for the editor.
 func (e *Editor) SetGitRoot(root string) {
 	root = strings.TrimSpace(root)
-	if root == e.gitRoot {
+	if root == e.git.root {
 		return
 	}
-	e.gitRoot = root
-	e.gitChanges = nil
-	e.gitChangeHunks = nil
-	e.gitChangesVersion++
-	e.gitChangesUpdated = time.Time{}
+	e.git.root = root
+	e.git.changes = nil
+	e.git.changeHunks = nil
+	e.git.changesVersion++
+	e.git.changesUpdated = time.Time{}
 	if e.sidebar != nil {
 		if content, ok := e.sidebar.Content.(*SidebarWorktreesContent); ok {
 			content.SetCurrentPath(root)
@@ -50,18 +50,18 @@ func (e *Editor) SetGitRoot(root string) {
 
 // RefreshGitChanges reloads git change data.
 func (e *Editor) RefreshGitChanges() error {
-	root := e.gitRoot
+	root := e.git.root
 	if root == "" {
 		root = e.detectGitRoot()
 		if root != "" {
-			e.gitRoot = root
+			e.git.root = root
 		}
 	}
 	if root == "" {
-		e.gitChanges = nil
-		e.gitChangeHunks = nil
-		e.gitChangesVersion++
-		e.gitChangesUpdated = time.Now()
+		e.git.changes = nil
+		e.git.changeHunks = nil
+		e.git.changesVersion++
+		e.git.changesUpdated = time.Now()
 		return nil
 	}
 	changes, hunks, err := gitinfo.Changes(root)
@@ -73,7 +73,7 @@ func (e *Editor) RefreshGitChanges() error {
 }
 
 func (e *Editor) refreshGitChangesIfStale(maxAge time.Duration) error {
-	if e.gitChangesUpdated.IsZero() || time.Since(e.gitChangesUpdated) >= maxAge {
+	if e.git.changesUpdated.IsZero() || time.Since(e.git.changesUpdated) >= maxAge {
 		return e.RefreshGitChanges()
 	}
 	return nil
@@ -94,10 +94,10 @@ func (e *Editor) detectGitRoot() string {
 }
 
 func (e *Editor) applyGitChanges(root string, changes []gitinfo.FileChange, hunks []gitinfo.Hunk) {
-	e.gitChanges = make([]GitFileChange, 0, len(changes))
+	e.git.changes = make([]GitFileChange, 0, len(changes))
 	for _, ch := range changes {
 		abs := filepath.Join(root, filepath.FromSlash(ch.Path))
-		e.gitChanges = append(e.gitChanges, GitFileChange{
+		e.git.changes = append(e.git.changes, GitFileChange{
 			Path:       ch.Path,
 			AbsPath:    abs,
 			Status:     ch.Status,
@@ -108,44 +108,44 @@ func (e *Editor) applyGitChanges(root string, changes []gitinfo.FileChange, hunk
 			Unstaged:   ch.Unstaged,
 		})
 	}
-	sort.Slice(e.gitChanges, func(i, j int) bool {
-		return e.gitChanges[i].Path < e.gitChanges[j].Path
+	sort.Slice(e.git.changes, func(i, j int) bool {
+		return e.git.changes[i].Path < e.git.changes[j].Path
 	})
 
-	e.gitChangeHunks = make([]GitChangeHunk, 0, len(hunks))
+	e.git.changeHunks = make([]GitChangeHunk, 0, len(hunks))
 	for _, h := range hunks {
 		abs := filepath.Join(root, filepath.FromSlash(h.Path))
-		e.gitChangeHunks = append(e.gitChangeHunks, GitChangeHunk{
+		e.git.changeHunks = append(e.git.changeHunks, GitChangeHunk{
 			Path:      h.Path,
 			AbsPath:   abs,
 			StartLine: h.StartLine,
 			EndLine:   h.EndLine,
 		})
 	}
-	sort.Slice(e.gitChangeHunks, func(i, j int) bool {
-		if e.gitChangeHunks[i].AbsPath != e.gitChangeHunks[j].AbsPath {
-			return e.gitChangeHunks[i].AbsPath < e.gitChangeHunks[j].AbsPath
+	sort.Slice(e.git.changeHunks, func(i, j int) bool {
+		if e.git.changeHunks[i].AbsPath != e.git.changeHunks[j].AbsPath {
+			return e.git.changeHunks[i].AbsPath < e.git.changeHunks[j].AbsPath
 		}
-		return e.gitChangeHunks[i].StartLine < e.gitChangeHunks[j].StartLine
+		return e.git.changeHunks[i].StartLine < e.git.changeHunks[j].StartLine
 	})
 
-	e.gitChangesUpdated = time.Now()
-	e.gitChangesVersion++
+	e.git.changesUpdated = time.Now()
+	e.git.changesVersion++
 }
 
 func (e *Editor) gotoGitChange(forward bool) {
 	if err := e.refreshGitChangesIfStale(2 * time.Second); err != nil {
 		e.setStatus(err.Error())
-		e.pendingGitDiffJump = false
+		e.git.pendingDiffJump = false
 		return
 	}
-	if len(e.gitChangeHunks) == 0 {
+	if len(e.git.changeHunks) == 0 {
 		e.setStatus("no git changes")
-		e.gitDiffHighlight = nil
-		e.pendingGitDiffJump = false
+		e.git.diffHighlight = nil
+		e.git.pendingDiffJump = false
 		return
 	}
-	e.pendingGitDiffJump = true
+	e.git.pendingDiffJump = true
 	currentPath := e.filename
 	if currentPath != "" {
 		if abs, err := filepath.Abs(currentPath); err == nil {
@@ -155,14 +155,14 @@ func (e *Editor) gotoGitChange(forward bool) {
 	target := e.findGitChangeHunk(currentPath, e.cursor.Row, forward)
 	if target == nil {
 		e.setStatus("no git changes")
-		e.gitDiffHighlight = nil
-		e.pendingGitDiffJump = false
+		e.git.diffHighlight = nil
+		e.git.pendingDiffJump = false
 		return
 	}
 	if target.AbsPath == "" {
 		e.setStatus("no git changes")
-		e.gitDiffHighlight = nil
-		e.pendingGitDiffJump = false
+		e.git.diffHighlight = nil
+		e.git.pendingDiffJump = false
 		return
 	}
 	e.setGitDiffHighlight(target)
@@ -170,7 +170,7 @@ func (e *Editor) gotoGitChange(forward bool) {
 	e.highlightGitChangeInSidebar(target.AbsPath)
 	if currentPath != "" && target.AbsPath == currentPath {
 		e.JumpToLocation(target.StartLine, 0)
-		e.pendingGitDiffJump = false
+		e.git.pendingDiffJump = false
 		return
 	}
 	e.requestOpenLocation(target.AbsPath, target.StartLine, 0)
@@ -178,11 +178,11 @@ func (e *Editor) gotoGitChange(forward bool) {
 
 func (e *Editor) setGitDiffHighlight(hunk *GitChangeHunk) {
 	if hunk == nil {
-		e.gitDiffHighlight = nil
+		e.git.diffHighlight = nil
 		return
 	}
 	copy := *hunk
-	e.gitDiffHighlight = &copy
+	e.git.diffHighlight = &copy
 }
 
 func (e *Editor) gitDiffGutterActive() bool {
@@ -196,14 +196,14 @@ func (e *Editor) gitDiffLineKind(lineIdx int) conflictLineKind {
 	if e.mode != ModeMerge {
 		return conflictNone
 	}
-	if len(e.gitChangeHunks) == 0 {
+	if len(e.git.changeHunks) == 0 {
 		return conflictNone
 	}
 	currentPath := e.filename
 	if abs, err := filepath.Abs(currentPath); err == nil {
 		currentPath = abs
 	}
-	for _, h := range e.gitChangeHunks {
+	for _, h := range e.git.changeHunks {
 		if h.AbsPath < currentPath {
 			continue
 		}
@@ -218,14 +218,14 @@ func (e *Editor) gitDiffLineKind(lineIdx int) conflictLineKind {
 }
 
 func (e *Editor) gitDiffHasCurrentFileHunks() bool {
-	if len(e.gitChangeHunks) == 0 || e.filename == "" {
+	if len(e.git.changeHunks) == 0 || e.filename == "" {
 		return false
 	}
 	currentPath := e.filename
 	if abs, err := filepath.Abs(currentPath); err == nil {
 		currentPath = abs
 	}
-	for _, h := range e.gitChangeHunks {
+	for _, h := range e.git.changeHunks {
 		if h.AbsPath < currentPath {
 			continue
 		}
@@ -238,7 +238,7 @@ func (e *Editor) gitDiffHasCurrentFileHunks() bool {
 }
 
 func (e *Editor) gitDiffHighlightAppliesToCurrentFile() bool {
-	hunk := e.gitDiffHighlight
+	hunk := e.git.diffHighlight
 	if hunk == nil || hunk.AbsPath == "" || e.filename == "" {
 		return false
 	}
@@ -266,10 +266,10 @@ func (e *Editor) highlightGitChangeInSidebar(absPath string) {
 }
 
 func (e *Editor) applyPendingGitDiffJump() {
-	if !e.pendingGitDiffJump {
+	if !e.git.pendingDiffJump {
 		return
 	}
-	e.pendingGitDiffJump = false
+	e.git.pendingDiffJump = false
 	e.mode = ModeMerge
 }
 
@@ -279,7 +279,7 @@ func (e *Editor) ApplyPendingGitDiffJump() {
 }
 
 func (e *Editor) findGitChangeHunk(currentPath string, cursorRow int, forward bool) *GitChangeHunk {
-	hunks := e.gitChangeHunks
+	hunks := e.git.changeHunks
 	if len(hunks) == 0 {
 		return nil
 	}

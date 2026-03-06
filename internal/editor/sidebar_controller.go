@@ -420,7 +420,7 @@ func (e *Editor) ShowSidebarWorktrees(worktrees []WorktreeInfo, activePath strin
 }
 
 func (e *Editor) isGitRepo() bool {
-	return e.gitBranch != ""
+	return e.git.branch != ""
 }
 
 func (e *Editor) IsSidebarBranchRequest() bool {

@@ -26,11 +26,13 @@ func New(opts Options) *Editor {
 			text:   NewTextBufferFromRunes(nil),
 			cursor: Cursor{},
 		},
-		mode:                ModeNormal,
-		keymap:              keymapSet{normal: normal, insert: insert},
-		tabWidth:            tabWidth,
-		lineNumberMode:      lineNumberMode,
-		gitBranchSymbol:     gitBranchSymbol,
+		mode:           ModeNormal,
+		keymap:         keymapSet{normal: normal, insert: insert},
+		tabWidth:       tabWidth,
+		lineNumberMode: lineNumberMode,
+		git: editorGitState{
+			branchSymbol: gitBranchSymbol,
+		},
 		autoReloadOnChanges: opts.AutoReloadOnChanges,
 		highlightStart:      -1,
 		highlightEnd:        -1,
@@ -63,10 +65,10 @@ func (e *Editor) SetKeyboardLayout(name string) {
 }
 func (e *Editor) SetGitBranch(name string) {
 	name = strings.TrimSpace(name)
-	if e.gitBranch == name {
+	if e.git.branch == name {
 		return
 	}
-	e.gitBranch = name
+	e.git.branch = name
 	if e.sidebar == nil {
 		return
 	}
@@ -78,18 +80,18 @@ func (e *Editor) SetGitBranch(name string) {
 	}
 }
 func (e *Editor) SetGitMainBranch(name string) {
-	e.gitMainBranch = strings.TrimSpace(name)
+	e.git.mainBranch = strings.TrimSpace(name)
 }
 func (e *Editor) GetGitMainBranch() string {
-	return e.gitMainBranch
+	return e.git.mainBranch
 }
 
 // IsMainBranch returns true if the current branch is the main branch
 func (e *Editor) IsMainBranch() bool {
-	if e.gitBranch == "" || e.gitMainBranch == "" {
+	if e.git.branch == "" || e.git.mainBranch == "" {
 		return false
 	}
-	return e.gitBranch == e.gitMainBranch
+	return e.git.branch == e.git.mainBranch
 }
 
 func (e *Editor) SetNodeStackFunc(fn NodeStackFunc) {

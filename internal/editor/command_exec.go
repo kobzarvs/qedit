@@ -203,7 +203,7 @@ func (e *Editor) execCommand(cmd string) bool {
 }
 
 func (e *Editor) handleWorktreeCommand(args []string) bool {
-	root := e.gitRoot
+	root := e.git.root
 	if root == "" {
 		root = e.detectGitRoot()
 	}

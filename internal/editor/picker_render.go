@@ -132,8 +132,8 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 			break
 		}
 		branchName := e.branchPickerItems[idx]
-		isCurrentBranch := branchName == e.gitBranch
-		isMainBranch := branchName == "main" || branchName == "master" || branchName == e.gitMainBranch
+		isCurrentBranch := branchName == e.git.branch
+		isMainBranch := branchName == "main" || branchName == "master" || branchName == e.git.mainBranch
 
 		// Determine style - keep foreground, only change background when selected
 		style := itemStyle
