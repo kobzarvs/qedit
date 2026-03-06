@@ -518,9 +518,7 @@ type Editor struct {
 	lastScrollTime                time.Time
 	resizeDragging                bool
 	resizeTarget                  resizeTarget
-	systemClipboard               Clipboard
-	formatter                     Formatter
-	terminalZoomer                TerminalZoomer
+	runtime                       editorRuntimeDeps
 
 	// Helix-style state
 	clipboard                  [][]rune // yanked text (lines)
@@ -553,13 +551,10 @@ type Editor struct {
 	copiedMessageTime time.Time // when "copied" was shown
 
 	// Selection scope (expand/shrink)
-	nodeStackFunc       NodeStackFunc // callback to get syntax node stack
-	selectionScopeStack []NodeRange   // stack of selection scopes for shrinking
-	selectionScopeIndex int           // current index in scope stack
+	selectionScopeStack []NodeRange // stack of selection scopes for shrinking
+	selectionScopeIndex int         // current index in scope stack
 
 	// LSP integration
-	lspGotoFunc          LSPGotoFunc                        // callback for LSP goto operations
-	highlightRangeFunc   HighlightRangeFunc                 // callback to get highlights for a range
 	refsPickerActive     bool                               // whether references picker is shown
 	refsPickerItems      []LSPLocation                      // list of references
 	refsPickerIndex      int                                // selected reference index
@@ -567,14 +562,8 @@ type Editor struct {
 	refsPickerFileCache  map[string][][]rune                // cache of file lines for preview
 	refsPickerHighlights map[string]map[int][]HighlightSpan // cache of highlights for preview
 
-	// Session persistence
-	sessionStore SessionStore
-
 	// Test hook for keymap coverage.
 	actionHook func(action string)
-
-	autoReloadConfigHook   func(enabled bool) error
-	sidebarWidthConfigHook func(width string) error
 
 	// Command autocomplete state
 	cmdAutoCompleteActive    bool

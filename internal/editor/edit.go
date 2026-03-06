@@ -718,7 +718,7 @@ func (e *Editor) copyToSystemClipboard() {
 	if len(e.clipboard) == 0 {
 		return
 	}
-	if e.systemClipboard == nil {
+	if e.runtime.systemClipboard == nil {
 		return
 	}
 	// Join clipboard lines with newlines
@@ -727,7 +727,7 @@ func (e *Editor) copyToSystemClipboard() {
 		lines = append(lines, string(line))
 	}
 	text := strings.Join(lines, "\n")
-	_ = e.systemClipboard.Write(text)
+	_ = e.runtime.systemClipboard.Write(text)
 }
 
 // Helix-style yank (y) - copy selection to clipboard
@@ -1083,13 +1083,13 @@ func (e *Editor) selectAll() {
 
 // expandSelection expands selection to the next larger syntax node
 func (e *Editor) expandSelection() {
-	if e.nodeStackFunc == nil || e.filename == "" {
+	if e.runtime.nodeStackFunc == nil || e.filename == "" {
 		e.setStatus("syntax tree not available")
 		return
 	}
 
 	// Get node stack at cursor position
-	stack := e.nodeStackFunc(e.filename, e.cursor.Row, e.cursor.Col)
+	stack := e.runtime.nodeStackFunc(e.filename, e.cursor.Row, e.cursor.Col)
 	if len(stack) == 0 {
 		e.setStatus("no syntax node at cursor")
 		return

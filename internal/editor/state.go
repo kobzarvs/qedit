@@ -36,7 +36,9 @@ func New(opts Options) *Editor {
 		highlightEnd:        -1,
 		cmdHistoryPath:      opts.CmdHistoryPath,
 		searchHistoryPath:   opts.SearchHistoryPath,
-		sessionStore:        opts.SessionStore,
+		runtime: editorRuntimeDeps{
+			sessionStore: opts.SessionStore,
+		},
 		sidebar: NewSidebar(
 			opts.SidebarWidth,
 			opts.SidebarMinWidth,
@@ -91,13 +93,13 @@ func (e *Editor) IsMainBranch() bool {
 }
 
 func (e *Editor) SetNodeStackFunc(fn NodeStackFunc) {
-	e.nodeStackFunc = fn
+	e.runtime.nodeStackFunc = fn
 }
 func (e *Editor) SetLSPGotoFunc(fn LSPGotoFunc) {
-	e.lspGotoFunc = fn
+	e.runtime.lspGotoFunc = fn
 }
 func (e *Editor) SetHighlightRangeFunc(fn HighlightRangeFunc) {
-	e.highlightRangeFunc = fn
+	e.runtime.highlightRangeFunc = fn
 }
 func (e *Editor) SetStatusMessage(msg string) {
 	e.setStatus(msg)

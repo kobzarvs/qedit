@@ -22,11 +22,11 @@ func (e *Editor) yankToSystemClipboard() {
 	}
 
 	// Try to copy to system clipboard
-	if e.systemClipboard == nil {
+	if e.runtime.systemClipboard == nil {
 		e.setStatus("yanked (clipboard unavailable)")
 		return
 	}
-	if err := e.systemClipboard.Write(sb.String()); err != nil {
+	if err := e.runtime.systemClipboard.Write(sb.String()); err != nil {
 		e.setStatus("yanked (clipboard unavailable)")
 		return
 	}
@@ -36,11 +36,11 @@ func (e *Editor) yankToSystemClipboard() {
 // pasteFromSystemClipboard pastes from system clipboard
 func (e *Editor) pasteFromSystemClipboard(before bool) {
 	// Try to get from system clipboard
-	if e.systemClipboard == nil {
+	if e.runtime.systemClipboard == nil {
 		e.setStatus("clipboard unavailable")
 		return
 	}
-	text, err := e.systemClipboard.Read()
+	text, err := e.runtime.systemClipboard.Read()
 	if err != nil {
 		e.setStatus("clipboard unavailable")
 		return

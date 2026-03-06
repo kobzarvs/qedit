@@ -126,7 +126,7 @@ func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {
 	if e.fileTreePreviewText == nil || width <= 0 || viewHeight <= 0 {
 		return
 	}
-	if e.highlightRangeFunc != nil && e.fileTreePreviewHighlightEnd >= 0 &&
+	if e.runtime.highlightRangeFunc != nil && e.fileTreePreviewHighlightEnd >= 0 &&
 		e.fileTreePreviewHighlightEnd < e.fileTreePreviewScroll+viewHeight-1 {
 		e.updateFileTreePreviewHighlights()
 	}

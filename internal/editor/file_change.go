@@ -153,12 +153,12 @@ func (e *Editor) SetAutoReloadOnChanges(enabled bool) {
 
 // SetAutoReloadConfigHook registers a persistence hook for auto-reload setting.
 func (e *Editor) SetAutoReloadConfigHook(hook func(enabled bool) error) {
-	e.autoReloadConfigHook = hook
+	e.runtime.autoReloadConfigHook = hook
 }
 
 // SetSidebarWidthConfigHook registers a persistence hook for sidebar width.
 func (e *Editor) SetSidebarWidthConfigHook(hook func(width string) error) {
-	e.sidebarWidthConfigHook = hook
+	e.runtime.sidebarWidthConfigHook = hook
 }
 
 // IsDirty reports whether the buffer has unsaved changes.

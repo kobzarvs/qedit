@@ -134,8 +134,8 @@ func (e *Editor) clampSidebarWidth(width int) int {
 func (e *Editor) finishMouseResize() {
 	switch e.resizeTarget {
 	case resizeTargetSidebar:
-		if e.sidebarWidthConfigHook != nil && e.sidebar != nil {
-			if err := e.sidebarWidthConfigHook(e.sidebar.WidthConfig); err != nil {
+		if e.runtime.sidebarWidthConfigHook != nil && e.sidebar != nil {
+			if err := e.runtime.sidebarWidthConfigHook(e.sidebar.WidthConfig); err != nil {
 				e.setStatus("config write failed: " + err.Error())
 			}
 		}

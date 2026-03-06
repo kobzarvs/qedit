@@ -39,17 +39,17 @@ type SessionStore interface {
 }
 
 func (e *Editor) SetClipboard(c Clipboard) {
-	e.systemClipboard = c
+	e.runtime.systemClipboard = c
 }
 
 func (e *Editor) SetFormatter(f Formatter) {
-	e.formatter = f
+	e.runtime.formatter = f
 }
 
 func (e *Editor) SetTerminalZoomer(z TerminalZoomer) {
-	e.terminalZoomer = z
+	e.runtime.terminalZoomer = z
 }
 
 func (e *Editor) SetSessionStore(s SessionStore) {
-	e.sessionStore = s
+	e.runtime.sessionStore = s
 }

@@ -54,7 +54,7 @@ func (e *Editor) fileTreePreviewCurrent(content *SidebarFileTreeContent) {
 }
 
 func (e *Editor) updateFileTreePreviewHighlights() {
-	if e.highlightRangeFunc == nil || e.fileTreePreviewText == nil || e.fileTreePreviewPath == "" || e.fileTreePreviewBinary {
+	if e.runtime.highlightRangeFunc == nil || e.fileTreePreviewText == nil || e.fileTreePreviewPath == "" || e.fileTreePreviewBinary {
 		return
 	}
 	lineCount := e.fileTreePreviewText.LineCount()
@@ -68,7 +68,7 @@ func (e *Editor) updateFileTreePreviewHighlights() {
 	if end >= lineCount {
 		end = lineCount - 1
 	}
-	spans := e.highlightRangeFunc(e.fileTreePreviewPath, 0, end)
+	spans := e.runtime.highlightRangeFunc(e.fileTreePreviewPath, 0, end)
 	if spans == nil {
 		e.fileTreePreviewHighlights = nil
 		e.fileTreePreviewHighlightStart = -1

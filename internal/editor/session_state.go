@@ -3,14 +3,14 @@ package editor
 import "path/filepath"
 
 func (e *Editor) restoreSessionState() {
-	if e.sessionStore == nil || e.filename == "" {
+	if e.runtime.sessionStore == nil || e.filename == "" {
 		return
 	}
 	absPath, err := filepath.Abs(e.filename)
 	if err != nil {
 		return
 	}
-	state, ok := e.sessionStore.GetFileState(absPath)
+	state, ok := e.runtime.sessionStore.GetFileState(absPath)
 	if !ok {
 		return
 	}
@@ -74,7 +74,7 @@ func (e *Editor) restoreSessionState() {
 }
 
 func (e *Editor) saveSessionState() {
-	if e.sessionStore == nil || e.filename == "" {
+	if e.runtime.sessionStore == nil || e.filename == "" {
 		return
 	}
 	absPath, err := filepath.Abs(e.filename)
@@ -99,7 +99,7 @@ func (e *Editor) saveSessionState() {
 		SelectionEndRow:   e.selectionEnd.Row,
 		SelectionEndCol:   e.selectionEnd.Col,
 	}
-	e.sessionStore.SetFileState(absPath, state)
+	e.runtime.sessionStore.SetFileState(absPath, state)
 }
 
 // Shutdown saves session state and stops background tasks
@@ -111,7 +111,7 @@ func (e *Editor) Shutdown() {
 		e.buffers.UpdateActive(bs)
 		// Save session state for all buffers
 		for _, info := range e.buffers.Items() {
-			if info.Filename != "" && e.sessionStore != nil {
+			if info.Filename != "" && e.runtime.sessionStore != nil {
 				// Temporarily set filename to save each buffer's session
 				// (restoreSessionState/saveSessionState use e.filename)
 				origFilename := e.filename
@@ -131,7 +131,7 @@ func (e *Editor) Shutdown() {
 	} else {
 		e.saveSessionState()
 	}
-	if e.sessionStore != nil {
-		e.sessionStore.Stop()
+	if e.runtime.sessionStore != nil {
+		e.runtime.sessionStore.Stop()
 	}
 }

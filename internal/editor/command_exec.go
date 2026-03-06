@@ -139,8 +139,8 @@ func (e *Editor) execCommand(cmd string) bool {
 			}
 		} else {
 			if e.sidebar != nil {
-				if e.sidebarWidthConfigHook != nil {
-					if err := e.sidebarWidthConfigHook(args[0]); err != nil {
+				if e.runtime.sidebarWidthConfigHook != nil {
+					if err := e.runtime.sidebarWidthConfigHook(args[0]); err != nil {
 						e.setStatus("config write failed: " + err.Error())
 						return false
 					}
@@ -174,8 +174,8 @@ func (e *Editor) execCommand(cmd string) bool {
 			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.autoReloadOnChanges))
 			return false
 		}
-		if e.autoReloadConfigHook != nil {
-			if err := e.autoReloadConfigHook(enabled); err != nil {
+		if e.runtime.autoReloadConfigHook != nil {
+			if err := e.runtime.autoReloadConfigHook(enabled); err != nil {
 				e.setStatus("config write failed: " + err.Error())
 				return false
 			}

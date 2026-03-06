@@ -350,10 +350,10 @@ func (e *Editor) Save(path string) error {
 }
 func (e *Editor) FormatGo() error {
 	src := e.Content()
-	if e.formatter == nil {
+	if e.runtime.formatter == nil {
 		return errors.New("formatter unavailable")
 	}
-	formatted, err := e.formatter.FormatGo(src)
+	formatted, err := e.runtime.formatter.FormatGo(src)
 	if err != nil {
 		return err
 	}
@@ -713,10 +713,10 @@ func isPipeTableBlock(lines []string) bool {
 
 // sendTerminalZoomStep sends a single zoom command to the terminal via the zoomer.
 func (e *Editor) sendTerminalZoomStep(zoomIn bool) {
-	if e.terminalZoomer == nil {
+	if e.runtime.terminalZoomer == nil {
 		return
 	}
-	_ = e.terminalZoomer.ZoomStep(zoomIn)
+	_ = e.runtime.terminalZoomer.ZoomStep(zoomIn)
 }
 
 // zoomWithAnimation performs zoom with synchronized scroll animation.
