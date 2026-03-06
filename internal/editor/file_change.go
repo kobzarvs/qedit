@@ -66,6 +66,24 @@ func (e *Editor) syncFileSnapshot() error {
 	return nil
 }
 
+// CompareExternalMetadata compares the last known file snapshot with caller-supplied file metadata.
+func (e *Editor) CompareExternalMetadata(meta FileMetadata, exists bool) ExternalChange {
+	if e.document.filename == "" || !e.file.snapshot.valid {
+		return ExternalChangeNone
+	}
+	if !exists {
+		if e.file.snapshot.exists {
+			return ExternalChangeDeleted
+		}
+		return ExternalChangeNone
+	}
+	current := snapshotFromMetadata(meta)
+	if e.file.snapshot.equal(current) {
+		return ExternalChangeNone
+	}
+	return ExternalChangeModified
+}
+
 // CheckExternalChange compares the last known file snapshot with the current file state.
 func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 	if e.document.filename == "" || !e.file.snapshot.valid {
@@ -77,18 +95,11 @@ func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 	info, err := e.runtime.workspace.Stat(e.document.filename)
 	if err != nil {
 		if e.runtime.workspace.IsNotExist(err) {
-			if e.file.snapshot.exists {
-				return ExternalChangeDeleted, nil
-			}
-			return ExternalChangeNone, nil
+			return e.CompareExternalMetadata(FileMetadata{}, false), nil
 		}
 		return ExternalChangeNone, err
 	}
-	current := snapshotFromMetadata(info)
-	if e.file.snapshot.equal(current) {
-		return ExternalChangeNone, nil
-	}
-	return ExternalChangeModified, nil
+	return e.CompareExternalMetadata(info, true), nil
 }
 
 // ReloadFromDisk replaces the buffer with on-disk contents.

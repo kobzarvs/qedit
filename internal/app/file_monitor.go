@@ -193,10 +193,19 @@ func (m *externalFileMonitor) startAutoReload() {
 }
 
 func (m *externalFileMonitor) applyExternalChange() {
-	change, err := m.ed.CheckExternalChange()
-	if err != nil {
-		logger.Error("file change check failed", "error", err)
-		return
+	change := editor.ExternalChangeNone
+	name := m.ed.Filename()
+	if name != "" {
+		info, err := m.fileStore.Stat(name)
+		if err != nil {
+			if !m.fileStore.IsNotExist(err) {
+				logger.Error("file change check failed", "error", err)
+				return
+			}
+			change = m.ed.CompareExternalMetadata(editor.FileMetadata{}, false)
+		} else {
+			change = m.ed.CompareExternalMetadata(info, true)
+		}
 	}
 	if change == editor.ExternalChangeNone {
 		if m.ed.ExternalChange() != editor.ExternalChangeNone {
@@ -211,7 +220,7 @@ func (m *externalFileMonitor) applyExternalChange() {
 			return
 		}
 		largeFile := false
-		if name := m.ed.Filename(); name != "" {
+		if name != "" {
 			if info, err := m.fileStore.Stat(name); err == nil && info.Size > m.autoReloadMaxBytes {
 				largeFile = true
 			}
