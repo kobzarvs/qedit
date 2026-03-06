@@ -8,35 +8,35 @@ func (e *Editor) handleBranchPicker(ev EventKey) bool {
 		e.closeBranchPicker("")
 		return false
 	case "enter":
-		if len(e.branchPickerItems) == 0 {
+		if len(e.branchPicker.items) == 0 {
 			e.closeBranchPicker("")
 			return false
 		}
-		selection := e.branchPickerItems[e.branchPickerIndex]
+		selection := e.branchPicker.items[e.branchPicker.index]
 		e.closeBranchPicker(selection)
 		return false
 	case "up", "k":
-		e.branchPickerIndex--
+		e.branchPicker.index--
 	case "down", "j":
-		e.branchPickerIndex++
+		e.branchPicker.index++
 	case "pgup":
-		e.branchPickerIndex -= e.branchPickerPageSize()
+		e.branchPicker.index -= e.branchPickerPageSize()
 	case "pgdn":
-		e.branchPickerIndex += e.branchPickerPageSize()
+		e.branchPicker.index += e.branchPickerPageSize()
 	case "home":
-		e.branchPickerIndex = 0
+		e.branchPicker.index = 0
 	case "end":
-		e.branchPickerIndex = len(e.branchPickerItems) - 1
+		e.branchPicker.index = len(e.branchPicker.items) - 1
 	default:
 		return false
 	}
-	if e.branchPickerIndex < 0 {
-		e.branchPickerIndex = 0
+	if e.branchPicker.index < 0 {
+		e.branchPicker.index = 0
 	}
-	if e.branchPickerIndex >= len(e.branchPickerItems) {
-		e.branchPickerIndex = len(e.branchPickerItems) - 1
-		if e.branchPickerIndex < 0 {
-			e.branchPickerIndex = 0
+	if e.branchPicker.index >= len(e.branchPicker.items) {
+		e.branchPicker.index = len(e.branchPicker.items) - 1
+		if e.branchPicker.index < 0 {
+			e.branchPicker.index = 0
 		}
 	}
 	return false

@@ -8,7 +8,7 @@ import (
 )
 
 func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
-	if !e.branchPickerActive || len(e.branchPickerItems) == 0 {
+	if !e.branchPicker.active || len(e.branchPicker.items) == 0 {
 		return
 	}
 	if w < 6 || viewHeight < 3 {
@@ -18,7 +18,7 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 	titleRunes := []rune(title)
 	titleWidth := len(titleRunes) + 2
 	maxItem := titleWidth
-	for _, name := range e.branchPickerItems {
+	for _, name := range e.branchPicker.items {
 		l := len([]rune(name)) + 2 // "* " or "  " prefix for all branches
 		if l > maxItem {
 			maxItem = l
@@ -39,8 +39,8 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 	if listHeight < 1 {
 		return
 	}
-	if listHeight > len(e.branchPickerItems) {
-		listHeight = len(e.branchPickerItems)
+	if listHeight > len(e.branchPicker.items) {
+		listHeight = len(e.branchPicker.items)
 	}
 	boxHeight := listHeight + 2
 	if boxHeight > viewHeight {
@@ -106,8 +106,8 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 		}
 	}
 
-	start := e.branchPickerIndex - listHeight/2
-	maxStart := len(e.branchPickerItems) - listHeight
+	start := e.branchPicker.index - listHeight/2
+	maxStart := len(e.branchPicker.items) - listHeight
 	if maxStart < 0 {
 		maxStart = 0
 	}
@@ -128,10 +128,10 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 
 	for i := 0; i < listHeight; i++ {
 		idx := start + i
-		if idx >= len(e.branchPickerItems) {
+		if idx >= len(e.branchPicker.items) {
 			break
 		}
-		branchName := e.branchPickerItems[idx]
+		branchName := e.branchPicker.items[idx]
 		isCurrentBranch := branchName == e.git.branch
 		isMainBranch := branchName == "main" || branchName == "master" || branchName == e.git.mainBranch
 
@@ -140,7 +140,7 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 		if isMainBranch {
 			style = e.styleMainBranch
 		}
-		if idx == e.branchPickerIndex {
+		if idx == e.branchPicker.index {
 			fg, _, _ := style.Decompose()
 			_, selBg, _ := selectedStyle.Decompose()
 			style = style.Foreground(fg).Background(selBg)
@@ -156,7 +156,7 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 		xOffset := 2
 		if isCurrentBranch {
 			currentMarkerStyle := markerStyle
-			if idx == e.branchPickerIndex {
+			if idx == e.branchPicker.index {
 				_, selBg, _ := selectedStyle.Decompose()
 				currentMarkerStyle = currentMarkerStyle.Background(selBg)
 			}

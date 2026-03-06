@@ -18,17 +18,17 @@ func (e *Editor) ShowBranchPicker(branches []string, current string) {
 	}
 	items := make([]string, len(branches))
 	copy(items, branches)
-	e.branchPickerItems = items
-	e.branchPickerIndex = 0
+	e.branchPicker.items = items
+	e.branchPicker.index = 0
 	if current != "" {
 		for i, name := range items {
 			if name == current {
-				e.branchPickerIndex = i
+				e.branchPicker.index = i
 				break
 			}
 		}
 	}
-	e.branchPickerActive = true
+	e.branchPicker.active = true
 	e.mode = ModeBranchPicker
 }
 func (e *Editor) ConsumeBranchSelection() (string, bool) {
@@ -47,9 +47,7 @@ func (e *Editor) branchPickerPageSize() int {
 	return size
 }
 func (e *Editor) closeBranchPicker(selection string) {
-	e.branchPickerActive = false
-	e.branchPickerItems = nil
-	e.branchPickerIndex = 0
+	e.branchPicker = branchPickerState{}
 	e.mode = ModeNormal
 	e.requests.branchSelection = selection
 }

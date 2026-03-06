@@ -469,9 +469,7 @@ type Editor struct {
 	highlight                    editorHighlightState
 	changeTick                   uint64
 	lastEdit                     TextEdit
-	branchPickerActive           bool
-	branchPickerItems            []string
-	branchPickerIndex            int
+	branchPicker                 branchPickerState
 	sidebar                      *Sidebar
 	sidebarStyles                SidebarStyles
 	fileTreeShowHidden           bool

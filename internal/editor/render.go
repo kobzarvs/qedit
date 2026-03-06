@@ -118,7 +118,7 @@ func (e *Editor) Render(s Screen) {
 		}
 	}
 
-	if e.branchPickerActive {
+	if e.branchPicker.active {
 		e.renderBranchPicker(s, w, viewHeight)
 	}
 	if e.spaceMenuActive {
