@@ -1,14 +1,14 @@
 package editor
 
 func (e *Editor) restoreSessionState() {
-	if e.runtime.persistence == nil || !e.runtime.persistence.HasSessionState() || e.document.filename == "" {
+	if !e.hasSessionPersistence() || e.document.filename == "" {
 		return
 	}
 	path := e.normalizedPath(e.document.filename)
 	if path == "" {
 		return
 	}
-	state, ok := e.runtime.persistence.GetFileState(path)
+	state, ok := e.persistenceFileState(path)
 	if !ok {
 		return
 	}
@@ -72,7 +72,7 @@ func (e *Editor) restoreSessionState() {
 }
 
 func (e *Editor) saveSessionState() {
-	if e.runtime.persistence == nil || !e.runtime.persistence.HasSessionState() || e.document.filename == "" {
+	if !e.hasSessionPersistence() || e.document.filename == "" {
 		return
 	}
 	path := e.normalizedPath(e.document.filename)
@@ -97,7 +97,7 @@ func (e *Editor) saveSessionState() {
 		SelectionEndRow:   e.selectionEnd.Row,
 		SelectionEndCol:   e.selectionEnd.Col,
 	}
-	e.runtime.persistence.SetFileState(path, state)
+	e.setPersistenceFileState(path, state)
 }
 
 // Shutdown saves session state and stops background tasks
@@ -109,7 +109,7 @@ func (e *Editor) Shutdown() {
 		e.buffers.UpdateActive(bs)
 		// Save session state for all buffers
 		for _, info := range e.buffers.Items() {
-			if info.Filename != "" && e.runtime.persistence != nil && e.runtime.persistence.HasSessionState() {
+			if info.Filename != "" && e.hasSessionPersistence() {
 				// Temporarily set filename to save each buffer's session
 				// (restoreSessionState/saveSessionState use current document filename)
 				origFilename := e.document.filename
@@ -129,7 +129,7 @@ func (e *Editor) Shutdown() {
 	} else {
 		e.saveSessionState()
 	}
-	if e.runtime.persistence != nil && e.runtime.persistence.HasSessionState() {
-		e.runtime.persistence.Stop()
+	if e.hasSessionPersistence() {
+		e.stopPersistence()
 	}
 }

@@ -212,10 +212,10 @@ func (e *Editor) cmdHistoryDown() {
 // LoadCmdHistory loads command history from file
 func (e *Editor) LoadCmdHistory() {
 	path := e.commandLine.historyPath
-	if path == "" || e.runtime.persistence == nil || !e.runtime.persistence.HasHistory() {
+	if path == "" || !e.hasHistoryPersistence() {
 		return
 	}
-	history, err := e.runtime.persistence.LoadHistory(path)
+	history, err := e.loadHistory(path)
 	if err != nil {
 		return // File doesn't exist yet, that's ok
 	}
@@ -225,7 +225,7 @@ func (e *Editor) LoadCmdHistory() {
 // saveCmdHistory saves command history to file
 func (e *Editor) saveCmdHistory() {
 	path := e.commandLine.historyPath
-	if path == "" || e.runtime.persistence == nil || !e.runtime.persistence.HasHistory() {
+	if path == "" || !e.hasHistoryPersistence() {
 		return
 	}
 	// Keep only last 1000 commands
@@ -233,7 +233,7 @@ func (e *Editor) saveCmdHistory() {
 	if len(history) > 1000 {
 		history = history[len(history)-1000:]
 	}
-	_ = e.runtime.persistence.SaveHistory(path, history)
+	_ = e.saveHistory(path, history)
 }
 
 // filterCommands returns commands matching the given prefix

@@ -1,17 +1,17 @@
 package editor
 
 func (e *Editor) OpenFile(path string) error {
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
+	if e.workspaceFileStore() == nil {
 		return errFileStoreUnavailable()
 	}
 	absPath := path
-	if abs, err := e.runtime.workspace.Abs(path); err == nil {
+	if abs, err := e.workspaceAbs(path); err == nil {
 		absPath = abs
 	}
 	if e.OpenExistingBuffer(absPath) {
 		return nil
 	}
-	data, err := e.runtime.workspace.Read(absPath)
+	data, err := e.workspaceRead(absPath)
 	if err != nil {
 		return err
 	}

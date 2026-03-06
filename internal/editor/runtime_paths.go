@@ -7,7 +7,7 @@ import (
 
 // normalizedPath resolves a path through the runtime workspace when available.
 func (e *Editor) normalizedPath(path string) string {
-	return normalizedPathWithStore(e.runtime.workspace, path)
+	return normalizedPathWithStore(e.workspaceFileStore(), path)
 }
 
 func normalizedPathWithStore(fs FileStore, path string) string {

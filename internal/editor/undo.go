@@ -255,14 +255,14 @@ func (e *Editor) SaveUndoHistory() error {
 	if e.document.filename == "" {
 		return nil // No file path, nothing to save
 	}
-	if e.runtime.persistence == nil || !e.runtime.persistence.HasUndo() {
+	if !e.hasUndoPersistence() {
 		return errUndoStoreUnavailable()
 	}
 
 	// Get file mtime for validation
 	var mtime int64
-	if e.runtime.workspace != nil && e.runtime.workspace.HasFileStore() {
-		if info, err := e.runtime.workspace.Stat(e.document.filename); err == nil {
+	if e.workspaceFileStore() != nil {
+		if info, err := e.workspaceStat(e.document.filename); err == nil {
 			mtime = info.ModTime.UnixNano()
 		}
 	}
@@ -287,7 +287,7 @@ func (e *Editor) SaveUndoHistory() error {
 	if err := writer.Flush(); err != nil {
 		return err
 	}
-	return e.runtime.persistence.SaveUndo(e.document.filename, buf.Bytes())
+	return e.saveUndo(e.document.filename, buf.Bytes())
 }
 
 // LoadUndoHistory loads the undo history from the changelog file
@@ -295,13 +295,13 @@ func (e *Editor) LoadUndoHistory() error {
 	if e.document.filename == "" {
 		return nil
 	}
-	if e.runtime.persistence == nil || !e.runtime.persistence.HasUndo() {
+	if !e.hasUndoPersistence() {
 		return errUndoStoreUnavailable()
 	}
 
-	data, err := e.runtime.persistence.LoadUndo(e.document.filename)
+	data, err := e.loadUndo(e.document.filename)
 	if err != nil {
-		if e.runtime.persistence.IsUndoNotExist(err) {
+		if e.isUndoNotExist(err) {
 			return nil // No history file, that's ok
 		}
 		return err
@@ -309,8 +309,8 @@ func (e *Editor) LoadUndoHistory() error {
 
 	// Get current file mtime for validation
 	var currentMtime int64
-	if e.runtime.workspace != nil && e.runtime.workspace.HasFileStore() {
-		if info, err := e.runtime.workspace.Stat(e.document.filename); err == nil {
+	if e.workspaceFileStore() != nil {
+		if info, err := e.workspaceStat(e.document.filename); err == nil {
 			currentMtime = info.ModTime.UnixNano()
 		}
 	}
@@ -356,12 +356,12 @@ func (e *Editor) ClearUndoHistory() error {
 	if e.document.filename == "" {
 		return nil
 	}
-	if e.runtime.persistence == nil || !e.runtime.persistence.HasUndo() {
+	if !e.hasUndoPersistence() {
 		return errUndoStoreUnavailable()
 	}
 
-	err := e.runtime.persistence.RemoveUndo(e.document.filename)
-	if e.runtime.persistence.IsUndoNotExist(err) {
+	err := e.removeUndo(e.document.filename)
+	if e.isUndoNotExist(err) {
 		return nil
 	}
 	return err

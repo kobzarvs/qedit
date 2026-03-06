@@ -68,12 +68,12 @@ func (e *Editor) syncFileSnapshot() error {
 		e.file.snapshot = fileSnapshot{}
 		return nil
 	}
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
+	if e.workspaceFileStore() == nil {
 		return errFileStoreUnavailable()
 	}
-	info, err := e.runtime.workspace.Stat(e.document.filename)
+	info, err := e.workspaceStat(e.document.filename)
 	if err != nil {
-		if e.runtime.workspace.IsNotExist(err) {
+		if e.workspaceIsNotExist(err) {
 			e.file.snapshot = fileSnapshot{exists: false, valid: true}
 			return nil
 		}
@@ -106,12 +106,12 @@ func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 	if e.document.filename == "" || !e.file.snapshot.valid {
 		return ExternalChangeNone, nil
 	}
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
+	if e.workspaceFileStore() == nil {
 		return ExternalChangeNone, errFileStoreUnavailable()
 	}
-	info, err := e.runtime.workspace.Stat(e.document.filename)
+	info, err := e.workspaceStat(e.document.filename)
 	if err != nil {
-		if e.runtime.workspace.IsNotExist(err) {
+		if e.workspaceIsNotExist(err) {
 			return e.CompareExternalMetadata(FileMetadata{}, false), nil
 		}
 		return ExternalChangeNone, err
@@ -125,10 +125,10 @@ func (e *Editor) ReloadFromDisk(force bool) error {
 	if err != nil {
 		return err
 	}
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
+	if e.workspaceFileStore() == nil {
 		return errFileStoreUnavailable()
 	}
-	data, err := e.runtime.workspace.Read(path)
+	data, err := e.workspaceRead(path)
 	if err != nil {
 		return err
 	}
@@ -284,10 +284,10 @@ func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 		e.ApplyExternalMergePlan(plan, "", false)
 		return false, nil
 	}
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasMerger() {
+	if !e.hasWorkspaceMerger() {
 		return false, errMergerUnavailable()
 	}
-	merged, conflict, err := e.runtime.workspace.Merge(plan.Base, plan.Local, plan.Remote)
+	merged, conflict, err := e.workspaceMerge(plan.Base, plan.Local, plan.Remote)
 	if err != nil {
 		return false, err
 	}

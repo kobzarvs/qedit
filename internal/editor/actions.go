@@ -324,10 +324,10 @@ func (e *Editor) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasFileStore() {
+	if e.workspaceFileStore() == nil {
 		return errFileStoreUnavailable()
 	}
-	if err := e.runtime.workspace.Write(path, data); err != nil {
+	if err := e.workspaceWrite(path, data); err != nil {
 		return err
 	}
 	e.ApplySavedFile(path)
@@ -335,10 +335,10 @@ func (e *Editor) Save(path string) error {
 }
 func (e *Editor) FormatGo() error {
 	src := e.Content()
-	if e.runtime.workspace == nil || !e.runtime.workspace.HasFormatter() {
+	if !e.hasWorkspaceFormatter() {
 		return errors.New("formatter unavailable")
 	}
-	formatted, err := e.runtime.workspace.FormatGo(src)
+	formatted, err := e.workspaceFormatGo(src)
 	if err != nil {
 		return err
 	}
