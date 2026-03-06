@@ -94,32 +94,15 @@ func (a *App) Run() error {
 	var langName string
 	highlightEnabled := true
 	highlightExpected := false
-	isAsyncParseLang := func(name string) bool {
-		switch name {
-		case "typescript", "typescriptreact", "javascript", "javascriptreact", "vue":
-			return true
-		default:
-			return false
-		}
-	}
 	if len(a.args) > 0 {
 		openPath = a.args[0]
 		if err := ed.OpenFile(openPath); err != nil {
 			return err
 		}
 		gitPath = openPath
-		if highlightMaxBytes > 0 {
-			if info, err := os.Stat(openPath); err == nil && info.Size() > highlightMaxBytes {
-				highlightEnabled = false
-			}
-		}
 		content := ed.Content()
 		ls.OpenFile(openPath, content)
-		if highlightEnabled {
-			if lang := langs.Match(openPath); lang != nil {
-				langName = lang.Name
-			}
-		}
+		langName, highlightEnabled = detectHighlightLanguage(openPath, langs, highlightMaxBytes)
 		highlightExpected = highlightEnabled && langName != ""
 	}
 	if gitPath == "" {
@@ -362,34 +345,7 @@ func (a *App) Run() error {
 		if isAsyncParseLang(langName) {
 			ts.Parse(openPath, langName, ed.Content())
 		} else if ts.ParseSync(openPath, langName, ed.Content()) {
-			_, h := s.Size()
-			viewHeight := h - 2
-			if viewHeight < 0 {
-				viewHeight = 0
-			}
-			end := viewHeight - 1
-			if end < 0 {
-				end = 0
-			}
-			lineCount := ed.LineCount()
-			if lineCount > 0 && end >= lineCount {
-				end = lineCount - 1
-			}
-			spans := ts.Highlights(openPath, 0, end)
-			if spans != nil {
-				editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
-				for line, lineSpans := range spans {
-					dst := make([]editor.HighlightSpan, len(lineSpans))
-					for i, span := range lineSpans {
-						dst[i] = editor.HighlightSpan{
-							StartCol: span.StartCol,
-							EndCol:   span.EndCol,
-							Kind:     span.Kind,
-						}
-					}
-					editorSpans[line] = dst
-				}
-				ed.SetHighlights(0, end, editorSpans)
+			if _, end, ok := applyInitialScreenHighlights(ed, s, ts, openPath); ok {
 				lastHighlightStart = 0
 				lastHighlightEnd = end
 			}
@@ -423,12 +379,7 @@ func (a *App) Run() error {
 		}
 		content := ed.Content()
 		ls.OpenFile(absPath, content)
-		langName = ""
-		if highlightEnabled {
-			if lang := langs.Match(absPath); lang != nil {
-				langName = lang.Name
-			}
-		}
+		langName, highlightEnabled = detectHighlightLanguage(absPath, langs, highlightMaxBytes)
 		highlightExpected = highlightEnabled && langName != ""
 
 		lastChangeTick = ed.ChangeTick()
@@ -438,34 +389,7 @@ func (a *App) Run() error {
 			if isAsyncParseLang(langName) {
 				ts.Parse(absPath, langName, ed.Content())
 			} else if ts.ParseSync(absPath, langName, ed.Content()) {
-				_, h := s.Size()
-				viewHeight := h - 2
-				if viewHeight < 0 {
-					viewHeight = 0
-				}
-				end := viewHeight - 1
-				if end < 0 {
-					end = 0
-				}
-				lineCount := ed.LineCount()
-				if lineCount > 0 && end >= lineCount {
-					end = lineCount - 1
-				}
-				spans := ts.Highlights(absPath, 0, end)
-				if spans != nil {
-					editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
-					for line, lineSpans := range spans {
-						dst := make([]editor.HighlightSpan, len(lineSpans))
-						for i, span := range lineSpans {
-							dst[i] = editor.HighlightSpan{
-								StartCol: span.StartCol,
-								EndCol:   span.EndCol,
-								Kind:     span.Kind,
-							}
-						}
-						editorSpans[line] = dst
-					}
-					ed.SetHighlights(0, end, editorSpans)
+				if _, end, ok := applyInitialScreenHighlights(ed, s, ts, absPath); ok {
 					lastHighlightStart = 0
 					lastHighlightEnd = end
 				}
@@ -692,18 +616,7 @@ func (a *App) Run() error {
 				ls.OpenFile(path, content)
 
 				// Re-detect language
-				langName = ""
-				highlightEnabled = true
-				if highlightMaxBytes > 0 {
-					if info, err := os.Stat(path); err == nil && info.Size() > highlightMaxBytes {
-						highlightEnabled = false
-					}
-				}
-				if highlightEnabled {
-					if lang := langs.Match(path); lang != nil {
-						langName = lang.Name
-					}
-				}
+				langName, highlightEnabled = detectHighlightLanguage(path, langs, highlightMaxBytes)
 				highlightExpected = highlightEnabled && langName != ""
 
 				// Re-parse tree-sitter
@@ -711,34 +624,9 @@ func (a *App) Run() error {
 					if isAsyncParseLang(langName) {
 						ts.Parse(path, langName, ed.Content())
 					} else if ts.ParseSync(path, langName, ed.Content()) {
-						_, h := s.Size()
-						viewHeight := h - 2
-						if viewHeight < 0 {
-							viewHeight = 0
-						}
-						end := viewHeight - 1
-						if end < 0 {
-							end = 0
-						}
-						lineCount := ed.LineCount()
-						if lineCount > 0 && end >= lineCount {
-							end = lineCount - 1
-						}
-						spans := ts.Highlights(path, 0, end)
-						if spans != nil {
-							editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
-							for line, lineSpans := range spans {
-								dst := make([]editor.HighlightSpan, len(lineSpans))
-								for i, span := range lineSpans {
-									dst[i] = editor.HighlightSpan{
-										StartCol: span.StartCol,
-										EndCol:   span.EndCol,
-										Kind:     span.Kind,
-									}
-								}
-								editorSpans[line] = dst
-							}
-							ed.SetHighlights(0, end, editorSpans)
+						if _, end, ok := applyInitialScreenHighlights(ed, s, ts, path); ok {
+							lastHighlightStart = 0
+							lastHighlightEnd = end
 						}
 					} else {
 						highlightExpected = false
@@ -862,21 +750,7 @@ func (a *App) Run() error {
 			if asyncChanged && !tsParsed {
 				// Async reparse queued but not done yet — keep current highlights as-is
 			} else if changed || tsParsed || start != lastHighlightStart || end != lastHighlightEnd {
-				spans := ts.Highlights(openPath, start, end)
-				if spans != nil {
-					editorSpans := make(map[int][]editor.HighlightSpan, len(spans))
-					for line, lineSpans := range spans {
-						dst := make([]editor.HighlightSpan, len(lineSpans))
-						for i, span := range lineSpans {
-							dst[i] = editor.HighlightSpan{
-								StartCol: span.StartCol,
-								EndCol:   span.EndCol,
-								Kind:     span.Kind,
-							}
-						}
-						editorSpans[line] = dst
-					}
-					ed.SetHighlights(start, end, editorSpans)
+				if applyHighlightRange(ed, ts, openPath, start, end) {
 					lastHighlightStart = start
 					lastHighlightEnd = end
 				} else {
