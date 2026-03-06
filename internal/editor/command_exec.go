@@ -284,7 +284,7 @@ func (e *Editor) resolveWorktreeTarget(root, target string) (string, error) {
 		return "", err
 	}
 	targetAbs := target
-	if abs, err := filepath.Abs(target); err == nil {
+	if abs := e.normalizedPath(target); abs != "" {
 		targetAbs = abs
 	}
 	for _, wt := range worktrees {

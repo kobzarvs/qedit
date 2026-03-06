@@ -108,3 +108,38 @@ func TestCloseRefsPickerUsesRuntimeFileStoreAbs(t *testing.T) {
 		t.Fatalf("open location request = true, want false")
 	}
 }
+
+func TestRelativePathFromWorkingDirUsesRuntimeFileStoreAbs(t *testing.T) {
+	e := newTestEditor("one")
+	e.SetFileStore(&testFileStore{
+		absPaths: map[string]string{
+			".":       "/cwd",
+			"rel.txt": "/cwd/sub/rel.txt",
+		},
+	})
+
+	rel, ok := e.relativePathFromWorkingDir("rel.txt")
+
+	if !ok {
+		t.Fatalf("relativePathFromWorkingDir ok = false, want true")
+	}
+	if rel != "sub/rel.txt" {
+		t.Fatalf("relativePathFromWorkingDir = %q, want %q", rel, "sub/rel.txt")
+	}
+}
+
+func TestSidebarGitChangesUsesRuntimeFileStoreAbs(t *testing.T) {
+	e := newTestEditor("one")
+	e.SetFileStore(&testFileStore{
+		absPaths: map[string]string{
+			"rel.txt": "/abs/rel.txt",
+		},
+	})
+	content := NewSidebarGitChangesContent(e)
+
+	content.SetCurrentPath("rel.txt")
+
+	if content.currentPath != "/abs/rel.txt" {
+		t.Fatalf("currentPath = %q, want %q", content.currentPath, "/abs/rel.txt")
+	}
+}

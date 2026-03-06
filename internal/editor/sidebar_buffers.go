@@ -1,9 +1,5 @@
 package editor
 
-import (
-	"path/filepath"
-)
-
 // SidebarBuffersContent implements SidebarContent for the open buffers list.
 type SidebarBuffersContent struct {
 	editor *Editor
@@ -30,11 +26,8 @@ func (c *SidebarBuffersContent) buildItems() {
 		if label == "" {
 			label = "[No Name]"
 		} else {
-			// Show relative path from cwd if possible
-			if cwd, err := filepath.Abs("."); err == nil {
-				if rel, err := filepath.Rel(cwd, info.Filename); err == nil && len(rel) < len(info.Filename) {
-					label = rel
-				}
+			if rel, ok := c.editor.relativePathFromWorkingDir(info.Filename); ok && len(rel) < len(info.Filename) {
+				label = rel
 			}
 		}
 		var icon rune

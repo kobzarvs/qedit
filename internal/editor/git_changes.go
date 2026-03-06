@@ -1,7 +1,6 @@
 package editor
 
 import (
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -85,7 +84,7 @@ func (e *Editor) detectGitRoot() string {
 			return root
 		}
 	}
-	if cwd, err := os.Getwd(); err == nil {
+	if cwd := e.normalizedPath("."); cwd != "" {
 		if root := gitinfo.Root(cwd); root != "" {
 			return root
 		}
@@ -146,12 +145,7 @@ func (e *Editor) gotoGitChange(forward bool) {
 		return
 	}
 	e.git.pendingDiffJump = true
-	currentPath := e.document.filename
-	if currentPath != "" {
-		if abs, err := filepath.Abs(currentPath); err == nil {
-			currentPath = abs
-		}
-	}
+	currentPath := e.normalizedPath(e.document.filename)
 	target := e.findGitChangeHunk(currentPath, e.cursor.Row, forward)
 	if target == nil {
 		e.setStatus("no git changes")
@@ -199,10 +193,7 @@ func (e *Editor) gitDiffLineKind(lineIdx int) conflictLineKind {
 	if len(e.git.changeHunks) == 0 {
 		return conflictNone
 	}
-	currentPath := e.document.filename
-	if abs, err := filepath.Abs(currentPath); err == nil {
-		currentPath = abs
-	}
+	currentPath := e.normalizedPath(e.document.filename)
 	for _, h := range e.git.changeHunks {
 		if h.AbsPath < currentPath {
 			continue
@@ -221,10 +212,7 @@ func (e *Editor) gitDiffHasCurrentFileHunks() bool {
 	if len(e.git.changeHunks) == 0 || e.document.filename == "" {
 		return false
 	}
-	currentPath := e.document.filename
-	if abs, err := filepath.Abs(currentPath); err == nil {
-		currentPath = abs
-	}
+	currentPath := e.normalizedPath(e.document.filename)
 	for _, h := range e.git.changeHunks {
 		if h.AbsPath < currentPath {
 			continue
@@ -242,10 +230,7 @@ func (e *Editor) gitDiffHighlightAppliesToCurrentFile() bool {
 	if hunk == nil || hunk.AbsPath == "" || e.document.filename == "" {
 		return false
 	}
-	currentPath := e.document.filename
-	if abs, err := filepath.Abs(currentPath); err == nil {
-		currentPath = abs
-	}
+	currentPath := e.normalizedPath(e.document.filename)
 	return currentPath == hunk.AbsPath
 }
 

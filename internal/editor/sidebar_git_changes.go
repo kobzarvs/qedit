@@ -61,8 +61,8 @@ func (c *SidebarGitChangesContent) SetCurrentPath(path string) {
 		c.ensureItems()
 		return
 	}
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
+	if c.editor != nil {
+		path = c.editor.normalizedPath(path)
 	}
 	c.currentPath = filepath.Clean(path)
 	c.ensureItems()

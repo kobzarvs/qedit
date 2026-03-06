@@ -2,9 +2,7 @@ package editor
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 )
 
 func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
@@ -242,10 +240,8 @@ func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
 
 		// Format: filename:line
 		displayPath := loc.Path
-		if cwd, err := os.Getwd(); err == nil {
-			if rel, err := filepath.Rel(cwd, loc.Path); err == nil && !strings.HasPrefix(rel, "..") {
-				displayPath = rel
-			}
+		if rel, ok := e.relativePathFromWorkingDir(loc.Path); ok {
+			displayPath = rel
 		}
 		// Use just filename if path is too long
 		if len(displayPath) > sidebarWidth-10 {

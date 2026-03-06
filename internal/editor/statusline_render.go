@@ -2,7 +2,6 @@ package editor
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -78,17 +77,8 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	if name == "" {
 		name = "[No Name]"
 	} else {
-		// Show relative path from cwd if possible
-		if cwd, err := os.Getwd(); err == nil {
-			absName := name
-			if !filepath.IsAbs(name) {
-				absName, _ = filepath.Abs(name)
-			}
-			if rel, err := filepath.Rel(cwd, absName); err == nil && !strings.HasPrefix(rel, "..") {
-				name = rel
-			} else {
-				name = filepath.Base(name)
-			}
+		if rel, ok := e.relativePathFromWorkingDir(name); ok {
+			name = rel
 		} else {
 			name = filepath.Base(name)
 		}
