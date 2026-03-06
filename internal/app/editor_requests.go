@@ -9,7 +9,6 @@ import (
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
-	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
@@ -71,57 +70,4 @@ func (c *editorRuntimeController) switchToWorktree(targetPath string) {
 	c.ed.SetGitBranch(gitinfo.Branch(candidate))
 	c.ed.SetGitRoot(gitinfo.Root(candidate))
 	c.ed.SetStatusMessage("worktree switched")
-}
-
-func (c *editorRuntimeController) handleEditorRequests() {
-	for {
-		req, ok := c.ed.ConsumeRuntimeRequest()
-		if !ok {
-			return
-		}
-		switch req.Kind {
-		case editor.RuntimeRequestShowBranchPicker:
-			showSidebarBranches(c.ed, c.state.gitPath)
-		case editor.RuntimeRequestShowWorktrees:
-			showSidebarWorktrees(c.ed, c.state.gitPath)
-		case editor.RuntimeRequestSelectBranch:
-			if req.Value != "" {
-				logger.Debug("branch selected", "branch", req.Value)
-				checkoutBranch(c.ed, c.state.gitPath, req.Value)
-			}
-		case editor.RuntimeRequestSwitchWorktree:
-			if req.Path == "" {
-				continue
-			}
-			logger.Debug("worktree selected", "path", req.Path)
-			if c.state.gitPath == "" {
-				c.ed.SetStatusMessage("not a git repository")
-			} else {
-				c.switchToWorktree(req.Path)
-			}
-		case editor.RuntimeRequestOpenFile:
-			if req.Path == "" {
-				continue
-			}
-			err := c.openFile(req.Path)
-			if err != nil {
-				c.ed.SetStatusMessage(err.Error())
-				continue
-			}
-			c.ed.ApplyPendingGitDiffJump()
-			if req.Line >= 0 {
-				c.ed.JumpToLocation(req.Line, req.Col)
-			}
-		case editor.RuntimeRequestBufferSwitched:
-			path := c.ed.Filename()
-			if path != c.state.openPath {
-				c.fileMonitor.Watch(path)
-				state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, path, c.highlightMaxBytes)
-				c.state.applyActiveFile(state)
-
-				c.ed.SetGitBranch(gitinfo.Branch(path))
-				c.ed.SetGitRoot(gitinfo.Root(path))
-			}
-		}
-	}
 }
