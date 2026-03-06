@@ -32,7 +32,7 @@ language-servers = ["tsgo"]
 name = "vue"
 file-types = ["vue"]
 roots = ["package.json", "tsconfig.json"]
-language-servers = ["tsgo"]
+language-servers = ["vue-language-server"]
 
 [[language]]
 name = "toml"
@@ -77,3 +77,10 @@ args = []
 [language-server.tsgo]
 command = "tsgo"
 args = ["--lsp", "-stdio"]
+
+[language-server.vue-language-server]
+command = "vue-language-server"
+args = ["--stdio"]
+
+[language-server.vue-language-server.initialization-options.typescript]
+tsdk = "/Users/diver/.nvm/versions/node/v24.13.0/lib/node_modules/@vue/language-server/node_modules/typescript/lib"

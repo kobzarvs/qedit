@@ -9,8 +9,9 @@ import (
 )
 
 type LanguageServer struct {
-	Command string   `toml:"command"`
-	Args    []string `toml:"args"`
+	Command               string         `toml:"command"`
+	Args                  []string       `toml:"args"`
+	InitializationOptions map[string]any `toml:"initialization-options"`
 }
 
 type Language struct {
@@ -21,7 +22,7 @@ type Language struct {
 }
 
 type Languages struct {
-	Languages       []Language               `toml:"language"`
+	Languages       []Language                `toml:"language"`
 	LanguageServers map[string]LanguageServer `toml:"language-server"`
 }
 

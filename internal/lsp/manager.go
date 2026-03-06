@@ -145,6 +145,7 @@ func (m *Manager) getServer(name string, cfg config.LanguageServer, root string)
 		stdin:       stdin,
 		reader:      bufio.NewReader(stdout),
 		rootURI:     rootURI,
+		initOpts:    cfg.InitializationOptions,
 		events:      m.events,
 		docs:        make(map[string]int),
 		initID:      -1,
@@ -302,6 +303,7 @@ type server struct {
 	stdin       io.WriteCloser
 	reader      *bufio.Reader
 	rootURI     string
+	initOpts    map[string]any
 	events      chan Event
 	mu          sync.Mutex
 	nextID      int
@@ -332,10 +334,11 @@ type rpcNotification struct {
 }
 
 type initializeParams struct {
-	ProcessID    int               `json:"processId"`
-	RootURI      string            `json:"rootUri"`
-	Capabilities map[string]any    `json:"capabilities"`
-	ClientInfo   map[string]string `json:"clientInfo"`
+	ProcessID             int               `json:"processId"`
+	RootURI               string            `json:"rootUri"`
+	Capabilities          map[string]any    `json:"capabilities"`
+	ClientInfo            map[string]string `json:"clientInfo"`
+	InitializationOptions map[string]any    `json:"initializationOptions,omitempty"`
 }
 
 type textDocumentItem struct {
@@ -379,10 +382,11 @@ type didCloseParams struct {
 func (s *server) initialize() error {
 	logger.Debug("lsp initialize start", "server", s.name, "root", s.rootURI)
 	params := initializeParams{
-		ProcessID:    os.Getpid(),
-		RootURI:      s.rootURI,
-		Capabilities: map[string]any{},
-		ClientInfo:   map[string]string{"name": "qedit"},
+		ProcessID:             os.Getpid(),
+		RootURI:               s.rootURI,
+		Capabilities:          map[string]any{},
+		ClientInfo:            map[string]string{"name": "qedit"},
+		InitializationOptions: s.initOpts,
 	}
 	s.mu.Lock()
 	s.nextID++
@@ -490,12 +494,13 @@ func (s *server) readLoop() {
 			continue
 		}
 		// Check if this is a server-initiated request (has both id and method)
-		if _, hasMethod := envelope["method"]; hasMethod {
+		if methodRaw, hasMethod := envelope["method"]; hasMethod {
 			if idRaw, ok := envelope["id"]; ok {
-				// Server-initiated request — respond with null result
+				var method string
+				_ = json.Unmarshal(methodRaw, &method)
 				var id json.RawMessage
 				if err := json.Unmarshal(idRaw, &id); err == nil {
-					s.respondToServerRequest(id)
+					s.respondToServerRequest(id, method, envelope["params"])
 				}
 			}
 			// Notifications (method but no id) are ignored
@@ -511,13 +516,35 @@ func (s *server) readLoop() {
 	}
 }
 
-func (s *server) respondToServerRequest(id json.RawMessage) {
+func (s *server) respondToServerRequest(id json.RawMessage, method string, params json.RawMessage) {
+	var result any
+	switch method {
+	case "workspace/configuration":
+		// Return an array of empty objects, one per requested item
+		var cfg struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		if err := json.Unmarshal(params, &cfg); err == nil && len(cfg.Items) > 0 {
+			arr := make([]map[string]any, len(cfg.Items))
+			for i := range arr {
+				arr[i] = map[string]any{}
+			}
+			result = arr
+		} else {
+			result = []map[string]any{{}}
+		}
+	case "client/registerCapability":
+		// Accept dynamic registration
+		result = nil
+	default:
+		result = nil
+	}
 	resp := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      id,
-		"result":  nil,
+		"result":  result,
 	}
-	logger.Debug("lsp server request respond", "server", s.name, "id", string(id))
+	logger.Debug("lsp server request respond", "server", s.name, "method", method, "id", string(id))
 	_ = s.send(resp)
 }
 
