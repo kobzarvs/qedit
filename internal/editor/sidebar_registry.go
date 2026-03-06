@@ -60,6 +60,10 @@ func (e *Editor) RegisterSidebarMode(provider SidebarModeProvider) {
 	e.sidebarModes.Register(provider)
 }
 
+func (e *Editor) OpenSidebarMode(mode SidebarMode) {
+	e.switchSidebarMode(mode)
+}
+
 func (e *Editor) registerBuiltInSidebarModes() {
 	e.RegisterSidebarMode(SidebarModeProvider{
 		Mode: SidebarModeMenu,

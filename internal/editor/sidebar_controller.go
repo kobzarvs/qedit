@@ -363,6 +363,22 @@ func (e *Editor) ShowSidebarBranches(branches []string, current string) {
 	e.sidebar.Focused = true
 }
 
+func (e *Editor) ShowSidebarContent(content SidebarContent) {
+	if e.sidebar == nil || content == nil {
+		return
+	}
+	e.sidebar.SetContent(content)
+	e.sidebar.Visible = true
+	e.sidebar.Focused = true
+}
+
+func (e *Editor) CurrentSidebarMode() SidebarMode {
+	if e.sidebar == nil || e.sidebar.Content == nil {
+		return SidebarModeNone
+	}
+	return e.sidebar.Content.Mode()
+}
+
 func (e *Editor) ShowSidebarWorktrees(fs FileStore, worktrees []WorktreeInfo, activePath string) {
 	logger.Debug("ShowSidebarWorktrees called", "count", len(worktrees), "active", activePath)
 	if e.sidebar == nil {

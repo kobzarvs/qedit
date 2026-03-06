@@ -7,6 +7,7 @@ import (
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/integrations"
+	"github.com/kobzarvs/qedit/internal/plugins"
 	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
 	"github.com/kobzarvs/qedit/internal/ui"
@@ -87,6 +88,11 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 		runtimeServices.TerminalZoomer = integrations.TerminalZoomer{}
 	}
 	ed.ApplyRuntimeServices(runtimeServices)
+	if err := plugins.NewRegistry(
+		plugins.NewProfileSidebarPlugin(),
+	).Apply(ed); err != nil {
+		ed.SetStatusMessage("plugin init failed: " + err.Error())
+	}
 
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()
