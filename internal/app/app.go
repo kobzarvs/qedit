@@ -85,25 +85,21 @@ func (a *App) Run() error {
 	sessionStore := newEditorSessionStore(sessionMgr)
 	ed := newConfiguredEditor(&cfg, langs, ts, sessionStore)
 	defer ed.Shutdown()
-	gitPath := ""
-	var openPath string
-	var langName string
-	highlightEnabled := true
-	highlightExpected := false
+	runtimeState := newEditorRuntimeState(ed)
 	if len(a.args) > 0 {
-		openPath = a.args[0]
-		if err := ed.OpenFile(openPath); err != nil {
+		runtimeState.openPath = a.args[0]
+		if err := ed.OpenFile(runtimeState.openPath); err != nil {
 			return err
 		}
-		gitPath = openPath
+		runtimeState.gitPath = runtimeState.openPath
 		content := ed.Content()
-		ls.OpenFile(openPath, content)
-		langName, highlightEnabled = detectHighlightLanguage(openPath, langs, highlightMaxBytes)
-		highlightExpected = highlightEnabled && langName != ""
+		ls.OpenFile(runtimeState.openPath, content)
+		runtimeState.langName, runtimeState.highlightEnabled = detectHighlightLanguage(runtimeState.openPath, langs, highlightMaxBytes)
+		runtimeState.highlightExpected = runtimeState.highlightEnabled && runtimeState.langName != ""
 	}
-	if gitPath == "" {
+	if runtimeState.gitPath == "" {
 		if cwd, err := os.Getwd(); err == nil {
-			gitPath = cwd
+			runtimeState.gitPath = cwd
 		}
 	}
 
@@ -121,29 +117,25 @@ func (a *App) Run() error {
 		autoReloadRetries = 1
 	}
 	fileMonitor := newExternalFileMonitor(s, ed, autoReloadMaxBytes, autoReloadRetries, autoReloadStabilizeDelay)
-	if openPath != "" {
-		fileMonitor.Watch(openPath)
+	if runtimeState.openPath != "" {
+		fileMonitor.Watch(runtimeState.openPath)
 	}
 	defer fileMonitor.Close()
 
 	lastLayoutRaw := keyboard.CurrentLayoutRaw()
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
-	syncEditorRepoState(ed, gitPath, sessionMgr)
+	syncEditorRepoState(ed, runtimeState.gitPath, sessionMgr)
 	wireEditorRuntimeCallbacks(ed, ts, ls)
-	lastGitCheck := time.Now()
-	lastChangeTick := ed.ChangeTick()
-	lastHighlightStart := -1
-	lastHighlightEnd := -1
-	if openPath != "" && highlightEnabled && langName != "" {
-		if isAsyncParseLang(langName) {
-			ts.Parse(openPath, langName, ed.Content())
-		} else if ts.ParseSync(openPath, langName, ed.Content()) {
-			if _, end, ok := applyInitialScreenHighlights(ed, s, ts, openPath); ok {
-				lastHighlightStart = 0
-				lastHighlightEnd = end
+	if runtimeState.openPath != "" && runtimeState.highlightEnabled && runtimeState.langName != "" {
+		if isAsyncParseLang(runtimeState.langName) {
+			ts.Parse(runtimeState.openPath, runtimeState.langName, ed.Content())
+		} else if ts.ParseSync(runtimeState.openPath, runtimeState.langName, ed.Content()) {
+			if _, end, ok := applyInitialScreenHighlights(ed, s, ts, runtimeState.openPath); ok {
+				runtimeState.lastHighlightStart = 0
+				runtimeState.lastHighlightEnd = end
 			}
 		} else {
-			highlightExpected = false
+			runtimeState.highlightExpected = false
 		}
 	}
 
@@ -156,26 +148,19 @@ func (a *App) Run() error {
 		if abs, err := filepath.Abs(path); err == nil {
 			absPath = abs
 		}
-		if openPath == absPath {
+		if runtimeState.openPath == absPath {
 			return nil
 		}
 		if err := ed.OpenFile(absPath); err != nil {
 			return err
 		}
 		state := activateEditorFile(ed, s, ls, ts, langs, absPath, highlightMaxBytes)
-		openPath = state.openPath
-		gitPath = state.gitPath
-		langName = state.langName
-		highlightEnabled = state.highlightEnabled
-		highlightExpected = state.highlightExpected
-		lastChangeTick = state.lastChangeTick
-		lastHighlightStart = state.lastHighlightStart
-		lastHighlightEnd = state.lastHighlightEnd
+		runtimeState.applyActiveFile(state)
 
 		fileMonitor.Watch(absPath)
 		ed.SetGitMainBranch("")
-		syncEditorRepoState(ed, gitPath, sessionMgr)
-		lastGitCheck = time.Now()
+		syncEditorRepoState(ed, runtimeState.gitPath, sessionMgr)
+		runtimeState.lastGitCheck = time.Now()
 		return nil
 	}
 
@@ -187,11 +172,11 @@ func (a *App) Run() error {
 		if abs, err := filepath.Abs(targetPath); err == nil {
 			targetPath = abs
 		}
-		candidate := pickWorktreeFile(targetPath, openPath)
+		candidate := pickWorktreeFile(targetPath, runtimeState.openPath)
 		if candidate == "" {
 			ed.SetGitBranch(gitinfo.Branch(targetPath))
 			ed.SetGitRoot(gitinfo.Root(targetPath))
-			gitPath = targetPath
+			runtimeState.gitPath = targetPath
 			ed.SetStatusMessage("worktree switched (open a file)")
 			return
 		}
@@ -229,21 +214,21 @@ func (a *App) Run() error {
 			ed.UpdateScroll()
 		}
 		if ed.ConsumeBranchPickerRequest() {
-			showSidebarBranches(ed, gitPath)
+			showSidebarBranches(ed, runtimeState.gitPath)
 		}
 		if ed.ConsumeWorktreeListRequest() {
-			showSidebarWorktrees(ed, gitPath)
+			showSidebarWorktrees(ed, runtimeState.gitPath)
 		}
 		// Handle sidebar branch selection (and legacy branch picker selection)
 		if branch := ed.ConsumeSidebarBranchSelection(); branch != "" {
 			logger.Debug("sidebar branch selected", "branch", branch)
-			checkoutBranch(ed, gitPath, branch)
+			checkoutBranch(ed, runtimeState.gitPath, branch)
 		} else if branch, ok := ed.ConsumeBranchSelection(); ok {
-			checkoutBranch(ed, gitPath, branch)
+			checkoutBranch(ed, runtimeState.gitPath, branch)
 		}
 		if path := ed.ConsumeSidebarWorktreeSelection(); path != "" {
 			logger.Debug("sidebar worktree selected", "path", path)
-			if gitPath == "" {
+			if runtimeState.gitPath == "" {
 				ed.SetStatusMessage("not a git repository")
 			} else {
 				switchToWorktree(path)
@@ -263,54 +248,46 @@ func (a *App) Run() error {
 		}
 		if ed.ConsumeBufferSwitch() {
 			path := ed.Filename()
-			if path != openPath {
+			if path != runtimeState.openPath {
 				// Update file watcher
 				fileMonitor.Watch(path)
 				state := activateEditorFile(ed, s, ls, ts, langs, path, highlightMaxBytes)
-				openPath = state.openPath
-				gitPath = state.gitPath
-				langName = state.langName
-				highlightEnabled = state.highlightEnabled
-				highlightExpected = state.highlightExpected
+				runtimeState.applyActiveFile(state)
 
 				// Update git info
 				ed.SetGitBranch(gitinfo.Branch(path))
 				gitRoot := gitinfo.Root(path)
 				ed.SetGitRoot(gitRoot)
-
-				lastChangeTick = state.lastChangeTick
-				lastHighlightStart = -1
-				lastHighlightEnd = -1
 			}
 		}
 		now := time.Now()
 		fileMonitor.ProcessWatcherEvents(now, fileChangeDebounce)
 		fileMonitor.HandleAutoReloadResults()
-		if openPath != "" {
+		if runtimeState.openPath != "" {
 			fileMonitor.PollExternalChange(now, filePollInterval)
 		}
-		lastChangeTick, lastHighlightStart, lastHighlightEnd = syncVisibleHighlights(
+		runtimeState.lastChangeTick, runtimeState.lastHighlightStart, runtimeState.lastHighlightEnd = syncVisibleHighlights(
 			ed,
 			ts,
-			openPath,
-			langName,
-			highlightEnabled,
-			lastChangeTick,
-			lastHighlightStart,
-			lastHighlightEnd,
+			runtimeState.openPath,
+			runtimeState.langName,
+			runtimeState.highlightEnabled,
+			runtimeState.lastChangeTick,
+			runtimeState.lastHighlightStart,
+			runtimeState.lastHighlightEnd,
 		)
 		layoutRaw := keyboard.CurrentLayoutRaw()
 		if layoutRaw != lastLayoutRaw {
 			lastLayoutRaw = layoutRaw
 			ed.SetKeyboardLayout(keyboard.CurrentLayout())
 		}
-		if gitPath != "" && time.Since(lastGitCheck) > 2*time.Second {
-			lastGitCheck = time.Now()
-			ed.SetGitBranch(gitinfo.Branch(gitPath))
+		if runtimeState.gitPath != "" && time.Since(runtimeState.lastGitCheck) > 2*time.Second {
+			runtimeState.lastGitCheck = time.Now()
+			ed.SetGitBranch(gitinfo.Branch(runtimeState.gitPath))
 		}
-		if highlightExpected && !ed.HasHighlights() {
-			if openPath != ed.Filename() {
-				highlightExpected = false
+		if runtimeState.highlightExpected && !ed.HasHighlights() {
+			if runtimeState.openPath != ed.Filename() {
+				runtimeState.highlightExpected = false
 			}
 		}
 
