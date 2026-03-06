@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
@@ -290,71 +289,16 @@ func (a *App) Run() error {
 		if openPath != "" {
 			fileMonitor.PollExternalChange(now, filePollInterval)
 		}
-		// Drain tree-sitter async parse events
-		tsParsed := false
-	drainTS:
-		for {
-			select {
-			case evt := <-ts.Events():
-				if evt.Kind == "parsed" && evt.Path == openPath {
-					tsParsed = true
-				}
-			default:
-				break drainTS
-			}
-		}
-		if openPath != "" && highlightEnabled && langName != "" {
-			tick := ed.ChangeTick()
-			changed := tick != lastChangeTick
-			asyncChanged := false
-			if changed {
-				lastChangeTick = tick
-				if isAsyncParseLang(langName) {
-					// Adjust existing highlights to match the edit before async reparse
-					if edit, ok := ed.PeekLastEdit(); ok {
-						ed.AdjustHighlights(edit.StartRow, edit.OldEndRow, edit.NewEndRow)
-					}
-					ts.Parse(openPath, langName, ed.Content())
-					asyncChanged = true
-				} else if edit, ok := ed.ConsumeLastEdit(); ok {
-					tsEdit := sitter.EditInput{
-						StartIndex:  uint32(edit.StartByte),
-						OldEndIndex: uint32(edit.OldEndByte),
-						NewEndIndex: uint32(edit.NewEndByte),
-						StartPoint: sitter.Point{
-							Row:    uint32(edit.StartRow),
-							Column: uint32(edit.StartColBytes),
-						},
-						OldEndPoint: sitter.Point{
-							Row:    uint32(edit.OldEndRow),
-							Column: uint32(edit.OldEndColBytes),
-						},
-						NewEndPoint: sitter.Point{
-							Row:    uint32(edit.NewEndRow),
-							Column: uint32(edit.NewEndColBytes),
-						},
-					}
-					ts.ParseSyncEdit(openPath, langName, ed.Content(), &tsEdit)
-				} else {
-					ts.ParseSync(openPath, langName, ed.Content())
-				}
-			}
-			start, end := ed.VisibleRange()
-			if asyncChanged && !tsParsed {
-				// Async reparse queued but not done yet — keep current highlights as-is
-			} else if changed || tsParsed || start != lastHighlightStart || end != lastHighlightEnd {
-				if applyHighlightRange(ed, ts, openPath, start, end) {
-					lastHighlightStart = start
-					lastHighlightEnd = end
-				} else {
-					ed.SetHighlights(-1, -1, nil)
-					lastHighlightStart = -1
-					lastHighlightEnd = -1
-				}
-			}
-		} else if openPath != "" {
-			ed.SetHighlights(-1, -1, nil)
-		}
+		lastChangeTick, lastHighlightStart, lastHighlightEnd = syncVisibleHighlights(
+			ed,
+			ts,
+			openPath,
+			langName,
+			highlightEnabled,
+			lastChangeTick,
+			lastHighlightStart,
+			lastHighlightEnd,
+		)
 		layoutRaw := keyboard.CurrentLayoutRaw()
 		if layoutRaw != lastLayoutRaw {
 			lastLayoutRaw = layoutRaw
