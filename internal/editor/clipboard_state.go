@@ -1,5 +1,6 @@
 package editor
 
 type editorClipboardState struct {
-	lines [][]rune
+	lines    [][]rune
+	linewise bool
 }

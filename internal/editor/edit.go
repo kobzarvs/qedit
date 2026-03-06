@@ -719,12 +719,14 @@ func (e *Editor) fillClipboardFromSelection() bool {
 		// No selection - yank current line
 		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
 			e.clipboard.lines = [][]rune{append([]rune(nil), e.line(e.cursor.Row)...)}
+			e.clipboard.linewise = true
 		}
 		return false
 	}
 
 	// Copy selection to clipboard
 	e.clipboard.lines = nil
+	e.clipboard.linewise = false
 	for row := start.Row; row <= end.Row; row++ {
 		if row < 0 || row >= e.LineCount() {
 			continue
@@ -775,7 +777,7 @@ func (e *Editor) pasteAfter() {
 	e.startUndoGroup()
 	defer e.finishUndoGroup()
 
-	if len(e.clipboard.lines) == 1 {
+	if !e.clipboard.linewise && len(e.clipboard.lines) == 1 {
 		// Single line - paste inline after cursor
 		line := e.clipboard.lines[0]
 		pos := Cursor{Row: e.cursor.Row, Col: e.cursor.Col + 1}
@@ -812,7 +814,7 @@ func (e *Editor) pasteBefore() {
 	e.startUndoGroup()
 	defer e.finishUndoGroup()
 
-	if len(e.clipboard.lines) == 1 {
+	if !e.clipboard.linewise && len(e.clipboard.lines) == 1 {
 		// Single line - paste inline at cursor
 		line := e.clipboard.lines[0]
 		pos := e.cursor

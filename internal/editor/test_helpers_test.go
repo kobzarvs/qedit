@@ -109,6 +109,7 @@ func testStyles() EditorStyles {
 func optionsFromConfig(cfg config.Config) Options {
 	return Options{
 		TabWidth:             cfg.Editor.TabWidth,
+		Profile:              cfg.Editor.Profile,
 		LineNumbers:          cfg.Editor.LineNumbers,
 		GitBranchSymbol:      cfg.Editor.GitBranchSymbol,
 		SidebarWidth:         cfg.Editor.SidebarWidth,

@@ -152,11 +152,7 @@ func (e *Editor) Render(s Screen) {
 		s.Show()
 		return
 	}
-	cursorStyle := CursorStyleSteadyBlock
-	if e.mode == ModeInsert || e.mode == ModeSearch || e.mode == ModeCommand {
-		cursorStyle = CursorStyleSteadyBar
-	}
-	s.SetCursorStyle(cursorStyle)
+	s.SetCursorStyle(e.currentCursorStyle())
 	s.ShowCursor(cx, cy)
 	s.Show()
 }

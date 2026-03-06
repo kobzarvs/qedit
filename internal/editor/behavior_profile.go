@@ -3,7 +3,9 @@ package editor
 import "strings"
 
 const (
+	BehaviorProfileBasic = "basic"
 	BehaviorProfileHelix = "helix"
+	BehaviorProfileVim   = "vim"
 )
 
 type BehaviorProfile struct {
@@ -51,9 +53,21 @@ func (e *Editor) RegisterBehaviorProfile(profile BehaviorProfile) {
 
 func (e *Editor) registerBuiltInBehaviorProfiles() {
 	e.RegisterBehaviorProfile(BehaviorProfile{
+		Name: BehaviorProfileBasic,
+		HandleKey: func(ed *Editor, ev EventKey) bool {
+			return ed.handleBasicProfileKey(ev)
+		},
+	})
+	e.RegisterBehaviorProfile(BehaviorProfile{
 		Name: BehaviorProfileHelix,
 		HandleKey: func(ed *Editor, ev EventKey) bool {
 			return ed.handleHelixProfileKey(ev)
+		},
+	})
+	e.RegisterBehaviorProfile(BehaviorProfile{
+		Name: BehaviorProfileVim,
+		HandleKey: func(ed *Editor, ev EventKey) bool {
+			return ed.handleVimProfileKey(ev)
 		},
 	})
 }
@@ -64,6 +78,13 @@ func (e *Editor) SetBehaviorProfile(name string) bool {
 		return false
 	}
 	e.profile.name = name
+	e.profile.vim = vimProfileState{}
+	if name == BehaviorProfileBasic && e.mode == ModeNormal {
+		e.mode = ModeInsert
+	}
+	if name == BehaviorProfileVim && e.mode == ModeInsert && e.document.filename == "" && e.Content() == "" {
+		e.mode = ModeNormal
+	}
 	return true
 }
 
@@ -86,6 +107,24 @@ func (e *Editor) handleProfileKey(ev EventKey) bool {
 	return false
 }
 
+func (e *Editor) handleBasicProfileKey(ev EventKey) bool {
+	switch e.mode {
+	case ModeCommand:
+		return e.handleCommand(ev)
+	case ModeBranchPicker:
+		return e.handleBranchPicker(ev)
+	case ModeSearch:
+		return e.handleSearch(ev)
+	case ModeMerge:
+		return e.handleMerge(ev)
+	default:
+		if e.mode != ModeInsert {
+			e.mode = ModeInsert
+		}
+		return e.handleInsert(ev)
+	}
+}
+
 func (e *Editor) handleHelixProfileKey(ev EventKey) bool {
 	switch e.mode {
 	case ModeInsert:
@@ -100,5 +139,56 @@ func (e *Editor) handleHelixProfileKey(ev EventKey) bool {
 		return e.handleMerge(ev)
 	default:
 		return e.handleNormal(ev)
+	}
+}
+
+func (e *Editor) currentModeLabel() string {
+	switch e.mode {
+	case ModeCommand:
+		return "COMMAND"
+	case ModeBranchPicker:
+		return "BRANCHES"
+	case ModeSearch:
+		return "SEARCH"
+	case ModeMerge:
+		return "MERGE"
+	}
+
+	switch e.BehaviorProfile() {
+	case BehaviorProfileBasic:
+		return "BASIC"
+	case BehaviorProfileVim:
+		if e.profile.vim.visual {
+			return "VISUAL"
+		}
+		if e.mode == ModeInsert {
+			return "INSERT"
+		}
+		return "NORMAL"
+	default:
+		if e.mode == ModeInsert {
+			return "INSERT"
+		}
+		return "NORMAL"
+	}
+}
+
+func (e *Editor) currentCursorStyle() CursorStyle {
+	if e.mode == ModeSearch || e.mode == ModeCommand {
+		return CursorStyleSteadyBar
+	}
+	switch e.BehaviorProfile() {
+	case BehaviorProfileBasic:
+		return CursorStyleSteadyBar
+	case BehaviorProfileVim:
+		if e.mode == ModeInsert {
+			return CursorStyleSteadyBar
+		}
+		return CursorStyleSteadyBlock
+	default:
+		if e.mode == ModeInsert {
+			return CursorStyleSteadyBar
+		}
+		return CursorStyleSteadyBlock
 	}
 }

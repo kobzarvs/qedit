@@ -49,7 +49,8 @@ type BufferState struct {
 	conflictBlocksDirty bool
 
 	// Per-buffer yank clipboard
-	clipboard [][]rune
+	clipboard         [][]rune
+	clipboardLinewise bool
 
 	// Selection scope
 	selectionScope selectionScopeState
@@ -233,6 +234,7 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		conflictBlocks:      e.conflicts.blocks,
 		conflictBlocksDirty: e.conflicts.dirty,
 		clipboard:           e.clipboard.lines,
+		clipboardLinewise:   e.clipboard.linewise,
 		selectionScope:      e.selectionScope,
 	}
 }
@@ -267,5 +269,6 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 		dirty:  bs.conflictBlocksDirty,
 	}
 	e.clipboard.lines = bs.clipboard
+	e.clipboard.linewise = bs.clipboardLinewise
 	e.selectionScope = bs.selectionScope
 }

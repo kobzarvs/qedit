@@ -61,18 +61,7 @@ func (e *Editor) renderNotification(s Screen, w int, now time.Time) {
 }
 
 func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
-	mode := "NORMAL"
-	if e.mode == ModeInsert {
-		mode = "INSERT"
-	} else if e.mode == ModeCommand {
-		mode = "COMMAND"
-	} else if e.mode == ModeBranchPicker {
-		mode = "BRANCHES"
-	} else if e.mode == ModeSearch {
-		mode = "SEARCH"
-	} else if e.mode == ModeMerge {
-		mode = "MERGE"
-	}
+	mode := e.currentModeLabel()
 	name := e.document.filename
 	if name == "" {
 		name = "[No Name]"
