@@ -698,10 +698,7 @@ func isPipeTableBlock(lines []string) bool {
 
 // sendTerminalZoomStep sends a single zoom command to the terminal via the zoomer.
 func (e *Editor) sendTerminalZoomStep(zoomIn bool) {
-	if e.runtime.terminalZoomer == nil {
-		return
-	}
-	_ = e.runtime.terminalZoomer.ZoomStep(zoomIn)
+	e.terminalZoomStep(zoomIn)
 }
 
 // zoomWithAnimation performs zoom with synchronized scroll animation.
