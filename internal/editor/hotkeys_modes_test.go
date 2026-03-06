@@ -372,7 +372,7 @@ func TestSpaceMenuHotkeys(t *testing.T) {
 				}
 			}
 			if item.Action == "show_keybindings" {
-				if !e.keybindingsHelpActive {
+				if !e.keybindingsHelp.active {
 					t.Fatalf("keybindingsHelpActive = false, want true")
 				}
 			}
@@ -408,29 +408,29 @@ func TestKeybindingsHelpHotkeys(t *testing.T) {
 	e := newTestEditor("one")
 	e.HandleKey(keyRune(' '))
 	e.HandleKey(keyRune('?'))
-	if !e.keybindingsHelpActive {
+	if !e.keybindingsHelp.active {
 		t.Fatalf("keybindingsHelpActive = false, want true")
 	}
 	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, 0)))
-	if e.keybindingsHelpScroll != 1 {
-		t.Fatalf("down scroll = %d, want 1", e.keybindingsHelpScroll)
+	if e.keybindingsHelp.scroll != 1 {
+		t.Fatalf("down scroll = %d, want 1", e.keybindingsHelp.scroll)
 	}
 	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyUp, 0, 0)))
-	if e.keybindingsHelpScroll != 0 {
-		t.Fatalf("up scroll = %d, want 0", e.keybindingsHelpScroll)
+	if e.keybindingsHelp.scroll != 0 {
+		t.Fatalf("up scroll = %d, want 0", e.keybindingsHelp.scroll)
 	}
 	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyPgDn, 0, 0)))
-	if e.keybindingsHelpScroll != 10 {
-		t.Fatalf("pgdn scroll = %d, want 10", e.keybindingsHelpScroll)
+	if e.keybindingsHelp.scroll != 10 {
+		t.Fatalf("pgdn scroll = %d, want 10", e.keybindingsHelp.scroll)
 	}
 	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyPgUp, 0, 0)))
-	if e.keybindingsHelpScroll != 0 {
-		t.Fatalf("pgup scroll = %d, want 0", e.keybindingsHelpScroll)
+	if e.keybindingsHelp.scroll != 0 {
+		t.Fatalf("pgup scroll = %d, want 0", e.keybindingsHelp.scroll)
 	}
 
 	// Close with Escape
 	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0)))
-	if e.keybindingsHelpActive {
+	if e.keybindingsHelp.active {
 		t.Fatalf("esc close = true, want false")
 	}
 
@@ -438,7 +438,7 @@ func TestKeybindingsHelpHotkeys(t *testing.T) {
 	e.HandleKey(keyRune(' '))
 	e.HandleKey(keyRune('?'))
 	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
-	if e.keybindingsHelpActive {
+	if e.keybindingsHelp.active {
 		t.Fatalf("enter close = true, want false")
 	}
 }

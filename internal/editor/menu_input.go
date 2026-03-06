@@ -32,70 +32,65 @@ func (e *Editor) handleWindowKey(ch rune) bool {
 func (e *Editor) handleKeybindingsHelp(ev EventKey) bool {
 	// Get current filter based on focus
 	currentFilter := func() *[]rune {
-		switch e.keybindingsHelpFilterFocus {
+		switch e.keybindingsHelp.filterFocus {
 		case 0:
-			return &e.keybindingsHelpFilterKey
+			return &e.keybindingsHelp.filterKey
 		case 1:
-			return &e.keybindingsHelpFilterAct
+			return &e.keybindingsHelp.filterAct
 		default:
-			return &e.keybindingsHelpFilterDesc
+			return &e.keybindingsHelp.filterDesc
 		}
 	}
 
 	switch ev.Key() {
 	case KeyEscape:
-		e.keybindingsHelpActive = false
-		e.keybindingsHelpFilterKey = nil
-		e.keybindingsHelpFilterAct = nil
-		e.keybindingsHelpFilterDesc = nil
-		e.keybindingsHelpScroll = 0
-		e.keybindingsHelpFilterFocus = 0
+		e.keybindingsHelp = keybindingsHelpState{}
 		return false
 	case KeyEnter:
 		// Clear all filters on Enter
-		if len(e.keybindingsHelpFilterKey) > 0 || len(e.keybindingsHelpFilterAct) > 0 || len(e.keybindingsHelpFilterDesc) > 0 {
-			e.keybindingsHelpFilterKey = nil
-			e.keybindingsHelpFilterAct = nil
-			e.keybindingsHelpFilterDesc = nil
-			e.keybindingsHelpScroll = 0
+		if len(e.keybindingsHelp.filterKey) > 0 || len(e.keybindingsHelp.filterAct) > 0 || len(e.keybindingsHelp.filterDesc) > 0 {
+			e.keybindingsHelp.filterKey = nil
+			e.keybindingsHelp.filterAct = nil
+			e.keybindingsHelp.filterDesc = nil
+			e.keybindingsHelp.scroll = 0
 		} else {
-			e.keybindingsHelpActive = false
+			e.keybindingsHelp.active = false
 		}
 		return false
 	case KeyTab:
 		// Switch between filter fields
-		e.keybindingsHelpFilterFocus = (e.keybindingsHelpFilterFocus + 1) % 3
+		e.keybindingsHelp.filterFocus = (e.keybindingsHelp.filterFocus + 1) % 3
 	case KeyBacktab:
 		// Switch backwards
-		e.keybindingsHelpFilterFocus = (e.keybindingsHelpFilterFocus + 2) % 3
+		e.keybindingsHelp.filterFocus = (e.keybindingsHelp.filterFocus + 2) % 3
 	case KeyBackspace, KeyBackspace2:
 		f := currentFilter()
 		if len(*f) > 0 {
 			*f = (*f)[:len(*f)-1]
-			e.keybindingsHelpScroll = 0
+			e.keybindingsHelp.scroll = 0
 		}
 	case KeyUp, KeyCtrlP:
-		if e.keybindingsHelpScroll > 0 {
-			e.keybindingsHelpScroll--
+		if e.keybindingsHelp.scroll > 0 {
+			e.keybindingsHelp.scroll--
 		}
 	case KeyDown, KeyCtrlN:
-		e.keybindingsHelpScroll++
+		e.keybindingsHelp.scroll++
 	case KeyPgUp:
-		e.keybindingsHelpScroll -= 10
-		if e.keybindingsHelpScroll < 0 {
-			e.keybindingsHelpScroll = 0
+		e.keybindingsHelp.scroll -= 10
+		if e.keybindingsHelp.scroll < 0 {
+			e.keybindingsHelp.scroll = 0
 		}
 	case KeyPgDn:
-		e.keybindingsHelpScroll += 10
+		e.keybindingsHelp.scroll += 10
 	case KeyHome:
-		e.keybindingsHelpScroll = 0
+		e.keybindingsHelp.scroll = 0
 	case KeyEnd:
-		e.keybindingsHelpScroll = 999999 // will be clamped in render
+		e.keybindingsHelp.scroll = 999999 // will be clamped in render
 	case KeyRune:
 		// Type into current filter
 		f := currentFilter()
 		*f = append(*f, ev.Rune())
-		e.keybindingsHelpScroll = 0
+		e.keybindingsHelp.scroll = 0
 	}
 	return false
 }
@@ -151,12 +146,7 @@ func (e *Editor) executeSpaceAction(item SpaceMenuItem) bool {
 	case "buffer_picker":
 		e.openSidebarBuffers()
 	case "show_keybindings":
-		e.keybindingsHelpActive = true
-		e.keybindingsHelpScroll = 0
-		e.keybindingsHelpFilterKey = nil
-		e.keybindingsHelpFilterAct = nil
-		e.keybindingsHelpFilterDesc = nil
-		e.keybindingsHelpFilterFocus = 0
+		e.keybindingsHelp = keybindingsHelpState{active: true}
 	default:
 		e.setStatus(item.Label + " (not implemented)")
 	}

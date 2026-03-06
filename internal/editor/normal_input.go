@@ -32,7 +32,7 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle keybindings help popup
-	if e.keybindingsHelpActive {
+	if e.keybindingsHelp.active {
 		return e.handleKeybindingsHelp(ev)
 	}
 

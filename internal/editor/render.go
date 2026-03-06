@@ -136,7 +136,7 @@ func (e *Editor) Render(s Screen) {
 	if e.windowMode {
 		e.renderMenu(s, w, viewHeight, "Window", WindowMenuItems)
 	}
-	if e.keybindingsHelpActive {
+	if e.keybindingsHelp.active {
 		e.renderKeybindingsHelp(s, w, viewHeight)
 	}
 	if showTopMessage {
@@ -147,7 +147,7 @@ func (e *Editor) Render(s Screen) {
 		}
 	}
 	sidebarFocused := e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
-	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelpActive || sidebarFocused || !cursorVisible {
+	if e.mode == ModeBranchPicker || e.spaceMenuActive || e.keybindingsHelp.active || sidebarFocused || !cursorVisible {
 		s.HideCursor()
 		s.Show()
 		return

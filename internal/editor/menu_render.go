@@ -376,9 +376,9 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 	})
 
 	// Apply filters (fuzzy match per column)
-	filterKey := strings.ToLower(string(e.keybindingsHelpFilterKey))
-	filterAct := strings.ToLower(string(e.keybindingsHelpFilterAct))
-	filterDesc := strings.ToLower(string(e.keybindingsHelpFilterDesc))
+	filterKey := strings.ToLower(string(e.keybindingsHelp.filterKey))
+	filterAct := strings.ToLower(string(e.keybindingsHelp.filterAct))
+	filterDesc := strings.ToLower(string(e.keybindingsHelp.filterDesc))
 	var filteredBindings []keybinding
 	for _, b := range allBindings {
 		matchKey := filterKey == "" || fuzzyMatch(filterKey, strings.ToLower(b.key))
@@ -426,11 +426,11 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if e.keybindingsHelpScroll > maxScroll {
-		e.keybindingsHelpScroll = maxScroll
+	if e.keybindingsHelp.scroll > maxScroll {
+		e.keybindingsHelp.scroll = maxScroll
 	}
-	if e.keybindingsHelpScroll < 0 {
-		e.keybindingsHelpScroll = 0
+	if e.keybindingsHelp.scroll < 0 {
+		e.keybindingsHelp.scroll = 0
 	}
 
 	// Center popup
@@ -506,9 +506,9 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		col++
 	}
 	// Key filter box [11 chars]
-	keyFilter := string(e.keybindingsHelpFilterKey)
+	keyFilter := string(e.keybindingsHelp.filterKey)
 	keyFilterStyle := filterInactiveStyle
-	if e.keybindingsHelpFilterFocus == 0 {
+	if e.keybindingsHelp.filterFocus == 0 {
 		keyFilterStyle = filterActiveStyle
 		keyFilter += "_"
 	}
@@ -528,9 +528,9 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		col++
 	}
 	// Action filter box [10 chars]
-	actFilter := string(e.keybindingsHelpFilterAct)
+	actFilter := string(e.keybindingsHelp.filterAct)
 	actFilterStyle := filterInactiveStyle
-	if e.keybindingsHelpFilterFocus == 1 {
+	if e.keybindingsHelp.filterFocus == 1 {
 		actFilterStyle = filterActiveStyle
 		actFilter += "_"
 	}
@@ -550,9 +550,9 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		col++
 	}
 	// Description filter box
-	descFilter := string(e.keybindingsHelpFilterDesc)
+	descFilter := string(e.keybindingsHelp.filterDesc)
 	descFilterStyle := filterInactiveStyle
-	if e.keybindingsHelpFilterFocus == 2 {
+	if e.keybindingsHelp.filterFocus == 2 {
 		descFilterStyle = filterActiveStyle
 		descFilter += "_"
 	}
@@ -578,7 +578,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 
 	// Draw scrollable content starting at row 3
 	for i := 0; i < listHeight; i++ {
-		idx := i + e.keybindingsHelpScroll
+		idx := i + e.keybindingsHelp.scroll
 		if idx >= len(rows) {
 			break
 		}
@@ -617,7 +617,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 
 	// Scroll indicator
 	if len(rows) > listHeight {
-		scrollInfo := fmt.Sprintf(" %d/%d ", e.keybindingsHelpScroll+1, max(1, len(rows)-listHeight+1))
+		scrollInfo := fmt.Sprintf(" %d/%d ", e.keybindingsHelp.scroll+1, max(1, len(rows)-listHeight+1))
 		infoRunes := []rune(scrollInfo)
 		startX := x0 + boxWidth - len(infoRunes) - 1
 		for i, r := range infoRunes {

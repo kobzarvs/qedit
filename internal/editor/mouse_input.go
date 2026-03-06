@@ -14,13 +14,13 @@ const (
 
 func (e *Editor) HandleMouse(ev EventMouse) {
 	// Intercept mouse events when modal is open
-	if e.keybindingsHelpActive {
+	if e.keybindingsHelp.active {
 		if ev.Buttons() == WheelUp {
-			if e.keybindingsHelpScroll > 0 {
-				e.keybindingsHelpScroll--
+			if e.keybindingsHelp.scroll > 0 {
+				e.keybindingsHelp.scroll--
 			}
 		} else if ev.Buttons() == WheelDown {
-			e.keybindingsHelpScroll++
+			e.keybindingsHelp.scroll++
 		}
 		return
 	}
