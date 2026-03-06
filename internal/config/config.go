@@ -754,6 +754,36 @@ func UpdateEditorSidebarWidth(width string) error {
 	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
+// UpdateEditorProfile persists behavior profile in config.
+func UpdateEditorProfile(profile string) error {
+	path, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg := map[string]interface{}{}
+	if data, err := os.ReadFile(path); err == nil {
+		if _, err := toml.Decode(string(data), &cfg); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	section, ok := cfg["editor"].(map[string]interface{})
+	if !ok || section == nil {
+		section = map[string]interface{}{}
+		cfg["editor"] = section
+	}
+	section["profile"] = profile
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644)
+}
+
 func ConfigDir() (string, error) {
 	if v := os.Getenv("QEDIT_CONFIG_HOME"); v != "" {
 		return filepath.Join(v), nil

@@ -45,6 +45,8 @@ func (c *editorRuntimeController) dispatchRuntimeRequest(req editor.RuntimeReque
 		c.handlePersistAutoReloadRequest(req)
 	case editor.RuntimeRequestPersistSidebarWidth:
 		c.handlePersistSidebarWidthRequest(req)
+	case editor.RuntimeRequestPersistProfile:
+		c.handlePersistProfileRequest(req)
 	}
 }
 
@@ -214,4 +216,16 @@ func (c *editorRuntimeController) handlePersistSidebarWidthRequest(req editor.Ru
 		return
 	}
 	c.ed.SetSidebarWidthConfig(req.Value)
+}
+
+func (c *editorRuntimeController) handlePersistProfileRequest(req editor.RuntimeRequest) {
+	if req.Value == "" {
+		return
+	}
+	if err := persistEditorProfile(c.cfg, req.Value); err != nil {
+		c.ed.SetBehaviorProfile(req.PrevValue)
+		c.ed.SetStatusMessage("config write failed: " + err.Error())
+		return
+	}
+	c.ed.SetBehaviorProfile(req.Value)
 }

@@ -17,6 +17,7 @@ const (
 	RuntimeRequestReadClipboard       RuntimeRequestKind = "read_clipboard"
 	RuntimeRequestPersistAutoReload   RuntimeRequestKind = "persist_auto_reload"
 	RuntimeRequestPersistSidebarWidth RuntimeRequestKind = "persist_sidebar_width"
+	RuntimeRequestPersistProfile      RuntimeRequestKind = "persist_profile"
 )
 
 type RuntimeRequest struct {

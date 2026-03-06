@@ -197,6 +197,18 @@ func (e *Editor) registerBuiltInCommands() {
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
+		Names: []string{"profile"},
+		Entries: []CommandInfo{
+			{Name: "profile", Description: "show current behavior profile", Group: CmdGroupView},
+			{Name: "profile basic", Description: "switch to basic profile", Group: CmdGroupView},
+			{Name: "profile helix", Description: "switch to helix profile", Group: CmdGroupView},
+			{Name: "profile vim", Description: "switch to vim profile", Group: CmdGroupView},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			return ed.executeProfileCommand(args)
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
 		Names: []string{"merge"},
 		Entries: []CommandInfo{
 			{Name: "merge", Description: "merge mode", Group: CmdGroupView},

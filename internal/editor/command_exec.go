@@ -150,6 +150,34 @@ func (e *Editor) executeAutoReloadCommand(args []string) bool {
 	return false
 }
 
+func (e *Editor) executeProfileCommand(args []string) bool {
+	if len(args) == 0 {
+		e.setStatus("profile=" + e.BehaviorProfile())
+		return false
+	}
+	if len(args) > 1 {
+		e.setStatus("usage: profile basic|helix|vim")
+		return false
+	}
+	next := strings.ToLower(strings.TrimSpace(args[0]))
+	prev := e.BehaviorProfile()
+	if next == prev {
+		e.setStatus("profile=" + prev)
+		return false
+	}
+	if !e.SetBehaviorProfile(next) {
+		e.setStatus("unknown profile: " + next)
+		return false
+	}
+	e.enqueueRuntimeRequest(RuntimeRequest{
+		Kind:      RuntimeRequestPersistProfile,
+		Value:     next,
+		PrevValue: prev,
+	})
+	e.setStatus("profile=" + e.BehaviorProfile())
+	return false
+}
+
 func (e *Editor) handleWorktreeCommand(args []string) bool {
 	root := e.git.root
 	if root == "" {

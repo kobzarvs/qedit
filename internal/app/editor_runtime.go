@@ -113,6 +113,16 @@ func persistEditorSidebarWidth(cfg *config.Config, width string) error {
 	return nil
 }
 
+func persistEditorProfile(cfg *config.Config, profile string) error {
+	if err := config.UpdateEditorProfile(profile); err != nil {
+		return err
+	}
+	if cfg != nil {
+		cfg.Editor.Profile = profile
+	}
+	return nil
+}
+
 func toEditorHighlightSpans(spans map[int][]treesitter.HighlightSpan) map[int][]editor.HighlightSpan {
 	if spans == nil {
 		return nil
