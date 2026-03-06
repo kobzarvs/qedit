@@ -54,6 +54,7 @@ func New(opts Options) *Editor {
 		},
 		sidebarModes: newSidebarModeRegistry(),
 		commands:     newCommandRegistry(),
+		formatters:   newFormatterRegistry(),
 		sidebar: NewSidebar(
 			opts.SidebarWidth,
 			opts.SidebarMinWidth,
@@ -68,6 +69,7 @@ func New(opts Options) *Editor {
 	}
 	e.registerBuiltInSidebarModes()
 	e.registerBuiltInCommands()
+	e.registerBuiltInFormatters()
 	e.SetStyles(defaultEditorStyles())
 	return e
 }
