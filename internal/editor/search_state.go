@@ -14,4 +14,5 @@ type SearchState struct {
 	searchHistory       []string      // search history (prefixed with /: F: or E:)
 	searchHistoryIndex  int           // current position in search history (-1 = not browsing)
 	searchHistoryPrefix string        // prefix for filtered search history
+	searchHistoryPath   string        // search history file path
 }

@@ -403,7 +403,6 @@ type Editor struct {
 	dirty                        bool
 	keymap                       keymapSet
 	commandLine                  editorCommandLineState
-	searchHistoryPath            string // search history file path
 	styleMain                    Style
 	styleStatus                  Style
 	styleStatusWarning           Style

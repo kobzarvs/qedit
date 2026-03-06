@@ -26,9 +26,11 @@ func New(opts Options) *Editor {
 			text:   NewTextBufferFromRunes(nil),
 			cursor: Cursor{},
 		},
-		mode:              ModeNormal,
-		keymap:            keymapSet{normal: normal, insert: insert},
-		searchHistoryPath: opts.SearchHistoryPath,
+		SearchState: SearchState{
+			searchHistoryPath: opts.SearchHistoryPath,
+		},
+		mode:   ModeNormal,
+		keymap: keymapSet{normal: normal, insert: insert},
 		display: editorDisplayState{
 			tabWidth:       tabWidth,
 			lineNumberMode: lineNumberMode,
