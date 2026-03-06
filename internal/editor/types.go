@@ -162,45 +162,6 @@ const (
 	CmdGroupGit  = "Git"
 )
 
-// AvailableCommands lists all commands for autocomplete
-var AvailableCommands = []CommandInfo{
-	// File
-	{"w", "write file", CmdGroupFile},
-	{"e", "reload file", CmdGroupFile},
-	{"e!", "reload file (discard changes)", CmdGroupFile},
-	{"q", "quit", CmdGroupFile},
-	{"q!", "force quit", CmdGroupFile},
-	{"wq", "write and quit", CmdGroupFile},
-	{"x", "write and quit", CmdGroupFile},
-	// View
-	{"ln", "line numbers", CmdGroupView},
-	{"ln off", "disable line numbers", CmdGroupView},
-	{"ln abs", "absolute line numbers", CmdGroupView},
-	{"ln rel", "relative line numbers", CmdGroupView},
-	{"merge", "merge mode", CmdGroupView},
-	{"auto-reload-on-changes", "auto reload on external changes", CmdGroupView},
-	{"tree", "open file tree", CmdGroupView},
-	// Edit
-	{"fmt", "format code", CmdGroupEdit},
-	// Sidebar
-	{"sidebar", "toggle sidebar", CmdGroupView},
-	{"sidew", "set sidebar width", CmdGroupView},
-	{"sidebar-focus", "toggle sidebar focus", CmdGroupView},
-	{"focus-editor", "focus editor", CmdGroupView},
-	// Git
-	{"worktree", "open worktree menu", CmdGroupGit},
-	{"worktree list", "list worktrees", CmdGroupGit},
-	{"worktree new <name>", "create worktree from current branch", CmdGroupGit},
-	{"worktree switch <name>", "switch to worktree", CmdGroupGit},
-	{"worktree remove <name>", "remove worktree", CmdGroupGit},
-	{"worktree refresh", "refresh worktree list", CmdGroupGit},
-	// Buffers
-	{"bn", "next buffer", CmdGroupFile},
-	{"bp", "previous buffer", CmdGroupFile},
-	{"bc", "close buffer", CmdGroupFile},
-	{"bc!", "close buffer (force)", CmdGroupFile},
-}
-
 // SpaceMenuItem represents an item in the space menu
 type SpaceMenuItem struct {
 	Key         rune
@@ -474,6 +435,7 @@ type Editor struct {
 
 	// Multi-buffer state
 	buffers  *BufferManager // tracks multiple open buffers
+	commands commandRegistry
 	requests editorRequestState
 }
 

@@ -53,6 +53,7 @@ func New(opts Options) *Editor {
 			persistence: NewStoreBackedPersistenceRuntime(opts.SessionStore, nil, nil),
 		},
 		sidebarModes: newSidebarModeRegistry(),
+		commands:     newCommandRegistry(),
 		sidebar: NewSidebar(
 			opts.SidebarWidth,
 			opts.SidebarMinWidth,
@@ -66,6 +67,7 @@ func New(opts Options) *Editor {
 		buffers: NewBufferManager(),
 	}
 	e.registerBuiltInSidebarModes()
+	e.registerBuiltInCommands()
 	e.SetStyles(defaultEditorStyles())
 	return e
 }

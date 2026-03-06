@@ -23,7 +23,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 	case KeyTab:
 		prefix := string(e.commandLine.text)
 		if !e.cmdAutoComplete.active {
-			e.cmdAutoComplete.items = filterCommands(prefix)
+			e.cmdAutoComplete.items = e.filterCommands(prefix)
 			if len(e.cmdAutoComplete.items) == 0 {
 				return false
 			}
@@ -234,21 +234,6 @@ func (e *Editor) saveCmdHistory() {
 		history = history[len(history)-1000:]
 	}
 	_ = e.saveHistory(path, history)
-}
-
-// filterCommands returns commands matching the given prefix
-func filterCommands(prefix string) []CommandInfo {
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		return AvailableCommands
-	}
-	var result []CommandInfo
-	for _, cmd := range AvailableCommands {
-		if strings.HasPrefix(cmd.Name, prefix) {
-			result = append(result, cmd)
-		}
-	}
-	return result
 }
 
 // closeAutoComplete closes the command autocomplete popup

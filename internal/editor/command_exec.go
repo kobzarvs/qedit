@@ -18,179 +18,138 @@ func (e *Editor) execCommand(cmd string) bool {
 	name := fields[0]
 	args := fields[1:]
 
-	switch name {
-	case "w":
-		path := ""
-		if len(args) > 0 {
-			path = strings.Join(args, " ")
-		}
-		if err := e.queueSaveRequest(path, false); err != nil {
-			e.setStatus(err.Error())
-			return false
-		}
-		return false
-	case "e", "edit":
-		if len(args) > 0 {
-			e.setStatus("edit file not supported")
-			return false
-		}
-		if err := e.queueReloadRequest(false); err != nil {
-			e.setStatus(err.Error())
-			return false
-		}
-		return false
-	case "e!", "edit!":
-		if len(args) > 0 {
-			e.setStatus("edit file not supported")
-			return false
-		}
-		if err := e.queueReloadRequest(true); err != nil {
-			e.setStatus(err.Error())
-			return false
-		}
-		return false
-	case "q":
-		if e.buffers != nil && e.buffers.HasDirtyBuffers() {
-			// Update active buffer state first
-			bs := e.snapshotBufferState()
-			e.buffers.UpdateActive(bs)
-			if e.buffers.HasDirtyBuffers() {
-				e.setStatus("unsaved changes in open buffers (use :q!)")
-				return false
-			}
-		} else if e.document.dirty {
-			e.setStatus("unsaved changes (use :q!)")
-			return false
-		}
-		return true
-	case "q!":
-		return true
-	case "bn":
-		e.gotoNextBuffer()
-		return false
-	case "bp":
-		e.gotoPrevBuffer()
-		return false
-	case "bc":
-		e.closeCurrentBuffer(false)
-		return false
-	case "bc!":
-		e.closeCurrentBuffer(true)
-		return false
-	case "wq", "x":
-		path := ""
-		if len(args) > 0 {
-			path = strings.Join(args, " ")
-		}
-		if err := e.queueSaveRequest(path, true); err != nil {
-			e.setStatus(err.Error())
-			return false
-		}
-		return false
-	case "ln":
-		if len(args) == 0 {
-			e.toggleLineNumbers()
-			return false
-		}
-		switch strings.ToLower(args[0]) {
-		case "off":
-			e.display.lineNumberMode = LineNumberOff
-			e.setStatus("line numbers off")
-		case "abs", "absolute":
-			e.display.lineNumberMode = LineNumberAbsolute
-			e.setStatus("line numbers absolute")
-		case "rel", "relative":
-			e.display.lineNumberMode = LineNumberRelative
-			e.setStatus("line numbers relative")
-		default:
-			e.setStatus("unknown line number mode")
-		}
-		return false
-	case "fmt":
-		if err := e.queueFormatRequest(); err != nil {
-			e.setStatus(err.Error())
-			return false
-		}
-		return false
-	case "sidebar":
-		e.toggleSidebar()
-		return false
-	case "tree":
-		path := ""
-		if len(args) > 0 {
-			path = strings.Join(args, " ")
-		}
-		e.openSidebarFileTree(path)
-		return false
-	case "sidew":
-		// :sidew - show current width, :sidew 30 - set width
-		if len(args) == 0 {
-			if e.sidebar != nil {
-				e.setStatus("sidebar width: " + e.sidebar.WidthConfig)
-			}
-		} else {
-			if e.sidebar != nil {
-				prevWidth := e.sidebar.WidthConfig
-				e.sidebar.WidthConfig = args[0]
-				e.enqueueRuntimeRequest(RuntimeRequest{
-					Kind:      RuntimeRequestPersistSidebarWidth,
-					Value:     args[0],
-					PrevValue: prevWidth,
-				})
-				e.setStatus("sidebar width set to " + args[0])
-			}
-		}
-		return false
-	case "sidebar-focus":
-		e.toggleSidebarFocus()
-		return false
-	case "focus-editor":
-		e.focusEditor()
-		return false
-	case "autoreload", "auto-reload", "auto-reload-on-changes":
-		if len(args) == 0 {
-			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
-			return false
-		}
-		if len(args) > 1 {
-			e.setStatus("usage: auto-reload-on-changes 1|0")
-			return false
-		}
-		enabled, ok := parseBoolArg(args[0])
-		if !ok {
-			e.setStatus("auto-reload-on-changes expects 1|0")
-			return false
-		}
-		if enabled == e.file.autoReloadOnChanges {
-			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
-			return false
-		}
-		prevEnabled := e.file.autoReloadOnChanges
-		e.file.autoReloadOnChanges = enabled
-		e.enqueueRuntimeRequest(RuntimeRequest{
-			Kind:     RuntimeRequestPersistAutoReload,
-			Bool:     enabled,
-			PrevBool: prevEnabled,
-		})
-		e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
-		return false
-	case "merge":
-		if len(args) > 0 {
-			e.setStatus("merge takes no arguments")
-			return false
-		}
-		return e.enterMergeMode()
-	case "worktree", "worktrees":
-		return e.handleWorktreeCommand(args)
-	default:
-		// Check if command is a line number
-		if lineNum, err := strconv.Atoi(name); err == nil && lineNum > 0 {
-			e.gotoLineNumber(lineNum)
-			return false
-		}
-		e.setStatus("unknown command: " + name)
+	if def, ok := e.commands.Lookup(name); ok && def.Handle != nil {
+		return def.Handle(e, args)
+	}
+
+	// Check if command is a line number
+	if lineNum, err := strconv.Atoi(name); err == nil && lineNum > 0 {
+		e.gotoLineNumber(lineNum)
 		return false
 	}
+	e.setStatus("unknown command: " + name)
+	return false
+}
+
+func (e *Editor) executeWriteCommand(args []string, quitAfter bool) bool {
+	path := ""
+	if len(args) > 0 {
+		path = strings.Join(args, " ")
+	}
+	if err := e.queueSaveRequest(path, quitAfter); err != nil {
+		e.setStatus(err.Error())
+		return false
+	}
+	return false
+}
+
+func (e *Editor) executeReloadCommand(args []string, force bool) bool {
+	if len(args) > 0 {
+		e.setStatus("edit file not supported")
+		return false
+	}
+	if err := e.queueReloadRequest(force); err != nil {
+		e.setStatus(err.Error())
+		return false
+	}
+	return false
+}
+
+func (e *Editor) executeQuitCommand(force bool) bool {
+	if force {
+		return true
+	}
+	if e.buffers != nil && e.buffers.HasDirtyBuffers() {
+		bs := e.snapshotBufferState()
+		e.buffers.UpdateActive(bs)
+		if e.buffers.HasDirtyBuffers() {
+			e.setStatus("unsaved changes in open buffers (use :q!)")
+			return false
+		}
+	} else if e.document.dirty {
+		e.setStatus("unsaved changes (use :q!)")
+		return false
+	}
+	return true
+}
+
+func (e *Editor) executeLineNumberCommand(args []string) bool {
+	if len(args) == 0 {
+		e.toggleLineNumbers()
+		return false
+	}
+	switch strings.ToLower(args[0]) {
+	case "off":
+		e.display.lineNumberMode = LineNumberOff
+		e.setStatus("line numbers off")
+	case "abs", "absolute":
+		e.display.lineNumberMode = LineNumberAbsolute
+		e.setStatus("line numbers absolute")
+	case "rel", "relative":
+		e.display.lineNumberMode = LineNumberRelative
+		e.setStatus("line numbers relative")
+	default:
+		e.setStatus("unknown line number mode")
+	}
+	return false
+}
+
+func (e *Editor) executeTreeCommand(args []string) bool {
+	path := ""
+	if len(args) > 0 {
+		path = strings.Join(args, " ")
+	}
+	e.openSidebarFileTree(path)
+	return false
+}
+
+func (e *Editor) executeSidebarWidthCommand(args []string) bool {
+	if len(args) == 0 {
+		if e.sidebar != nil {
+			e.setStatus("sidebar width: " + e.sidebar.WidthConfig)
+		}
+		return false
+	}
+	if e.sidebar != nil {
+		prevWidth := e.sidebar.WidthConfig
+		e.sidebar.WidthConfig = args[0]
+		e.enqueueRuntimeRequest(RuntimeRequest{
+			Kind:      RuntimeRequestPersistSidebarWidth,
+			Value:     args[0],
+			PrevValue: prevWidth,
+		})
+		e.setStatus("sidebar width set to " + args[0])
+	}
+	return false
+}
+
+func (e *Editor) executeAutoReloadCommand(args []string) bool {
+	if len(args) == 0 {
+		e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
+		return false
+	}
+	if len(args) > 1 {
+		e.setStatus("usage: auto-reload-on-changes 1|0")
+		return false
+	}
+	enabled, ok := parseBoolArg(args[0])
+	if !ok {
+		e.setStatus("auto-reload-on-changes expects 1|0")
+		return false
+	}
+	if enabled == e.file.autoReloadOnChanges {
+		e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
+		return false
+	}
+	prevEnabled := e.file.autoReloadOnChanges
+	e.file.autoReloadOnChanges = enabled
+	e.enqueueRuntimeRequest(RuntimeRequest{
+		Kind:     RuntimeRequestPersistAutoReload,
+		Bool:     enabled,
+		PrevBool: prevEnabled,
+	})
+	e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
+	return false
 }
 
 func (e *Editor) handleWorktreeCommand(args []string) bool {
