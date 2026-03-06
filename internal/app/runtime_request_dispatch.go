@@ -33,6 +33,8 @@ func (c *editorRuntimeController) dispatchRuntimeRequest(req editor.RuntimeReque
 		c.handleSaveFileRequest(req)
 	case editor.RuntimeRequestReloadFile:
 		c.handleReloadFileRequest(req)
+	case editor.RuntimeRequestFormatBuffer:
+		c.handleFormatBufferRequest(req)
 	case editor.RuntimeRequestPersistAutoReload:
 		c.handlePersistAutoReloadRequest(req)
 	case editor.RuntimeRequestPersistSidebarWidth:
@@ -128,6 +130,20 @@ func (c *editorRuntimeController) handleReloadFileRequest(req editor.RuntimeRequ
 	c.ed.ApplyReloadedContent(data)
 	c.activateCurrentEditorFile(req.Path, false)
 	c.ed.SetStatusMessage("reloaded")
+}
+
+func (c *editorRuntimeController) handleFormatBufferRequest(req editor.RuntimeRequest) {
+	if c.formatter == nil {
+		c.ed.SetStatusMessage("formatter unavailable")
+		return
+	}
+	formatted, err := c.formatter.FormatGo(req.Content)
+	if err != nil {
+		c.ed.SetStatusMessage(err.Error())
+		return
+	}
+	c.ed.ApplyFormattedContent(formatted)
+	c.ed.SetStatusMessage("formatted")
 }
 
 func (c *editorRuntimeController) handlePersistAutoReloadRequest(req editor.RuntimeRequest) {

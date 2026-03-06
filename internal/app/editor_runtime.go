@@ -20,6 +20,14 @@ func newEditorSessionStore(sessionMgr *session.Manager) editor.SessionStore {
 	return integrations.NewSessionStore(sessionMgr)
 }
 
+func newEditorFormatter() editor.Formatter {
+	return integrations.GoFormatter{}
+}
+
+func newEditorMerger() editor.Merger {
+	return integrations.GitMerger{}
+}
+
 func editorHistoryPaths() (string, string) {
 	dir, err := config.ConfigDir()
 	if err != nil {
@@ -52,8 +60,8 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 	runtimeServices := editor.RuntimeServices{
 		WorkspaceRuntime: editor.NewStoreBackedWorkspaceRuntime(
 			fileStore,
-			integrations.GoFormatter{},
-			integrations.GitMerger{},
+			newEditorFormatter(),
+			newEditorMerger(),
 		),
 		PersistenceRuntime: editor.NewStoreBackedPersistenceRuntime(
 			sessionStore,

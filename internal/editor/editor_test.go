@@ -285,19 +285,16 @@ func TestExecCommandQuitWithDirty(t *testing.T) {
 }
 
 func TestExecCommandFmtNoGo(t *testing.T) {
-	if _, err := exec.LookPath("gofmt"); err != nil {
-		t.Skip("gofmt not available")
-	}
 	e := newTestEditor("package main\nfunc main() {  }\n")
-	e.SetFormatter(testGoFormatter{})
 	if quit := e.execCommand("fmt"); quit {
 		t.Fatalf("execCommand fmt returned true")
 	}
-	if e.ui.statusMessage != "formatted" {
-		t.Fatalf("unexpected status: %q", e.ui.statusMessage)
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected format request")
 	}
-	if got := e.Content(); got == "package main\nfunc main() {  }\n" {
-		t.Fatalf("expected formatted content, got unchanged")
+	if req.Kind != RuntimeRequestFormatBuffer || req.Content != "package main\nfunc main() {  }\n" {
+		t.Fatalf("request = %#v, want format-buffer with current content", req)
 	}
 }
 

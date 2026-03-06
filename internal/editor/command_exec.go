@@ -107,11 +107,10 @@ func (e *Editor) execCommand(cmd string) bool {
 		}
 		return false
 	case "fmt":
-		if err := e.FormatCurrent(); err != nil {
+		if err := e.queueFormatRequest(); err != nil {
 			e.setStatus(err.Error())
 			return false
 		}
-		e.setStatus("formatted")
 		return false
 	case "sidebar":
 		e.toggleSidebar()

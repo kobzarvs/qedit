@@ -11,6 +11,7 @@ const (
 	RuntimeRequestBufferSwitched      RuntimeRequestKind = "buffer_switched"
 	RuntimeRequestSaveFile            RuntimeRequestKind = "save_file"
 	RuntimeRequestReloadFile          RuntimeRequestKind = "reload_file"
+	RuntimeRequestFormatBuffer        RuntimeRequestKind = "format_buffer"
 	RuntimeRequestPersistAutoReload   RuntimeRequestKind = "persist_auto_reload"
 	RuntimeRequestPersistSidebarWidth RuntimeRequestKind = "persist_sidebar_width"
 )

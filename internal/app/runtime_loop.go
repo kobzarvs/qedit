@@ -89,6 +89,7 @@ func newEditorRuntime(
 		ed:                ed,
 		cfg:               cfg,
 		screen:            screen,
+		formatter:         newEditorFormatter(),
 		ls:                ls,
 		ts:                ts,
 		langs:             langs,
