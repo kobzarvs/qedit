@@ -1,7 +1,6 @@
 package app
 
 import (
-	"os"
 	"runtime"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/lsp"
-	"github.com/kobzarvs/qedit/internal/platform/keyboard"
 	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
 	"github.com/kobzarvs/qedit/internal/ui"
@@ -78,95 +76,46 @@ func (a *App) Run() error {
 	}()
 
 	sessionMgr, _ := session.NewManager()
-	highlightMaxBytes := cfg.Editor.HighlightMaxBytes
 	sessionStore := newEditorSessionStore(sessionMgr)
 	ed := newConfiguredEditor(&cfg, langs, ts, sessionStore)
 	defer ed.Shutdown()
-	runtimeState := newEditorRuntimeState(ed)
-	if len(a.args) > 0 {
-		runtimeState.openPath = a.args[0]
-		if err := ed.OpenFile(runtimeState.openPath); err != nil {
-			return err
-		}
-		runtimeState.gitPath = runtimeState.openPath
-		content := ed.Content()
-		ls.OpenFile(runtimeState.openPath, content)
-		runtimeState.langName, runtimeState.highlightEnabled = detectHighlightLanguage(runtimeState.openPath, langs, highlightMaxBytes)
-		runtimeState.highlightExpected = runtimeState.highlightEnabled && runtimeState.langName != ""
-	}
-	if runtimeState.gitPath == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			runtimeState.gitPath = cwd
-		}
-	}
-
-	const (
-		fileChangeDebounce = 300 * time.Millisecond
-		autoReloadMaxBytes = int64(8 << 20)
-		filePollInterval   = time.Second
-	)
 	autoReloadStabilizeDelay := time.Duration(cfg.Editor.AutoReloadStabilizeMS) * time.Millisecond
 	if autoReloadStabilizeDelay < 0 {
 		autoReloadStabilizeDelay = 0
 	}
-	autoReloadRetries := cfg.Editor.AutoReloadMaxRetries
-	if autoReloadRetries < 1 {
-		autoReloadRetries = 1
+	rt, err := newEditorRuntime(s, ed, ls, ts, langs, sessionMgr, editorRuntimeOptions{
+		InitialPath:              firstArg(a.args),
+		HighlightMaxBytes:        cfg.Editor.HighlightMaxBytes,
+		AutoReloadMaxBytes:       int64(8 << 20),
+		AutoReloadRetries:        cfg.Editor.AutoReloadMaxRetries,
+		AutoReloadStabilizeDelay: autoReloadStabilizeDelay,
+		FileChangeDebounce:       300 * time.Millisecond,
+		FilePollInterval:         time.Second,
+	})
+	if err != nil {
+		return err
 	}
-	fileMonitor := newExternalFileMonitor(s, ed, autoReloadMaxBytes, autoReloadRetries, autoReloadStabilizeDelay)
-	if runtimeState.openPath != "" {
-		fileMonitor.Watch(runtimeState.openPath)
-	}
-	defer fileMonitor.Close()
-
-	lastLayoutRaw := keyboard.CurrentLayoutRaw()
-	ed.SetKeyboardLayout(keyboard.CurrentLayout())
-	syncEditorRepoState(ed, runtimeState.gitPath, sessionMgr)
-	wireEditorRuntimeCallbacks(ed, ts, ls)
-	if runtimeState.openPath != "" && runtimeState.highlightEnabled && runtimeState.langName != "" {
-		if isAsyncParseLang(runtimeState.langName) {
-			ts.Parse(runtimeState.openPath, runtimeState.langName, ed.Content())
-		} else if ts.ParseSync(runtimeState.openPath, runtimeState.langName, ed.Content()) {
-			if _, end, ok := applyInitialScreenHighlights(ed, s, ts, runtimeState.openPath); ok {
-				runtimeState.lastHighlightStart = 0
-				runtimeState.lastHighlightEnd = end
-			}
-		} else {
-			runtimeState.highlightExpected = false
-		}
-	}
-	controller := editorRuntimeController{
-		ed:                ed,
-		screen:            s,
-		ls:                ls,
-		ts:                ts,
-		langs:             langs,
-		highlightMaxBytes: highlightMaxBytes,
-		sessionMgr:        sessionMgr,
-		fileMonitor:       fileMonitor,
-		state:             &runtimeState,
-	}
+	defer rt.Close()
 	screen := ui.WrapScreen(s)
 	ed.Render(screen)
 	for {
-		quit, isMouseScroll := handleScreenEvent(s, ed, s.PollEvent())
+		quit, isMouseScroll := rt.HandleScreenEvent(s.PollEvent())
 		if quit {
 			return nil
 		}
 		if !isMouseScroll {
 			ed.UpdateScroll()
 		}
-		controller.handleEditorRequests()
-		runEditorRuntimeTick(
-			ed,
-			ts,
-			fileMonitor,
-			&runtimeState,
-			fileChangeDebounce,
-			filePollInterval,
-			&lastLayoutRaw,
-		)
+		rt.HandleRequests()
+		rt.Tick()
 
 		ed.Render(screen)
 	}
+}
+
+func firstArg(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	return args[0]
 }
