@@ -340,8 +340,8 @@ func (e *Editor) Save(path string) error {
 	}
 	e.filename = path
 	e.savePoint = len(e.undo)
-	e.externalChange = ExternalChangeNone
-	e.diskContent = e.Content()
+	e.file.externalChange = ExternalChangeNone
+	e.file.diskContent = e.Content()
 	e.updateDirty()
 	_ = e.syncFileSnapshot()
 	_ = e.SaveUndoHistory()

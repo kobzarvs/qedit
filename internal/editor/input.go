@@ -2,7 +2,7 @@ package editor
 
 func (e *Editor) HandleKey(ev EventKey) bool {
 	e.freeScroll = false
-	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" && !e.autoReloadInProgress {
+	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" && !e.file.autoReloadInProgress {
 		e.statusMessage = ""
 	}
 	// Track last key combination for display

@@ -106,7 +106,7 @@ func TestMergeExternalContentConflict(t *testing.T) {
 
 	e := newTestEditor()
 	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
-	e.diskContent = e.Content()
+	e.file.diskContent = e.Content()
 	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
 
 	conflict, err := e.MergeExternalContent("alpha\nremote\ncharlie\n")
@@ -146,7 +146,7 @@ func TestMergeExternalContentNoConflict(t *testing.T) {
 
 	e := newTestEditor()
 	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
-	e.diskContent = e.Content()
+	e.file.diskContent = e.Content()
 	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
 
 	conflict, err := e.MergeExternalContent("alpha\nremote\ncharlie\n")

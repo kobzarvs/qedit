@@ -49,30 +49,30 @@ func (s fileSnapshot) equal(other fileSnapshot) bool {
 
 func (e *Editor) syncFileSnapshot() error {
 	if e.filename == "" {
-		e.fileSnapshot = fileSnapshot{}
+		e.file.snapshot = fileSnapshot{}
 		return nil
 	}
 	info, err := os.Stat(e.filename)
 	if err != nil {
 		if os.IsNotExist(err) {
-			e.fileSnapshot = fileSnapshot{exists: false, valid: true}
+			e.file.snapshot = fileSnapshot{exists: false, valid: true}
 			return nil
 		}
 		return err
 	}
-	e.fileSnapshot = snapshotFromInfo(info)
+	e.file.snapshot = snapshotFromInfo(info)
 	return nil
 }
 
 // CheckExternalChange compares the last known file snapshot with the current file state.
 func (e *Editor) CheckExternalChange() (ExternalChange, error) {
-	if e.filename == "" || !e.fileSnapshot.valid {
+	if e.filename == "" || !e.file.snapshot.valid {
 		return ExternalChangeNone, nil
 	}
 	info, err := os.Stat(e.filename)
 	if err != nil {
 		if os.IsNotExist(err) {
-			if e.fileSnapshot.exists {
+			if e.file.snapshot.exists {
 				return ExternalChangeDeleted, nil
 			}
 			return ExternalChangeNone, nil
@@ -80,7 +80,7 @@ func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 		return ExternalChangeNone, err
 	}
 	current := snapshotFromInfo(info)
-	if e.fileSnapshot.equal(current) {
+	if e.file.snapshot.equal(current) {
 		return ExternalChangeNone, nil
 	}
 	return ExternalChangeModified, nil
@@ -98,10 +98,10 @@ func (e *Editor) ReloadFromDisk(force bool) error {
 	if err != nil {
 		return err
 	}
-	e.externalChange = ExternalChangeNone
+	e.file.externalChange = ExternalChangeNone
 	e.replaceBuffer(string(data), false)
 	e.selectionActive = false
-	e.diskContent = e.Content()
+	e.file.diskContent = e.Content()
 	_ = e.syncFileSnapshot()
 	_ = e.LoadUndoHistory()
 	return nil
@@ -109,29 +109,29 @@ func (e *Editor) ReloadFromDisk(force bool) error {
 
 // ExternalChange reports the current pending external-change state.
 func (e *Editor) ExternalChange() ExternalChange {
-	return e.externalChange
+	return e.file.externalChange
 }
 
 // SetExternalChange marks an external change as pending.
 func (e *Editor) SetExternalChange(change ExternalChange) {
-	e.externalChange = change
+	e.file.externalChange = change
 	e.updateDirty()
 }
 
 // ClearExternalChange clears any pending external-change state.
 func (e *Editor) ClearExternalChange() {
-	e.externalChange = ExternalChangeNone
+	e.file.externalChange = ExternalChangeNone
 	e.updateDirty()
 }
 
 // AutoReloadInProgress reports whether an auto-reload is running.
 func (e *Editor) AutoReloadInProgress() bool {
-	return e.autoReloadInProgress
+	return e.file.autoReloadInProgress
 }
 
 // SetAutoReloadInProgress updates auto-reload progress state.
 func (e *Editor) SetAutoReloadInProgress(inProgress bool) {
-	e.autoReloadInProgress = inProgress
+	e.file.autoReloadInProgress = inProgress
 	if inProgress {
 		e.statusMessage = "auto reload... waiting for file write to finish"
 		return
@@ -143,12 +143,12 @@ func (e *Editor) SetAutoReloadInProgress(inProgress bool) {
 
 // AutoReloadOnChanges reports whether auto-reload on external changes is enabled.
 func (e *Editor) AutoReloadOnChanges() bool {
-	return e.autoReloadOnChanges
+	return e.file.autoReloadOnChanges
 }
 
 // SetAutoReloadOnChanges updates the runtime auto-reload setting.
 func (e *Editor) SetAutoReloadOnChanges(enabled bool) {
-	e.autoReloadOnChanges = enabled
+	e.file.autoReloadOnChanges = enabled
 }
 
 // SetAutoReloadConfigHook registers a persistence hook for auto-reload setting.
@@ -180,23 +180,23 @@ func (e *Editor) MarkExternalDirty() {
 // Returns true if conflicts were produced.
 func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 	remoteNormalized := string(normalizeNewlines([]byte(remote)))
-	base := e.diskContent
+	base := e.file.diskContent
 	if base == "" {
 		base = e.Content()
 	}
 	local := e.Content()
 	if local == remoteNormalized {
-		e.diskContent = remoteNormalized
-		e.externalChange = ExternalChangeNone
+		e.file.diskContent = remoteNormalized
+		e.file.externalChange = ExternalChangeNone
 		e.updateDirty()
 		_ = e.syncFileSnapshot()
 		return false, nil
 	}
 	if local == base {
-		e.externalChange = ExternalChangeNone
+		e.file.externalChange = ExternalChangeNone
 		e.replaceBuffer(remoteNormalized, false)
 		e.selectionActive = false
-		e.diskContent = remoteNormalized
+		e.file.diskContent = remoteNormalized
 		e.updateDirty()
 		e.resetConflictBlocks()
 		_ = e.syncFileSnapshot()
@@ -206,7 +206,7 @@ func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	e.externalChange = ExternalChangeNone
+	e.file.externalChange = ExternalChangeNone
 	if conflict {
 		cleaned, blocks := buildConflictView(merged)
 		e.replaceBuffer(cleaned, true)
@@ -223,7 +223,7 @@ func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 		}
 	}
 	e.selectionActive = false
-	e.diskContent = remoteNormalized
+	e.file.diskContent = remoteNormalized
 	e.updateDirty()
 	_ = e.syncFileSnapshot()
 	return conflict, nil

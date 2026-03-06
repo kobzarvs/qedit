@@ -34,7 +34,7 @@ func (e *Editor) OpenFile(path string) error {
 	}
 	e.text = NewTextBufferFromBytes(data)
 	e.cursor = Cursor{}
-	e.diskContent = e.Content()
+	e.file.diskContent = e.Content()
 	e.resetConflictBlocks()
 	e.scroll = 0
 	e.scrollX = 0
@@ -59,7 +59,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.updateDirty()
 	_ = e.LoadUndoHistory()
 	_ = e.syncFileSnapshot()
-	e.externalChange = ExternalChangeNone
+	e.file.externalChange = ExternalChangeNone
 
 	// Restore session state
 	e.restoreSessionState()

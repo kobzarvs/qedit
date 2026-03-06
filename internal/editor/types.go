@@ -403,11 +403,7 @@ type Editor struct {
 	scrollX                       int // horizontal scroll offset (visual columns)
 	mode                          Mode
 	filename                      string
-	fileSnapshot                  fileSnapshot
-	diskContent                   string
-	externalChange                ExternalChange
-	autoReloadOnChanges           bool
-	autoReloadInProgress          bool
+	file                          editorFileState
 	dirty                         bool
 	conflictBlocks                []conflictBlock
 	conflictBlocksDirty           bool

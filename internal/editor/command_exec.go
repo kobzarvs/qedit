@@ -158,7 +158,7 @@ func (e *Editor) execCommand(cmd string) bool {
 		return false
 	case "autoreload", "auto-reload", "auto-reload-on-changes":
 		if len(args) == 0 {
-			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.autoReloadOnChanges))
+			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
 			return false
 		}
 		if len(args) > 1 {
@@ -170,8 +170,8 @@ func (e *Editor) execCommand(cmd string) bool {
 			e.setStatus("auto-reload-on-changes expects 1|0")
 			return false
 		}
-		if enabled == e.autoReloadOnChanges {
-			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.autoReloadOnChanges))
+		if enabled == e.file.autoReloadOnChanges {
+			e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
 			return false
 		}
 		if e.runtime.autoReloadConfigHook != nil {
@@ -180,8 +180,8 @@ func (e *Editor) execCommand(cmd string) bool {
 				return false
 			}
 		}
-		e.autoReloadOnChanges = enabled
-		e.setStatus("auto-reload-on-changes=" + boolToFlag(e.autoReloadOnChanges))
+		e.file.autoReloadOnChanges = enabled
+		e.setStatus("auto-reload-on-changes=" + boolToFlag(e.file.autoReloadOnChanges))
 		return false
 	case "merge":
 		if len(args) > 0 {

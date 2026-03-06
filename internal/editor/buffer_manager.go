@@ -10,11 +10,9 @@ type BufferState struct {
 	cursor Cursor
 
 	// File identity
-	filename       string
-	fileSnapshot   fileSnapshot
-	diskContent    string
-	externalChange ExternalChange
-	dirty          bool
+	filename string
+	file     editorFileState
+	dirty    bool
 
 	// Undo/redo
 	undo            []action
@@ -214,9 +212,7 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		text:                e.text,
 		cursor:              e.cursor,
 		filename:            e.filename,
-		fileSnapshot:        e.fileSnapshot,
-		diskContent:         e.diskContent,
-		externalChange:      e.externalChange,
+		file:                e.file,
 		dirty:               e.dirty,
 		undo:                e.undo,
 		redo:                e.redo,
@@ -251,9 +247,7 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.text = bs.text
 	e.cursor = bs.cursor
 	e.filename = bs.filename
-	e.fileSnapshot = bs.fileSnapshot
-	e.diskContent = bs.diskContent
-	e.externalChange = bs.externalChange
+	e.file = bs.file
 	e.dirty = bs.dirty
 	e.undo = bs.undo
 	e.redo = bs.redo

@@ -30,14 +30,16 @@ func New(opts Options) *Editor {
 		keymap:         keymapSet{normal: normal, insert: insert},
 		tabWidth:       tabWidth,
 		lineNumberMode: lineNumberMode,
+		file: editorFileState{
+			autoReloadOnChanges: opts.AutoReloadOnChanges,
+		},
 		git: editorGitState{
 			branchSymbol: gitBranchSymbol,
 		},
-		autoReloadOnChanges: opts.AutoReloadOnChanges,
-		highlightStart:      -1,
-		highlightEnd:        -1,
-		cmdHistoryPath:      opts.CmdHistoryPath,
-		searchHistoryPath:   opts.SearchHistoryPath,
+		highlightStart:    -1,
+		highlightEnd:      -1,
+		cmdHistoryPath:    opts.CmdHistoryPath,
+		searchHistoryPath: opts.SearchHistoryPath,
 		runtime: editorRuntimeDeps{
 			sessionStore: opts.SessionStore,
 		},

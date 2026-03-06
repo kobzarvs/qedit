@@ -190,7 +190,7 @@ func (e *Editor) finishUndoGroup() {
 	e.updateDirty()
 }
 func (e *Editor) updateDirty() {
-	e.dirty = len(e.undo) != e.savePoint || e.externalChange != ExternalChangeNone
+	e.dirty = len(e.undo) != e.savePoint || e.file.externalChange != ExternalChangeNone
 }
 
 // changelogFilePath returns the path for the changelog file for the given file path.

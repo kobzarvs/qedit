@@ -15,7 +15,7 @@ func (e *Editor) showTopStatusMessage(w int) bool {
 	if e.statusMessage == "" {
 		return false
 	}
-	if e.autoReloadInProgress {
+	if e.file.autoReloadInProgress {
 		return true
 	}
 	msgLen := utf8.RuneCountInString(e.statusMessage)
@@ -31,7 +31,7 @@ func (e *Editor) renderTopStatusMessage(s Screen, w int) {
 		msgRunes = msgRunes[:w]
 	}
 	style := e.styleStatus
-	if e.externalChange != ExternalChangeNone || e.autoReloadInProgress {
+	if e.file.externalChange != ExternalChangeNone || e.file.autoReloadInProgress {
 		style = e.styleStatusWarning
 	}
 	for x := 0; x < w; x++ {
@@ -97,7 +97,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	if e.dirty {
 		flags += "[*]"
 	}
-	if e.externalChange != ExternalChangeNone {
+	if e.file.externalChange != ExternalChangeNone {
 		flags += "[!]"
 	}
 
@@ -197,7 +197,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 			style = branchStyle
 		} else if layoutStart >= 0 && x >= layoutStart && x < layoutEnd {
 			style = layoutStyle
-		} else if statusMsgStart >= 0 && x >= statusMsgStart && x < statusMsgEnd && (e.externalChange != ExternalChangeNone || e.autoReloadInProgress) {
+		} else if statusMsgStart >= 0 && x >= statusMsgStart && x < statusMsgEnd && (e.file.externalChange != ExternalChangeNone || e.file.autoReloadInProgress) {
 			style = e.styleStatusWarning
 		}
 		s.SetContent(x, y, r, nil, style)
