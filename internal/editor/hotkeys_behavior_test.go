@@ -6,6 +6,25 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
+type testLanguageRuntime struct {
+	nodeStack      []NodeRange
+	gotoLocations  []LSPLocation
+	gotoErr        error
+	highlightSpans map[int][]HighlightSpan
+}
+
+func (r testLanguageRuntime) NodeStack(string, int, int) []NodeRange {
+	return r.nodeStack
+}
+
+func (r testLanguageRuntime) Goto(string, string, int, int) ([]LSPLocation, error) {
+	return r.gotoLocations, r.gotoErr
+}
+
+func (r testLanguageRuntime) HighlightRange(string, int, int) map[int][]HighlightSpan {
+	return r.highlightSpans
+}
+
 func TestSearchEntryHotkeys(t *testing.T) {
 	cases := []struct {
 		key     string
@@ -342,12 +361,12 @@ func TestSelectAllHotkeys(t *testing.T) {
 func TestExpandShrinkSelectionHotkeys(t *testing.T) {
 	e := newTestEditor("abcd")
 	e.document.filename = "test.go"
-	e.runtime.nodeStackFunc = func(path string, row, col int) []NodeRange {
-		return []NodeRange{
+	e.SetLanguageRuntime(testLanguageRuntime{
+		nodeStack: []NodeRange{
 			{StartRow: 0, StartCol: 0, EndRow: 0, EndCol: 1},
 			{StartRow: 0, StartCol: 0, EndRow: 0, EndCol: 3},
-		}
-	}
+		},
+	})
 	e.HandleKey(eventForKeyString(t, "alt+shift+up"))
 	if !e.selectionActive || e.selectionEnd.Col != 1 {
 		t.Fatalf("expand1 selectionEnd = %d, want 1", e.selectionEnd.Col)

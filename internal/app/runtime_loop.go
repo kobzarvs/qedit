@@ -84,7 +84,7 @@ func newEditorRuntime(
 
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
 	syncEditorRepoState(ed, rt.state.gitPath, sessionMgr)
-	wireEditorRuntimeCallbacks(ed, fileStore, ts, ls)
+	ed.SetLanguageRuntime(newEditorLanguageRuntime(fileStore, langs, ts, ls, opts.HighlightMaxBytes))
 
 	rt.controller = editorRuntimeController{
 		ed:                ed,

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"path/filepath"
 	"runtime"
 
@@ -9,7 +8,6 @@ import (
 	"github.com/kobzarvs/qedit/internal/editor"
 	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/integrations"
-	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
 	"github.com/kobzarvs/qedit/internal/ui"
@@ -30,7 +28,7 @@ func editorHistoryPaths() (string, string) {
 	return filepath.Join(dir, "history"), filepath.Join(dir, "search_history")
 }
 
-func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesitter.Engine, sessionStore editor.SessionStore, fileStore editor.FileStore) *editor.Editor {
+func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, fileStore editor.FileStore) *editor.Editor {
 	cmdHistoryPath, searchHistoryPath := editorHistoryPaths()
 	ed := editor.New(editor.Options{
 		TabWidth:             cfg.Editor.TabWidth,
@@ -51,7 +49,6 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 	})
 
 	ed.SetStyles(ui.StylesFromConfig(*cfg))
-	ed.SetHighlightRangeFunc(newHighlightRangeFunc(fileStore, langs, ts, cfg.Editor.HighlightMaxBytes))
 	ed.SetFormatter(integrations.GoFormatter{})
 	ed.SetMerger(integrations.GitMerger{})
 	ed.SetHistoryStore(integrations.FileHistoryStore{})
@@ -85,34 +82,6 @@ func persistEditorSidebarWidth(cfg *config.Config, width string) error {
 		cfg.Editor.SidebarWidth = width
 	}
 	return nil
-}
-
-func newHighlightRangeFunc(fileStore editor.FileStore, langs config.Languages, ts *treesitter.Engine, highlightMaxBytes int64) editor.HighlightRangeFunc {
-	return func(path string, startLine, endLine int) map[int][]editor.HighlightSpan {
-		if path == "" || startLine < 0 || endLine < startLine {
-			return nil
-		}
-		if fileStore == nil {
-			return nil
-		}
-		if info, err := fileStore.Stat(path); err != nil {
-			return nil
-		} else if highlightMaxBytes > 0 && info.Size > highlightMaxBytes {
-			return nil
-		}
-		lang := langs.Match(path)
-		if lang == nil {
-			return nil
-		}
-		data, err := fileStore.Read(path)
-		if err != nil {
-			return nil
-		}
-		if !ts.ParseSync(path, lang.Name, string(data)) {
-			return nil
-		}
-		return toEditorHighlightSpans(ts.Highlights(path, startLine, endLine))
-	}
 }
 
 func toEditorHighlightSpans(spans map[int][]treesitter.HighlightSpan) map[int][]editor.HighlightSpan {
@@ -160,57 +129,4 @@ func repoState(gitPath string, sessionMgr *session.Manager) (string, string) {
 		sessionMgr.SetRepoMainBranch(gitRoot, mainBranch)
 	}
 	return gitRoot, mainBranch
-}
-
-func wireEditorRuntimeCallbacks(ed *editor.Editor, fileStore editor.FileStore, ts *treesitter.Engine, ls *lsp.Manager) {
-	ed.SetNodeStackFunc(func(path string, row, col int) []editor.NodeRange {
-		stack := ts.GetNodeStackAt(path, row, col)
-		if stack == nil {
-			return nil
-		}
-		result := make([]editor.NodeRange, len(stack))
-		for i, nr := range stack {
-			result[i] = editor.NodeRange{
-				StartRow: nr.StartRow,
-				StartCol: nr.StartCol,
-				EndRow:   nr.EndRow,
-				EndCol:   nr.EndCol,
-			}
-		}
-		return result
-	})
-
-	ed.SetLSPGotoFunc(func(method, path string, line, col int) ([]editor.LSPLocation, error) {
-		absPath := normalizeAppPath(fileStore, path)
-		var locs []lsp.Location
-		var err error
-		switch method {
-		case "definition":
-			locs, err = ls.GotoDefinition(absPath, line, col)
-		case "declaration":
-			locs, err = ls.GotoDeclaration(absPath, line, col)
-		case "typeDefinition":
-			locs, err = ls.GotoTypeDefinition(absPath, line, col)
-		case "references":
-			locs, err = ls.FindReferences(absPath, line, col)
-		case "implementation":
-			locs, err = ls.GotoImplementation(absPath, line, col)
-		default:
-			return nil, fmt.Errorf("unknown LSP method: %s", method)
-		}
-		if err != nil {
-			return nil, err
-		}
-		result := make([]editor.LSPLocation, len(locs))
-		for i, loc := range locs {
-			result[i] = editor.LSPLocation{
-				Path:      lsp.URIToPath(loc.URI),
-				StartLine: loc.Range.Start.Line,
-				StartCol:  loc.Range.Start.Character,
-				EndLine:   loc.Range.End.Line,
-				EndCol:    loc.Range.End.Character,
-			}
-		}
-		return result, nil
-	})
 }

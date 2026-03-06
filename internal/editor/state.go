@@ -107,15 +107,6 @@ func (e *Editor) IsMainBranch() bool {
 	return e.git.branch == e.git.mainBranch
 }
 
-func (e *Editor) SetNodeStackFunc(fn NodeStackFunc) {
-	e.runtime.nodeStackFunc = fn
-}
-func (e *Editor) SetLSPGotoFunc(fn LSPGotoFunc) {
-	e.runtime.lspGotoFunc = fn
-}
-func (e *Editor) SetHighlightRangeFunc(fn HighlightRangeFunc) {
-	e.runtime.highlightRangeFunc = fn
-}
 func (e *Editor) SetStatusMessage(msg string) {
 	e.setStatus(msg)
 	e.Notify(msg)

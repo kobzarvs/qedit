@@ -1083,13 +1083,13 @@ func (e *Editor) selectAll() {
 
 // expandSelection expands selection to the next larger syntax node
 func (e *Editor) expandSelection() {
-	if e.runtime.nodeStackFunc == nil || e.document.filename == "" {
+	if e.runtime.languageRuntime == nil || e.document.filename == "" {
 		e.setStatus("syntax tree not available")
 		return
 	}
 
 	// Get node stack at cursor position
-	stack := e.runtime.nodeStackFunc(e.document.filename, e.cursor.Row, e.cursor.Col)
+	stack := e.runtime.languageRuntime.NodeStack(e.document.filename, e.cursor.Row, e.cursor.Col)
 	if len(stack) == 0 {
 		e.setStatus("no syntax node at cursor")
 		return

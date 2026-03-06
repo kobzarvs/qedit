@@ -374,9 +374,6 @@ type NodeRange struct {
 	EndCol   int
 }
 
-// NodeStackFunc is a callback to get syntax node stack at a position
-type NodeStackFunc func(path string, row, col int) []NodeRange
-
 // LSPLocation represents a location returned by LSP
 type LSPLocation struct {
 	Path      string
@@ -385,12 +382,6 @@ type LSPLocation struct {
 	EndLine   int
 	EndCol    int
 }
-
-// LSPGotoFunc is a callback to perform LSP goto operations
-type LSPGotoFunc func(method, path string, line, col int) ([]LSPLocation, error)
-
-// HighlightRangeFunc is a callback to get syntax highlights for a range
-type HighlightRangeFunc func(path string, startLine, endLine int) map[int][]HighlightSpan
 
 type Editor struct {
 	Buffer

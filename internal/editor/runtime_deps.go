@@ -1,15 +1,13 @@
 package editor
 
 type editorRuntimeDeps struct {
-	systemClipboard    Clipboard
-	formatter          Formatter
-	merger             Merger
-	terminalZoomer     TerminalZoomer
-	sessionStore       SessionStore
-	historyStore       HistoryStore
-	fileStore          FileStore
-	undoStore          UndoStore
-	nodeStackFunc      NodeStackFunc
-	lspGotoFunc        LSPGotoFunc
-	highlightRangeFunc HighlightRangeFunc
+	systemClipboard Clipboard
+	formatter       Formatter
+	merger          Merger
+	terminalZoomer  TerminalZoomer
+	sessionStore    SessionStore
+	historyStore    HistoryStore
+	fileStore       FileStore
+	undoStore       UndoStore
+	languageRuntime LanguageRuntime
 }

@@ -56,6 +56,13 @@ type DirEntry struct {
 	IsDir bool
 }
 
+// LanguageRuntime provides editor language-aware runtime queries.
+type LanguageRuntime interface {
+	NodeStack(path string, row, col int) []NodeRange
+	Goto(method, path string, line, col int) ([]LSPLocation, error)
+	HighlightRange(path string, startLine, endLine int) map[int][]HighlightSpan
+}
+
 // FileStore provides editor filesystem operations.
 type FileStore interface {
 	Abs(path string) (string, error)
@@ -114,4 +121,8 @@ func (e *Editor) SetFileStore(s FileStore) {
 
 func (e *Editor) SetUndoStore(s UndoStore) {
 	e.runtime.undoStore = s
+}
+
+func (e *Editor) SetLanguageRuntime(r LanguageRuntime) {
+	e.runtime.languageRuntime = r
 }
