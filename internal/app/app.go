@@ -2,9 +2,7 @@ package app
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -138,55 +136,16 @@ func (a *App) Run() error {
 			runtimeState.highlightExpected = false
 		}
 	}
-
-	openFileInEditor := func(path string) error {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			return nil
-		}
-		absPath := path
-		if abs, err := filepath.Abs(path); err == nil {
-			absPath = abs
-		}
-		if runtimeState.openPath == absPath {
-			return nil
-		}
-		if err := ed.OpenFile(absPath); err != nil {
-			return err
-		}
-		state := activateEditorFile(ed, s, ls, ts, langs, absPath, highlightMaxBytes)
-		runtimeState.applyActiveFile(state)
-
-		fileMonitor.Watch(absPath)
-		ed.SetGitMainBranch("")
-		syncEditorRepoState(ed, runtimeState.gitPath, sessionMgr)
-		runtimeState.lastGitCheck = time.Now()
-		return nil
-	}
-
-	switchToWorktree := func(targetPath string) {
-		targetPath = strings.TrimSpace(targetPath)
-		if targetPath == "" {
-			return
-		}
-		if abs, err := filepath.Abs(targetPath); err == nil {
-			targetPath = abs
-		}
-		candidate := pickWorktreeFile(targetPath, runtimeState.openPath)
-		if candidate == "" {
-			ed.SetGitBranch(gitinfo.Branch(targetPath))
-			ed.SetGitRoot(gitinfo.Root(targetPath))
-			runtimeState.gitPath = targetPath
-			ed.SetStatusMessage("worktree switched (open a file)")
-			return
-		}
-		if err := openFileInEditor(candidate); err != nil {
-			ed.SetStatusMessage(err.Error())
-			return
-		}
-		ed.SetGitBranch(gitinfo.Branch(candidate))
-		ed.SetGitRoot(gitinfo.Root(candidate))
-		ed.SetStatusMessage("worktree switched")
+	controller := editorRuntimeController{
+		ed:                ed,
+		screen:            s,
+		ls:                ls,
+		ts:                ts,
+		langs:             langs,
+		highlightMaxBytes: highlightMaxBytes,
+		sessionMgr:        sessionMgr,
+		fileMonitor:       fileMonitor,
+		state:             &runtimeState,
 	}
 	screen := ui.WrapScreen(s)
 	ed.Render(screen)
@@ -213,53 +172,7 @@ func (a *App) Run() error {
 		if !isMouseScroll {
 			ed.UpdateScroll()
 		}
-		if ed.ConsumeBranchPickerRequest() {
-			showSidebarBranches(ed, runtimeState.gitPath)
-		}
-		if ed.ConsumeWorktreeListRequest() {
-			showSidebarWorktrees(ed, runtimeState.gitPath)
-		}
-		// Handle sidebar branch selection (and legacy branch picker selection)
-		if branch := ed.ConsumeSidebarBranchSelection(); branch != "" {
-			logger.Debug("sidebar branch selected", "branch", branch)
-			checkoutBranch(ed, runtimeState.gitPath, branch)
-		} else if branch, ok := ed.ConsumeBranchSelection(); ok {
-			checkoutBranch(ed, runtimeState.gitPath, branch)
-		}
-		if path := ed.ConsumeSidebarWorktreeSelection(); path != "" {
-			logger.Debug("sidebar worktree selected", "path", path)
-			if runtimeState.gitPath == "" {
-				ed.SetStatusMessage("not a git repository")
-			} else {
-				switchToWorktree(path)
-			}
-		}
-		if path, ok := ed.ConsumeSidebarOpenFile(); ok {
-			err := openFileInEditor(path)
-			if err != nil {
-				ed.SetStatusMessage(err.Error())
-			}
-			ed.ApplyPendingGitDiffJump()
-			if locPath, line, col, ok := ed.ConsumePendingOpenLocation(); ok {
-				if err == nil && (locPath == "" || locPath == path) {
-					ed.JumpToLocation(line, col)
-				}
-			}
-		}
-		if ed.ConsumeBufferSwitch() {
-			path := ed.Filename()
-			if path != runtimeState.openPath {
-				// Update file watcher
-				fileMonitor.Watch(path)
-				state := activateEditorFile(ed, s, ls, ts, langs, path, highlightMaxBytes)
-				runtimeState.applyActiveFile(state)
-
-				// Update git info
-				ed.SetGitBranch(gitinfo.Branch(path))
-				gitRoot := gitinfo.Root(path)
-				ed.SetGitRoot(gitRoot)
-			}
-		}
+		controller.handleEditorRequests()
 		now := time.Now()
 		fileMonitor.ProcessWatcherEvents(now, fileChangeDebounce)
 		fileMonitor.HandleAutoReloadResults()
