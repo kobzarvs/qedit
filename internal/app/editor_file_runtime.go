@@ -27,10 +27,23 @@ func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts
 	if path == "" {
 		return activeFileState{}, nil
 	}
-	if err := ed.OpenFile(path); err != nil {
-		return activeFileState{}, err
+	if !ed.OpenExistingBuffer(path) {
+		data, err := fileStore.Read(path)
+		if err != nil {
+			return activeFileState{}, err
+		}
+		if err := activateRuntimeFile(ed, path, data); err != nil {
+			return activeFileState{}, err
+		}
 	}
 	return activateEditorFile(ed, screen, ls, ts, langs, fileStore, path, highlightMaxBytes), nil
+}
+
+func activateRuntimeFile(ed *editor.Editor, path string, data []byte) error {
+	if ed.OpenExistingBuffer(path) {
+		return nil
+	}
+	return ed.LoadFileContent(path, data)
 }
 
 func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts *treesitter.Engine, langs config.Languages, fileStore editor.FileStore, path string, highlightMaxBytes int64) activeFileState {

@@ -8,15 +8,32 @@ func (e *Editor) OpenFile(path string) error {
 	if abs, err := e.runtime.workspace.Abs(path); err == nil {
 		absPath = abs
 	}
+	if e.OpenExistingBuffer(absPath) {
+		return nil
+	}
+	data, err := e.runtime.workspace.Read(absPath)
+	if err != nil {
+		return err
+	}
+	return e.LoadFileContent(absPath, data)
+}
 
-	// Check if this file is already open in a buffer
+// OpenExistingBuffer switches to an already opened buffer when present.
+func (e *Editor) OpenExistingBuffer(path string) bool {
 	if e.buffers != nil && e.buffers.Count() > 0 {
-		if idx := e.buffers.FindByPath(absPath); idx >= 0 {
+		if idx := e.buffers.FindByPath(path); idx >= 0 {
 			e.switchToBuffer(idx)
-			return nil
+			return true
 		}
 	}
+	return false
+}
 
+// LoadFileContent replaces the current editor buffer with caller-supplied file contents.
+func (e *Editor) LoadFileContent(path string, data []byte) error {
+	if e.OpenExistingBuffer(path) {
+		return nil
+	}
 	// Save current buffer state before opening new file
 	if e.buffers != nil && e.buffers.Count() > 0 && e.document.filename != "" {
 		e.saveSessionState()
@@ -25,11 +42,6 @@ func (e *Editor) OpenFile(path string) error {
 		e.buffers.UpdateActive(bs)
 	}
 
-	// Load the new file
-	data, err := e.runtime.workspace.Read(absPath)
-	if err != nil {
-		return err
-	}
 	e.text = NewTextBufferFromBytes(data)
 	e.cursor = Cursor{}
 	e.file.diskContent = e.Content()
@@ -37,7 +49,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.viewport.scroll = 0
 	e.viewport.scrollX = 0
 	e.mode = ModeNormal
-	e.document.filename = absPath
+	e.document.filename = path
 	e.commandLine.text = e.commandLine.text[:0]
 	e.ui.statusMessage = ""
 	e.undo = nil

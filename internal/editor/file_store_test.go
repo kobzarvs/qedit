@@ -105,6 +105,34 @@ func TestReloadFromDiskUsesRuntimeFileStore(t *testing.T) {
 	}
 }
 
+func TestOpenExistingBufferSwitchesWithoutRead(t *testing.T) {
+	e := newTestEditor("initial")
+	store := &testFileStore{
+		stats: map[string]FileMetadata{
+			"/tmp/a.txt": {},
+			"/tmp/b.txt": {},
+		},
+	}
+	e.SetFileStore(store)
+
+	if err := e.LoadFileContent("/tmp/a.txt", []byte("alpha")); err != nil {
+		t.Fatalf("LoadFileContent(a) returned error: %v", err)
+	}
+	if err := e.LoadFileContent("/tmp/b.txt", []byte("beta")); err != nil {
+		t.Fatalf("LoadFileContent(b) returned error: %v", err)
+	}
+
+	if !e.OpenExistingBuffer("/tmp/a.txt") {
+		t.Fatalf("OpenExistingBuffer returned false, want true")
+	}
+	if got := e.Filename(); got != "/tmp/a.txt" {
+		t.Fatalf("filename = %q, want %q", got, "/tmp/a.txt")
+	}
+	if got := e.Content(); got != "alpha" {
+		t.Fatalf("content = %q, want %q", got, "alpha")
+	}
+}
+
 func TestFileTreePreviewUsesRuntimeFileStore(t *testing.T) {
 	e := newTestEditor()
 	e.SetFileStore(&testFileStore{
