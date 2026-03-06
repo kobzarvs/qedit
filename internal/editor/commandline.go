@@ -1,8 +1,6 @@
 package editor
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -214,30 +212,20 @@ func (e *Editor) cmdHistoryDown() {
 // LoadCmdHistory loads command history from file
 func (e *Editor) LoadCmdHistory() {
 	path := e.commandLine.historyPath
-	if path == "" {
+	if path == "" || e.runtime.historyStore == nil {
 		return
 	}
-	data, err := os.ReadFile(path)
+	history, err := e.runtime.historyStore.Load(path)
 	if err != nil {
 		return // File doesn't exist yet, that's ok
 	}
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if line != "" {
-			e.commandLine.history = append(e.commandLine.history, line)
-		}
-	}
+	e.commandLine.history = append(e.commandLine.history, history...)
 }
 
 // saveCmdHistory saves command history to file
 func (e *Editor) saveCmdHistory() {
 	path := e.commandLine.historyPath
-	if path == "" {
-		return
-	}
-	// Ensure directory exists
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if path == "" || e.runtime.historyStore == nil {
 		return
 	}
 	// Keep only last 1000 commands
@@ -245,8 +233,7 @@ func (e *Editor) saveCmdHistory() {
 	if len(history) > 1000 {
 		history = history[len(history)-1000:]
 	}
-	data := strings.Join(history, "\n")
-	_ = os.WriteFile(path, []byte(data), 0644)
+	_ = e.runtime.historyStore.Save(path, history)
 }
 
 // filterCommands returns commands matching the given prefix

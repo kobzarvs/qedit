@@ -38,6 +38,12 @@ type SessionStore interface {
 	Stop()
 }
 
+// HistoryStore persists line-based editor histories by path.
+type HistoryStore interface {
+	Load(path string) ([]string, error)
+	Save(path string, entries []string) error
+}
+
 func (e *Editor) SetClipboard(c Clipboard) {
 	e.runtime.systemClipboard = c
 }
@@ -52,4 +58,8 @@ func (e *Editor) SetTerminalZoomer(z TerminalZoomer) {
 
 func (e *Editor) SetSessionStore(s SessionStore) {
 	e.runtime.sessionStore = s
+}
+
+func (e *Editor) SetHistoryStore(s HistoryStore) {
+	e.runtime.historyStore = s
 }
