@@ -190,7 +190,7 @@ func (e *Editor) openSidebarBuffers() {
 	if e.sidebar == nil {
 		return
 	}
-	if e.refsPickerActive {
+	if e.refsPicker.active {
 		e.closeRefsPicker(false)
 	}
 	if e.sidebar.MenuContent == nil {

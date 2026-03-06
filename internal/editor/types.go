@@ -512,12 +512,7 @@ type Editor struct {
 	selectionScopeIndex int         // current index in scope stack
 
 	// LSP integration
-	refsPickerActive     bool                               // whether references picker is shown
-	refsPickerItems      []LSPLocation                      // list of references
-	refsPickerIndex      int                                // selected reference index
-	refsPickerTitle      string                             // picker title (e.g., "References", "Implementations")
-	refsPickerFileCache  map[string][][]rune                // cache of file lines for preview
-	refsPickerHighlights map[string]map[int][]HighlightSpan // cache of highlights for preview
+	refsPicker refsPickerState
 
 	// Test hook for keymap coverage.
 	actionHook func(action string)

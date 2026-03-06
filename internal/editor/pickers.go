@@ -62,19 +62,19 @@ func (e *Editor) showRefsPicker(title string, items []LSPLocation) {
 	if e.sidebar != nil && e.sidebar.Visible {
 		e.closeSidebar()
 	}
-	e.refsPickerActive = true
-	e.refsPickerTitle = title
-	e.refsPickerItems = items
-	e.refsPickerIndex = 0
-	e.refsPickerFileCache = make(map[string][][]rune)
-	e.refsPickerHighlights = make(map[string]map[int][]HighlightSpan)
+	e.refsPicker.active = true
+	e.refsPicker.title = title
+	e.refsPicker.items = items
+	e.refsPicker.index = 0
+	e.refsPicker.fileCache = make(map[string][][]rune)
+	e.refsPicker.highlights = make(map[string]map[int][]HighlightSpan)
 	e.mode = ModeNormal
 }
 
 // closeRefsPicker closes the picker and optionally jumps to selected location
 func (e *Editor) closeRefsPicker(jump bool) {
-	if jump && len(e.refsPickerItems) > 0 && e.refsPickerIndex < len(e.refsPickerItems) {
-		loc := e.refsPickerItems[e.refsPickerIndex]
+	if jump && len(e.refsPicker.items) > 0 && e.refsPicker.index < len(e.refsPicker.items) {
+		loc := e.refsPicker.items[e.refsPicker.index]
 		currentAbs, _ := filepath.Abs(e.filename)
 		if loc.Path == currentAbs || loc.Path == e.filename {
 			e.cursor.Row = loc.StartLine
@@ -84,11 +84,7 @@ func (e *Editor) closeRefsPicker(jump bool) {
 			e.requestOpenLocation(loc.Path, loc.StartLine, loc.StartCol)
 		}
 	}
-	e.refsPickerActive = false
-	e.refsPickerItems = nil
-	e.refsPickerIndex = 0
-	e.refsPickerFileCache = nil
-	e.refsPickerHighlights = nil
+	e.refsPicker = refsPickerState{}
 }
 
 // refsPickerPageSize returns the number of items per page

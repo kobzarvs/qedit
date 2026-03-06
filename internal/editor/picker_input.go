@@ -51,28 +51,28 @@ func (e *Editor) handleRefsPicker(ev EventKey) bool {
 		e.closeRefsPicker(true)
 		return true
 	case "up", "k":
-		e.refsPickerIndex--
+		e.refsPicker.index--
 	case "down", "j":
-		e.refsPickerIndex++
+		e.refsPicker.index++
 	case "pgup", "ctrl+u":
-		e.refsPickerIndex -= e.refsPickerPageSize()
+		e.refsPicker.index -= e.refsPickerPageSize()
 	case "pgdn", "ctrl+d":
-		e.refsPickerIndex += e.refsPickerPageSize()
+		e.refsPicker.index += e.refsPickerPageSize()
 	case "home", "g":
-		e.refsPickerIndex = 0
+		e.refsPicker.index = 0
 	case "end", "G":
-		e.refsPickerIndex = len(e.refsPickerItems) - 1
+		e.refsPicker.index = len(e.refsPicker.items) - 1
 	default:
 		return false // Not handled, let normal key handling proceed
 	}
 	// Clamp index
-	if e.refsPickerIndex < 0 {
-		e.refsPickerIndex = 0
+	if e.refsPicker.index < 0 {
+		e.refsPicker.index = 0
 	}
-	if e.refsPickerIndex >= len(e.refsPickerItems) {
-		e.refsPickerIndex = len(e.refsPickerItems) - 1
-		if e.refsPickerIndex < 0 {
-			e.refsPickerIndex = 0
+	if e.refsPicker.index >= len(e.refsPicker.items) {
+		e.refsPicker.index = len(e.refsPicker.items) - 1
+		if e.refsPicker.index < 0 {
+			e.refsPicker.index = 0
 		}
 	}
 	// Move cursor to selected reference (if same file)
@@ -82,10 +82,10 @@ func (e *Editor) handleRefsPicker(ev EventKey) bool {
 
 // jumpToSelectedRef moves cursor to the currently selected reference
 func (e *Editor) jumpToSelectedRef() {
-	if e.refsPickerIndex >= len(e.refsPickerItems) {
+	if e.refsPicker.index >= len(e.refsPicker.items) {
 		return
 	}
-	loc := e.refsPickerItems[e.refsPickerIndex]
+	loc := e.refsPicker.items[e.refsPicker.index]
 	currentAbs, _ := filepath.Abs(e.filename)
 	if loc.Path == currentAbs || loc.Path == e.filename {
 		e.cursor.Row = loc.StartLine

@@ -95,8 +95,8 @@ func TestSearchPrevWithRefsPicker(t *testing.T) {
 	ed.updateSearchMatches()
 
 	// Activate refs picker
-	ed.refsPickerActive = true
-	ed.refsPickerItems = []LSPLocation{
+	ed.refsPicker.active = true
+	ed.refsPicker.items = []LSPLocation{
 		{Path: "test.go", StartLine: 0, StartCol: 0},
 		{Path: "test.go", StartLine: 1, StartCol: 0},
 	}

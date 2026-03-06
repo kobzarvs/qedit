@@ -179,7 +179,7 @@ func (e *Editor) renderBranchPicker(s Screen, w, viewHeight int) {
 }
 
 func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
-	if !e.refsPickerActive || len(e.refsPickerItems) == 0 {
+	if !e.refsPicker.active || len(e.refsPicker.items) == 0 {
 		return
 	}
 
@@ -204,8 +204,8 @@ func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
 	}
 
 	// Draw title bar
-	title := e.refsPickerTitle
-	counter := fmt.Sprintf(" %d/%d", e.refsPickerIndex+1, len(e.refsPickerItems))
+	title := e.refsPicker.title
+	counter := fmt.Sprintf(" %d/%d", e.refsPicker.index+1, len(e.refsPicker.items))
 	titleLine := title + counter
 	titleRunes := []rune(titleLine)
 	for i, r := range titleRunes {
@@ -220,8 +220,8 @@ func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
 
 	// Draw list items starting from line 1
 	listHeight := viewHeight - 1
-	start := e.refsPickerIndex - listHeight/2
-	maxStart := len(e.refsPickerItems) - listHeight
+	start := e.refsPicker.index - listHeight/2
+	maxStart := len(e.refsPicker.items) - listHeight
 	if maxStart < 0 {
 		maxStart = 0
 	}
@@ -235,10 +235,10 @@ func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
 	for i := 0; i < listHeight; i++ {
 		idx := start + i
 		lineY := 1 + i
-		if idx >= len(e.refsPickerItems) {
+		if idx >= len(e.refsPicker.items) {
 			continue
 		}
-		loc := e.refsPickerItems[idx]
+		loc := e.refsPicker.items[idx]
 
 		// Format: filename:line
 		displayPath := loc.Path
@@ -255,7 +255,7 @@ func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
 		labelRunes := []rune(label)
 
 		style := itemStyle
-		if idx == e.refsPickerIndex {
+		if idx == e.refsPicker.index {
 			style = selectedStyle
 		}
 
@@ -265,7 +265,7 @@ func (e *Editor) renderRefsSidebar(s Screen, sidebarWidth, viewHeight int) {
 		}
 
 		// Draw indicator
-		if idx == e.refsPickerIndex {
+		if idx == e.refsPicker.index {
 			s.SetContent(0, lineY, '>', nil, style)
 		}
 

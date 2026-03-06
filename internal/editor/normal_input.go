@@ -24,7 +24,7 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 
 	// Handle refs picker - only intercept navigation keys, let others fall through
-	if e.refsPickerActive {
+	if e.refsPicker.active {
 		if handled := e.handleRefsPicker(ev); handled {
 			return false
 		}

@@ -170,7 +170,7 @@ func (e *Editor) openSidebar() {
 		return
 	}
 
-	if e.refsPickerActive {
+	if e.refsPicker.active {
 		logger.Debug("openSidebar: closing refs picker")
 		e.closeRefsPicker(false)
 	}
@@ -200,7 +200,7 @@ func (e *Editor) openSidebarBranches() {
 		return
 	}
 
-	if e.refsPickerActive {
+	if e.refsPicker.active {
 		logger.Debug("openSidebarBranches: closing refs picker")
 		e.closeRefsPicker(false)
 	}
@@ -231,7 +231,7 @@ func (e *Editor) openSidebarWorktrees() {
 		return
 	}
 
-	if e.refsPickerActive {
+	if e.refsPicker.active {
 		logger.Debug("openSidebarWorktrees: closing refs picker")
 		e.closeRefsPicker(false)
 	}
@@ -280,7 +280,7 @@ func (e *Editor) openSidebarFileTree(path string) {
 		return
 	}
 
-	if e.refsPickerActive {
+	if e.refsPicker.active {
 		logger.Debug("openSidebarFileTree: closing refs picker")
 		e.closeRefsPicker(false)
 	}
@@ -324,7 +324,7 @@ func (e *Editor) openSidebarGitChanges() {
 		return
 	}
 
-	if e.refsPickerActive {
+	if e.refsPicker.active {
 		logger.Debug("openSidebarGitChanges: closing refs picker")
 		e.closeRefsPicker(false)
 	}

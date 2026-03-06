@@ -32,7 +32,7 @@ func (e *Editor) Render(s Screen) {
 	sidebarWidth := 0
 	if e.sidebar != nil && e.sidebar.Visible {
 		sidebarWidth = e.sidebar.CalculateWidth(w)
-	} else if e.refsPickerActive && len(e.refsPickerItems) > 0 {
+	} else if e.refsPicker.active && len(e.refsPicker.items) > 0 {
 		sidebarWidth = w / 4
 		if sidebarWidth < 20 {
 			sidebarWidth = 20
@@ -73,7 +73,7 @@ func (e *Editor) Render(s Screen) {
 	// Draw sidebar (new sidebar takes priority over refs picker)
 	if e.sidebar != nil && e.sidebar.Visible && sidebarWidth > 0 {
 		e.sidebar.Render(s, e.sidebarStyles, 0, 0, sidebarWidth, viewHeight)
-	} else if e.refsPickerActive && sidebarWidth > 0 {
+	} else if e.refsPicker.active && sidebarWidth > 0 {
 		e.renderRefsSidebar(s, sidebarWidth, viewHeight)
 	}
 
