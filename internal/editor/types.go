@@ -487,8 +487,7 @@ type Editor struct {
 	zoom editorZoomState
 
 	// Selection scope (expand/shrink)
-	selectionScopeStack []NodeRange // stack of selection scopes for shrinking
-	selectionScopeIndex int         // current index in scope stack
+	selectionScope selectionScopeState
 
 	// LSP integration
 	refsPicker refsPickerState

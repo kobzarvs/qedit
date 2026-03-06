@@ -1096,40 +1096,39 @@ func (e *Editor) expandSelection() {
 	}
 
 	// If no selection or selection changed, rebuild scope stack
-	if !e.selectionActive || len(e.selectionScopeStack) == 0 {
-		e.selectionScopeStack = stack
-		e.selectionScopeIndex = 0
+	if !e.selectionActive || len(e.selectionScope.stack) == 0 {
+		e.selectionScope.stack = stack
+		e.selectionScope.index = 0
 	}
 
 	// Find next larger scope
-	if e.selectionScopeIndex < len(e.selectionScopeStack) {
-		nr := e.selectionScopeStack[e.selectionScopeIndex]
+	if e.selectionScope.index < len(e.selectionScope.stack) {
+		nr := e.selectionScope.stack[e.selectionScope.index]
 		e.selectionStart = Cursor{Row: nr.StartRow, Col: nr.StartCol}
 		e.selectionEnd = Cursor{Row: nr.EndRow, Col: nr.EndCol}
 		e.selectionActive = true
 		e.modal.selectMode = true
-		e.selectionScopeIndex++
+		e.selectionScope.index++
 	}
 }
 
 // shrinkSelection shrinks selection to the next smaller syntax node
 func (e *Editor) shrinkSelection() {
-	if !e.selectionActive || len(e.selectionScopeStack) == 0 {
+	if !e.selectionActive || len(e.selectionScope.stack) == 0 {
 		return
 	}
 
 	// Go back to previous scope
-	if e.selectionScopeIndex > 1 {
-		e.selectionScopeIndex--
-		nr := e.selectionScopeStack[e.selectionScopeIndex-1]
+	if e.selectionScope.index > 1 {
+		e.selectionScope.index--
+		nr := e.selectionScope.stack[e.selectionScope.index-1]
 		e.selectionStart = Cursor{Row: nr.StartRow, Col: nr.StartCol}
 		e.selectionEnd = Cursor{Row: nr.EndRow, Col: nr.EndCol}
 	} else {
 		// Can't shrink further, clear selection
 		e.clearSelection()
 		e.modal.selectMode = false
-		e.selectionScopeStack = nil
-		e.selectionScopeIndex = 0
+		e.selectionScope = selectionScopeState{}
 	}
 }
 func (e *Editor) extendSelection(move func()) {

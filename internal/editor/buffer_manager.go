@@ -54,8 +54,7 @@ type BufferState struct {
 	clipboard [][]rune
 
 	// Selection scope
-	selectionScopeStack []NodeRange
-	selectionScopeIndex int
+	selectionScope selectionScopeState
 }
 
 // BufferInfo provides read-only info about a buffer for display purposes.
@@ -233,8 +232,7 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		conflictBlocks:      e.conflictBlocks,
 		conflictBlocksDirty: e.conflictBlocksDirty,
 		clipboard:           e.clipboard,
-		selectionScopeStack: e.selectionScopeStack,
-		selectionScopeIndex: e.selectionScopeIndex,
+		selectionScope:      e.selectionScope,
 	}
 }
 
@@ -266,6 +264,5 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.conflictBlocks = bs.conflictBlocks
 	e.conflictBlocksDirty = bs.conflictBlocksDirty
 	e.clipboard = bs.clipboard
-	e.selectionScopeStack = bs.selectionScopeStack
-	e.selectionScopeIndex = bs.selectionScopeIndex
+	e.selectionScope = bs.selectionScope
 }

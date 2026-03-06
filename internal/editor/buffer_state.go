@@ -50,8 +50,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.highlight = editorHighlightState{start: -1, end: -1}
 	e.selectionActive = false
 	e.clipboard = nil
-	e.selectionScopeStack = nil
-	e.selectionScopeIndex = 0
+	e.selectionScope = selectionScopeState{}
 	e.searchMatches = nil
 	e.searchMatchIndex = 0
 	e.updateDirty()
