@@ -11,10 +11,10 @@ import (
 // LoadSearchHistory loads search history from file
 func (e *Editor) LoadSearchHistory() {
 	path := e.searchHistoryPath
-	if path == "" || e.runtime.historyStore == nil {
+	if path == "" || e.runtime.persistence == nil || !e.runtime.persistence.HasHistory() {
 		return
 	}
-	history, err := e.runtime.historyStore.Load(path)
+	history, err := e.runtime.persistence.LoadHistory(path)
 	if err != nil {
 		return // File doesn't exist yet, that's ok
 	}
@@ -24,7 +24,7 @@ func (e *Editor) LoadSearchHistory() {
 // saveSearchHistory saves search history to file
 func (e *Editor) saveSearchHistory() {
 	path := e.searchHistoryPath
-	if path == "" || e.runtime.historyStore == nil {
+	if path == "" || e.runtime.persistence == nil || !e.runtime.persistence.HasHistory() {
 		return
 	}
 	// Keep only last 1000 searches
@@ -32,7 +32,7 @@ func (e *Editor) saveSearchHistory() {
 	if len(history) > 1000 {
 		history = history[len(history)-1000:]
 	}
-	_ = e.runtime.historyStore.Save(path, history)
+	_ = e.runtime.persistence.SaveHistory(path, history)
 }
 
 // addSearchToHistory adds a search query to history with type prefix

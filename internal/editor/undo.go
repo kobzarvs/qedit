@@ -255,7 +255,7 @@ func (e *Editor) SaveUndoHistory() error {
 	if e.document.filename == "" {
 		return nil // No file path, nothing to save
 	}
-	if e.runtime.undoStore == nil {
+	if e.runtime.persistence == nil || !e.runtime.persistence.HasUndo() {
 		return errUndoStoreUnavailable()
 	}
 
@@ -287,7 +287,7 @@ func (e *Editor) SaveUndoHistory() error {
 	if err := writer.Flush(); err != nil {
 		return err
 	}
-	return e.runtime.undoStore.Save(e.document.filename, buf.Bytes())
+	return e.runtime.persistence.SaveUndo(e.document.filename, buf.Bytes())
 }
 
 // LoadUndoHistory loads the undo history from the changelog file
@@ -295,13 +295,13 @@ func (e *Editor) LoadUndoHistory() error {
 	if e.document.filename == "" {
 		return nil
 	}
-	if e.runtime.undoStore == nil {
+	if e.runtime.persistence == nil || !e.runtime.persistence.HasUndo() {
 		return errUndoStoreUnavailable()
 	}
 
-	data, err := e.runtime.undoStore.Load(e.document.filename)
+	data, err := e.runtime.persistence.LoadUndo(e.document.filename)
 	if err != nil {
-		if e.runtime.undoStore.IsNotExist(err) {
+		if e.runtime.persistence.IsUndoNotExist(err) {
 			return nil // No history file, that's ok
 		}
 		return err
@@ -356,12 +356,12 @@ func (e *Editor) ClearUndoHistory() error {
 	if e.document.filename == "" {
 		return nil
 	}
-	if e.runtime.undoStore == nil {
+	if e.runtime.persistence == nil || !e.runtime.persistence.HasUndo() {
 		return errUndoStoreUnavailable()
 	}
 
-	err := e.runtime.undoStore.Remove(e.document.filename)
-	if e.runtime.undoStore.IsNotExist(err) {
+	err := e.runtime.persistence.RemoveUndo(e.document.filename)
+	if e.runtime.persistence.IsUndoNotExist(err) {
 		return nil
 	}
 	return err

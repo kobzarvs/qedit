@@ -50,7 +50,7 @@ func New(opts Options) *Editor {
 			historyIndex: -1,
 		},
 		runtime: editorRuntimeDeps{
-			sessionStore: opts.SessionStore,
+			persistence: NewStoreBackedPersistenceRuntime(opts.SessionStore, nil, nil),
 		},
 		sidebar: NewSidebar(
 			opts.SidebarWidth,

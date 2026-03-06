@@ -5,9 +5,7 @@ type editorRuntimeDeps struct {
 	formatter       Formatter
 	merger          Merger
 	terminalZoomer  TerminalZoomer
-	sessionStore    SessionStore
-	historyStore    HistoryStore
+	persistence     PersistenceRuntime
 	fileStore       FileStore
-	undoStore       UndoStore
 	languageRuntime LanguageRuntime
 }
