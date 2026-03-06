@@ -482,19 +482,10 @@ type Editor struct {
 	branchPickerActive            bool
 	branchPickerItems             []string
 	branchPickerIndex             int
-	branchPickerRequested         bool
-	branchPickerSelection         string
-	worktreeListRequested         bool
-	worktreeSwitchSelection       string
 	sidebar                       *Sidebar
 	sidebarStyles                 SidebarStyles
 	fileTreeShowHidden            bool
 	fileTreeShowIgnored           bool
-	sidebarOpenFilePath           string
-	pendingOpenLocation           bool
-	pendingOpenPath               string
-	pendingOpenLine               int
-	pendingOpenCol                int
 	fileTreePreviewActive         bool
 	fileTreePreviewPath           string
 	fileTreePreviewText           *TextBuffer
@@ -564,8 +555,8 @@ type Editor struct {
 	cmdAutoCompleteColGroups [][]GroupInfo // column layout (computed during render)
 
 	// Multi-buffer state
-	buffers        *BufferManager // tracks multiple open buffers
-	bufferSwitched bool           // signal for app.go that buffer was switched
+	buffers  *BufferManager // tracks multiple open buffers
+	requests editorRequestState
 }
 
 // SearchMatch represents a match location

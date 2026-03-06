@@ -92,8 +92,8 @@ func (e *Editor) switchToBuffer(index int) {
 	// Restore new buffer state
 	e.restoreBufferState(e.buffers.Active())
 
-	// Signal app.go
-	e.bufferSwitched = true
+	// Signal runtime controller.
+	e.requests.bufferSwitched = true
 }
 
 // gotoNextBuffer switches to the next buffer.
@@ -165,7 +165,7 @@ func (e *Editor) closeCurrentBuffer(force bool) {
 	// Explicitly set the active buffer and restore its state.
 	e.buffers.SetActive(nextIdx)
 	e.restoreBufferState(e.buffers.Active())
-	e.bufferSwitched = true
+	e.requests.bufferSwitched = true
 }
 
 // closeBufferAtIndex closes a buffer at the given index (called from sidebar).
@@ -209,10 +209,10 @@ func (e *Editor) openSidebarBuffers() {
 
 // ConsumeBufferSwitch returns true and resets the flag if a buffer switch occurred.
 func (e *Editor) ConsumeBufferSwitch() bool {
-	if !e.bufferSwitched {
+	if !e.requests.bufferSwitched {
 		return false
 	}
-	e.bufferSwitched = false
+	e.requests.bufferSwitched = false
 	return true
 }
 

@@ -5,10 +5,10 @@ import (
 )
 
 func (e *Editor) ConsumeBranchPickerRequest() bool {
-	if !e.branchPickerRequested {
+	if !e.requests.branchPickerRequested {
 		return false
 	}
-	e.branchPickerRequested = false
+	e.requests.branchPickerRequested = false
 	return true
 }
 func (e *Editor) ShowBranchPicker(branches []string, current string) {
@@ -32,11 +32,11 @@ func (e *Editor) ShowBranchPicker(branches []string, current string) {
 	e.mode = ModeBranchPicker
 }
 func (e *Editor) ConsumeBranchSelection() (string, bool) {
-	if e.branchPickerSelection == "" {
+	if e.requests.branchSelection == "" {
 		return "", false
 	}
-	selection := e.branchPickerSelection
-	e.branchPickerSelection = ""
+	selection := e.requests.branchSelection
+	e.requests.branchSelection = ""
 	return selection, true
 }
 func (e *Editor) branchPickerPageSize() int {
@@ -51,7 +51,7 @@ func (e *Editor) closeBranchPicker(selection string) {
 	e.branchPickerItems = nil
 	e.branchPickerIndex = 0
 	e.mode = ModeNormal
-	e.branchPickerSelection = selection
+	e.requests.branchSelection = selection
 }
 
 // showRefsPicker shows the references/implementations picker

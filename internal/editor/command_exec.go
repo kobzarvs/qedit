@@ -235,7 +235,7 @@ func (e *Editor) handleWorktreeCommand(args []string) bool {
 		}
 		e.setStatus("worktree created: " + name)
 		e.requestWorktreeRefreshIfActive()
-		e.worktreeSwitchSelection = path
+		e.requests.worktreeSelection = path
 		return false
 	case "switch":
 		target := strings.TrimSpace(strings.Join(args[1:], " "))
@@ -248,7 +248,7 @@ func (e *Editor) handleWorktreeCommand(args []string) bool {
 			e.setStatus(err.Error())
 			return false
 		}
-		e.worktreeSwitchSelection = path
+		e.requests.worktreeSelection = path
 		return false
 	case "remove":
 		target := strings.TrimSpace(strings.Join(args[1:], " "))

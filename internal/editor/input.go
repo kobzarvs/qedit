@@ -60,10 +60,10 @@ func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
 
 // ConsumeSidebarOpenFile consumes the file path selected from sidebar.
 func (e *Editor) ConsumeSidebarOpenFile() (string, bool) {
-	if e.sidebarOpenFilePath == "" {
+	if e.requests.sidebarOpenFilePath == "" {
 		return "", false
 	}
-	path := e.sidebarOpenFilePath
-	e.sidebarOpenFilePath = ""
+	path := e.requests.sidebarOpenFilePath
+	e.requests.sidebarOpenFilePath = ""
 	return path, true
 }

@@ -321,24 +321,21 @@ func (e *Editor) requestOpenLocation(path string, line, col int) {
 	if path == "" {
 		return
 	}
-	e.pendingOpenLocation = true
-	e.pendingOpenPath = path
-	e.pendingOpenLine = line
-	e.pendingOpenCol = col
-	e.sidebarOpenFilePath = path
+	e.requests.openLocation.active = true
+	e.requests.openLocation.path = path
+	e.requests.openLocation.line = line
+	e.requests.openLocation.col = col
+	e.requests.sidebarOpenFilePath = path
 }
 
 func (e *Editor) ConsumePendingOpenLocation() (string, int, int, bool) {
-	if !e.pendingOpenLocation {
+	if !e.requests.openLocation.active {
 		return "", 0, 0, false
 	}
-	path := e.pendingOpenPath
-	line := e.pendingOpenLine
-	col := e.pendingOpenCol
-	e.pendingOpenLocation = false
-	e.pendingOpenPath = ""
-	e.pendingOpenLine = 0
-	e.pendingOpenCol = 0
+	path := e.requests.openLocation.path
+	line := e.requests.openLocation.line
+	col := e.requests.openLocation.col
+	e.requests.openLocation = openLocationRequest{}
 	return path, line, col, true
 }
 

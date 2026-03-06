@@ -74,8 +74,8 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionCheckoutBranch:
 		logger.Debug("sidebar action: checkout branch", "branch", action.Branch)
 		if action.Branch != "" {
-			e.branchPickerRequested = false
-			e.branchPickerSelection = action.Branch
+			e.requests.branchPickerRequested = false
+			e.requests.branchSelection = action.Branch
 			if e.sidebar.CloseOnSelect {
 				e.closeSidebar()
 			} else {
@@ -91,7 +91,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 				e.Notify("Files: binary preview only")
 				return false
 			}
-			e.sidebarOpenFilePath = action.Path
+			e.requests.sidebarOpenFilePath = action.Path
 			e.clearFileTreePreview()
 			if e.sidebar.CloseOnSelect {
 				e.closeSidebar()
@@ -104,7 +104,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 	case SidebarActionSwitchWorktree:
 		logger.Debug("sidebar action: switch worktree", "path", action.Worktree)
 		if action.Worktree != "" {
-			e.worktreeSwitchSelection = action.Worktree
+			e.requests.worktreeSelection = action.Worktree
 			if e.sidebar.CloseOnSelect {
 				e.closeSidebar()
 			} else {
@@ -213,7 +213,7 @@ func (e *Editor) openSidebarBranches() {
 
 	e.sidebar.Open(NewSidebarLoadingContent("Branches", "Loading..."))
 	e.setStatus("loading branches...")
-	e.branchPickerRequested = true
+	e.requests.branchPickerRequested = true
 	logger.Debug("openSidebarBranches: branch request set")
 }
 
@@ -244,7 +244,7 @@ func (e *Editor) openSidebarWorktrees() {
 
 	e.sidebar.Open(NewSidebarLoadingContent("Worktree", "Loading..."))
 	e.setStatus("loading worktrees...")
-	e.worktreeListRequested = true
+	e.requests.worktreeListRequested = true
 	logger.Debug("openSidebarWorktrees: list request set")
 }
 
@@ -257,7 +257,7 @@ func (e *Editor) refreshSidebarWorktrees() {
 		return
 	}
 	if e.sidebar.Visible && e.sidebar.Content != nil && e.sidebar.Content.Mode() == SidebarModeWorktrees {
-		e.worktreeListRequested = true
+		e.requests.worktreeListRequested = true
 		e.setStatus("loading worktrees...")
 		return
 	}
@@ -269,7 +269,7 @@ func (e *Editor) requestWorktreeRefreshIfActive() {
 		return
 	}
 	if e.sidebar.Content.Mode() == SidebarModeWorktrees {
-		e.worktreeListRequested = true
+		e.requests.worktreeListRequested = true
 	}
 }
 
@@ -427,31 +427,31 @@ func (e *Editor) IsSidebarBranchRequest() bool {
 	if e.sidebar == nil {
 		return false
 	}
-	return e.branchPickerRequested
+	return e.requests.branchPickerRequested
 }
 
 func (e *Editor) ConsumeWorktreeListRequest() bool {
-	if !e.worktreeListRequested {
+	if !e.requests.worktreeListRequested {
 		return false
 	}
-	e.worktreeListRequested = false
+	e.requests.worktreeListRequested = false
 	return true
 }
 
 func (e *Editor) ConsumeSidebarBranchSelection() string {
-	if e.branchPickerSelection == "" {
+	if e.requests.branchSelection == "" {
 		return ""
 	}
-	selection := e.branchPickerSelection
-	e.branchPickerSelection = ""
+	selection := e.requests.branchSelection
+	e.requests.branchSelection = ""
 	return selection
 }
 
 func (e *Editor) ConsumeSidebarWorktreeSelection() string {
-	if e.worktreeSwitchSelection == "" {
+	if e.requests.worktreeSelection == "" {
 		return ""
 	}
-	selection := e.worktreeSwitchSelection
-	e.worktreeSwitchSelection = ""
+	selection := e.requests.worktreeSelection
+	e.requests.worktreeSelection = ""
 	return selection
 }
