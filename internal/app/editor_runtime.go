@@ -28,7 +28,7 @@ func editorHistoryPaths() (string, string) {
 	return filepath.Join(dir, "history"), filepath.Join(dir, "search_history")
 }
 
-func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, fileStore editor.FileStore) *editor.Editor {
+func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, fileStore editor.FileStore, languageRuntime editor.LanguageRuntime) *editor.Editor {
 	cmdHistoryPath, searchHistoryPath := editorHistoryPaths()
 	ed := editor.New(editor.Options{
 		TabWidth:             cfg.Editor.TabWidth,
@@ -49,15 +49,20 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 	})
 
 	ed.SetStyles(ui.StylesFromConfig(*cfg))
-	ed.SetFormatter(integrations.GoFormatter{})
-	ed.SetMerger(integrations.GitMerger{})
-	ed.SetHistoryStore(integrations.FileHistoryStore{})
-	ed.SetFileStore(fileStore)
-	ed.SetUndoStore(integrations.FileUndoStore{})
-	if runtime.GOOS == "darwin" {
-		ed.SetClipboard(integrations.MacClipboard{})
-		ed.SetTerminalZoomer(integrations.TerminalZoomer{})
+	runtimeServices := editor.RuntimeServices{
+		Formatter:       integrations.GoFormatter{},
+		Merger:          integrations.GitMerger{},
+		SessionStore:    sessionStore,
+		HistoryStore:    integrations.FileHistoryStore{},
+		FileStore:       fileStore,
+		UndoStore:       integrations.FileUndoStore{},
+		LanguageRuntime: languageRuntime,
 	}
+	if runtime.GOOS == "darwin" {
+		runtimeServices.SystemClipboard = integrations.MacClipboard{}
+		runtimeServices.TerminalZoomer = integrations.TerminalZoomer{}
+	}
+	ed.ApplyRuntimeServices(runtimeServices)
 
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()

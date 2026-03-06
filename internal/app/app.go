@@ -42,7 +42,8 @@ func (a *App) Run() error {
 	sessionMgr, _ := session.NewManager()
 	sessionStore := newEditorSessionStore(sessionMgr)
 	fileStore := integrations.FileStore{}
-	ed := newConfiguredEditor(&cfg, sessionStore, fileStore)
+	languageRuntime := newEditorLanguageRuntime(fileStore, langs, services.ts, services.ls, cfg.Editor.HighlightMaxBytes)
+	ed := newConfiguredEditor(&cfg, sessionStore, fileStore, languageRuntime)
 	defer ed.Shutdown()
 	autoReloadStabilizeDelay := time.Duration(cfg.Editor.AutoReloadStabilizeMS) * time.Millisecond
 	if autoReloadStabilizeDelay < 0 {

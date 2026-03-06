@@ -63,6 +63,19 @@ type LanguageRuntime interface {
 	HighlightRange(path string, startLine, endLine int) map[int][]HighlightSpan
 }
 
+// RuntimeServices groups external editor runtime dependencies.
+type RuntimeServices struct {
+	SystemClipboard Clipboard
+	Formatter       Formatter
+	Merger          Merger
+	TerminalZoomer  TerminalZoomer
+	SessionStore    SessionStore
+	HistoryStore    HistoryStore
+	FileStore       FileStore
+	UndoStore       UndoStore
+	LanguageRuntime LanguageRuntime
+}
+
 // FileStore provides editor filesystem operations.
 type FileStore interface {
 	Abs(path string) (string, error)
@@ -125,4 +138,37 @@ func (e *Editor) SetUndoStore(s UndoStore) {
 
 func (e *Editor) SetLanguageRuntime(r LanguageRuntime) {
 	e.runtime.languageRuntime = r
+}
+
+func (e *Editor) ApplyRuntimeServices(services RuntimeServices) {
+	if services.SystemClipboard != nil {
+		e.runtime.systemClipboard = services.SystemClipboard
+	}
+	if services.Formatter != nil {
+		e.runtime.formatter = services.Formatter
+	}
+	if services.Merger != nil {
+		e.runtime.merger = services.Merger
+	}
+	if services.TerminalZoomer != nil {
+		e.runtime.terminalZoomer = services.TerminalZoomer
+	}
+	if services.SessionStore != nil {
+		e.runtime.sessionStore = services.SessionStore
+	}
+	if services.HistoryStore != nil {
+		e.runtime.historyStore = services.HistoryStore
+	}
+	if services.FileStore != nil {
+		e.runtime.fileStore = services.FileStore
+		if e.buffers != nil {
+			e.buffers.SetPathNormalizer(e.normalizedPath)
+		}
+	}
+	if services.UndoStore != nil {
+		e.runtime.undoStore = services.UndoStore
+	}
+	if services.LanguageRuntime != nil {
+		e.runtime.languageRuntime = services.LanguageRuntime
+	}
 }
