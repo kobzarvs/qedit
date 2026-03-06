@@ -24,36 +24,36 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 		return false
 	case KeyTab:
 		prefix := string(e.cmd)
-		if !e.cmdAutoCompleteActive {
-			e.cmdAutoCompleteItems = filterCommands(prefix)
-			if len(e.cmdAutoCompleteItems) == 0 {
+		if !e.cmdAutoComplete.active {
+			e.cmdAutoComplete.items = filterCommands(prefix)
+			if len(e.cmdAutoComplete.items) == 0 {
 				return false
 			}
-			e.cmdAutoCompleteActive = true
-			e.cmdAutoCompleteIndex = -1
-			e.cmdAutoCompleteCols = 1 // Will be recalculated on render
+			e.cmdAutoComplete.active = true
+			e.cmdAutoComplete.index = -1
+			e.cmdAutoComplete.cols = 1 // Will be recalculated on render
 		} else {
 			// Tab moves to next item (down in column, then next column top)
-			if e.cmdAutoCompleteIndex < 0 {
-				e.cmdAutoCompleteIndex = 0
+			if e.cmdAutoComplete.index < 0 {
+				e.cmdAutoComplete.index = 0
 			} else {
-				e.cmdAutoCompleteIndex++
-				if e.cmdAutoCompleteIndex >= len(e.cmdAutoCompleteItems) {
-					e.cmdAutoCompleteIndex = 0
+				e.cmdAutoComplete.index++
+				if e.cmdAutoComplete.index >= len(e.cmdAutoComplete.items) {
+					e.cmdAutoComplete.index = 0
 				}
 			}
 		}
 		e.updateCmdFromAutocomplete()
 		return false
 	case KeyBacktab:
-		if e.cmdAutoCompleteActive {
+		if e.cmdAutoComplete.active {
 			// Shift+Tab moves to previous item (up in column, then prev column bottom)
-			if e.cmdAutoCompleteIndex < 0 {
-				e.cmdAutoCompleteIndex = len(e.cmdAutoCompleteItems) - 1
+			if e.cmdAutoComplete.index < 0 {
+				e.cmdAutoComplete.index = len(e.cmdAutoComplete.items) - 1
 			} else {
-				e.cmdAutoCompleteIndex--
-				if e.cmdAutoCompleteIndex < 0 {
-					e.cmdAutoCompleteIndex = len(e.cmdAutoCompleteItems) - 1
+				e.cmdAutoComplete.index--
+				if e.cmdAutoComplete.index < 0 {
+					e.cmdAutoComplete.index = len(e.cmdAutoComplete.items) - 1
 				}
 			}
 			e.updateCmdFromAutocomplete()
@@ -90,7 +90,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 		}
 		return false
 	case KeyLeft, KeyCtrlB: // Ctrl+B = back (readline)
-		if e.cmdAutoCompleteActive {
+		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteLeft()
 			e.updateCmdFromAutocomplete()
 			return false
@@ -100,7 +100,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 		}
 		return false
 	case KeyRight, KeyCtrlF: // Ctrl+F = forward (readline)
-		if e.cmdAutoCompleteActive {
+		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteRight()
 			e.updateCmdFromAutocomplete()
 			return false
@@ -116,7 +116,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 		e.cmdCursor = len(e.cmd)
 		return false
 	case KeyUp, KeyCtrlP: // Ctrl+P = previous
-		if e.cmdAutoCompleteActive {
+		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteUp()
 			e.updateCmdFromAutocomplete()
 			return false
@@ -124,7 +124,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 		e.cmdHistoryUp()
 		return false
 	case KeyDown, KeyCtrlN: // Ctrl+N = next
-		if e.cmdAutoCompleteActive {
+		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteDown()
 			e.updateCmdFromAutocomplete()
 			return false
@@ -266,53 +266,49 @@ func filterCommands(prefix string) []CommandInfo {
 
 // closeAutoComplete closes the command autocomplete popup
 func (e *Editor) closeAutoComplete() {
-	e.cmdAutoCompleteActive = false
-	e.cmdAutoCompleteItems = nil
-	e.cmdAutoCompleteIndex = -1
-	e.cmdAutoCompleteCols = 0
-	e.cmdAutoCompleteColGroups = nil
+	e.cmdAutoComplete = commandAutocompleteState{index: -1}
 }
 
 // cmdAutoCompleteUp moves selection up (previous command)
 func (e *Editor) cmdAutoCompleteUp() {
-	n := len(e.cmdAutoCompleteItems)
+	n := len(e.cmdAutoComplete.items)
 	if n == 0 {
 		return
 	}
-	if e.cmdAutoCompleteIndex < 0 {
-		e.cmdAutoCompleteIndex = n - 1
+	if e.cmdAutoComplete.index < 0 {
+		e.cmdAutoComplete.index = n - 1
 		return
 	}
-	e.cmdAutoCompleteIndex--
-	if e.cmdAutoCompleteIndex < 0 {
-		e.cmdAutoCompleteIndex = n - 1
+	e.cmdAutoComplete.index--
+	if e.cmdAutoComplete.index < 0 {
+		e.cmdAutoComplete.index = n - 1
 	}
 }
 
 // cmdAutoCompleteDown moves selection down (next command)
 func (e *Editor) cmdAutoCompleteDown() {
-	n := len(e.cmdAutoCompleteItems)
+	n := len(e.cmdAutoComplete.items)
 	if n == 0 {
 		return
 	}
-	if e.cmdAutoCompleteIndex < 0 {
-		e.cmdAutoCompleteIndex = 0
+	if e.cmdAutoComplete.index < 0 {
+		e.cmdAutoComplete.index = 0
 		return
 	}
-	e.cmdAutoCompleteIndex++
-	if e.cmdAutoCompleteIndex >= n {
-		e.cmdAutoCompleteIndex = 0
+	e.cmdAutoComplete.index++
+	if e.cmdAutoComplete.index >= n {
+		e.cmdAutoComplete.index = 0
 	}
 }
 
 // findCmdPosition finds the column and position within column for a command index
 func (e *Editor) findCmdPosition(cmdIdx int) (col int, posInCol int) {
-	if len(e.cmdAutoCompleteColGroups) == 0 {
+	if len(e.cmdAutoComplete.colGroups) == 0 {
 		return 0, cmdIdx
 	}
 
 	globalIdx := 0
-	for colIdx, colGrps := range e.cmdAutoCompleteColGroups {
+	for colIdx, colGrps := range e.cmdAutoComplete.colGroups {
 		for _, grp := range colGrps {
 			for range grp.Commands {
 				if globalIdx == cmdIdx {
@@ -329,11 +325,11 @@ func (e *Editor) findCmdPosition(cmdIdx int) (col int, posInCol int) {
 
 // countCmdsInCol counts commands in a column
 func (e *Editor) countCmdsInCol(colIdx int) int {
-	if colIdx < 0 || colIdx >= len(e.cmdAutoCompleteColGroups) {
+	if colIdx < 0 || colIdx >= len(e.cmdAutoComplete.colGroups) {
 		return 0
 	}
 	count := 0
-	for _, grp := range e.cmdAutoCompleteColGroups[colIdx] {
+	for _, grp := range e.cmdAutoComplete.colGroups[colIdx] {
 		count += len(grp.Commands)
 	}
 	return count
@@ -341,7 +337,7 @@ func (e *Editor) countCmdsInCol(colIdx int) int {
 
 // firstCmdInCol returns the global command index of the first command in a column
 func (e *Editor) firstCmdInCol(colIdx int) int {
-	if colIdx < 0 || colIdx >= len(e.cmdAutoCompleteColGroups) {
+	if colIdx < 0 || colIdx >= len(e.cmdAutoComplete.colGroups) {
 		return 0
 	}
 	idx := 0
@@ -353,21 +349,21 @@ func (e *Editor) firstCmdInCol(colIdx int) int {
 
 // cmdAutoCompleteLeft moves selection to the previous column (same relative position)
 func (e *Editor) cmdAutoCompleteLeft() {
-	n := len(e.cmdAutoCompleteItems)
+	n := len(e.cmdAutoComplete.items)
 	if n == 0 {
 		return
 	}
-	if e.cmdAutoCompleteIndex < 0 {
-		e.cmdAutoCompleteIndex = 0
+	if e.cmdAutoComplete.index < 0 {
+		e.cmdAutoComplete.index = 0
 		return
 	}
-	cols := len(e.cmdAutoCompleteColGroups)
+	cols := len(e.cmdAutoComplete.colGroups)
 	if cols <= 1 {
 		return
 	}
 
 	// Find current position
-	currentCol, posInCol := e.findCmdPosition(e.cmdAutoCompleteIndex)
+	currentCol, posInCol := e.findCmdPosition(e.cmdAutoComplete.index)
 
 	// Move to previous column
 	targetCol := currentCol - 1
@@ -387,26 +383,26 @@ func (e *Editor) cmdAutoCompleteLeft() {
 		targetPos = targetColCmds - 1
 	}
 
-	e.cmdAutoCompleteIndex = e.firstCmdInCol(targetCol) + targetPos
+	e.cmdAutoComplete.index = e.firstCmdInCol(targetCol) + targetPos
 }
 
 // cmdAutoCompleteRight moves selection to the next column (same relative position)
 func (e *Editor) cmdAutoCompleteRight() {
-	n := len(e.cmdAutoCompleteItems)
+	n := len(e.cmdAutoComplete.items)
 	if n == 0 {
 		return
 	}
-	if e.cmdAutoCompleteIndex < 0 {
-		e.cmdAutoCompleteIndex = 0
+	if e.cmdAutoComplete.index < 0 {
+		e.cmdAutoComplete.index = 0
 		return
 	}
-	cols := len(e.cmdAutoCompleteColGroups)
+	cols := len(e.cmdAutoComplete.colGroups)
 	if cols <= 1 {
 		return
 	}
 
 	// Find current position
-	currentCol, posInCol := e.findCmdPosition(e.cmdAutoCompleteIndex)
+	currentCol, posInCol := e.findCmdPosition(e.cmdAutoComplete.index)
 
 	// Move to next column
 	targetCol := currentCol + 1
@@ -426,15 +422,15 @@ func (e *Editor) cmdAutoCompleteRight() {
 		targetPos = targetColCmds - 1
 	}
 
-	e.cmdAutoCompleteIndex = e.firstCmdInCol(targetCol) + targetPos
+	e.cmdAutoComplete.index = e.firstCmdInCol(targetCol) + targetPos
 }
 
 // updateCmdFromAutocomplete updates the command line with the selected autocomplete item
 func (e *Editor) updateCmdFromAutocomplete() {
-	if len(e.cmdAutoCompleteItems) == 0 || e.cmdAutoCompleteIndex < 0 || e.cmdAutoCompleteIndex >= len(e.cmdAutoCompleteItems) {
+	if len(e.cmdAutoComplete.items) == 0 || e.cmdAutoComplete.index < 0 || e.cmdAutoComplete.index >= len(e.cmdAutoComplete.items) {
 		return
 	}
-	selected := e.cmdAutoCompleteItems[e.cmdAutoCompleteIndex]
+	selected := e.cmdAutoComplete.items[e.cmdAutoComplete.index]
 	e.cmd = []rune(commandInsertText(selected.Name))
 	e.cmdCursor = len(e.cmd)
 }

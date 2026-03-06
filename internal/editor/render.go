@@ -90,7 +90,7 @@ func (e *Editor) Render(s Screen) {
 			cx = cmdCursor
 			cy = cmdY
 		}
-		if e.mode == ModeCommand && e.cmdAutoCompleteActive {
+		if e.mode == ModeCommand && e.cmdAutoComplete.active {
 			e.renderCommandAutocomplete(s, w, statusY)
 		}
 	}

@@ -225,12 +225,12 @@ func calculateOptimalLayout(groups []GroupInfo, maxHeight int) (int, [][]GroupIn
 // renderCommandAutocomplete renders the command autocomplete popup above the command line
 // Uses group-aware layout: groups are never split across columns
 func (e *Editor) renderCommandAutocomplete(s Screen, w, statusY int) {
-	if !e.cmdAutoCompleteActive || len(e.cmdAutoCompleteItems) == 0 {
+	if !e.cmdAutoComplete.active || len(e.cmdAutoComplete.items) == 0 {
 		return
 	}
 
 	// Group commands
-	groups := groupCommands(e.cmdAutoCompleteItems)
+	groups := groupCommands(e.cmdAutoComplete.items)
 	if len(groups) == 0 {
 		return
 	}
@@ -262,8 +262,8 @@ func (e *Editor) renderCommandAutocomplete(s Screen, w, statusY int) {
 
 	// Store layout for navigation
 	cols := len(colGroups)
-	e.cmdAutoCompleteCols = cols
-	e.cmdAutoCompleteColGroups = colGroups
+	e.cmdAutoComplete.cols = cols
+	e.cmdAutoComplete.colGroups = colGroups
 
 	// Calculate column width
 	colWidth := maxItemWidth + 2
@@ -320,7 +320,7 @@ func (e *Editor) renderCommandAutocomplete(s Screen, w, statusY int) {
 			// Render commands in this group
 			for _, cmd := range grp.Commands {
 				y := y0 + row
-				isSelected := cmdIdx == e.cmdAutoCompleteIndex
+				isSelected := cmdIdx == e.cmdAutoComplete.index
 
 				style := e.styleAutoCompleteDescription
 				hotkeyStyle := e.styleAutoCompleteHotkey

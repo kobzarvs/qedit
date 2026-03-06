@@ -518,11 +518,7 @@ type Editor struct {
 	actionHook func(action string)
 
 	// Command autocomplete state
-	cmdAutoCompleteActive    bool
-	cmdAutoCompleteItems     []CommandInfo
-	cmdAutoCompleteIndex     int
-	cmdAutoCompleteCols      int           // number of columns for display (computed during render)
-	cmdAutoCompleteColGroups [][]GroupInfo // column layout (computed during render)
+	cmdAutoComplete commandAutocompleteState
 
 	// Multi-buffer state
 	buffers  *BufferManager // tracks multiple open buffers
