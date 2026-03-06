@@ -412,6 +412,7 @@ type Editor struct {
 	sidebarModes                 sidebarModeRegistry
 	sidebarStyles                SidebarStyles
 	formatters                   formatterRegistry
+	languageFeatures             languageFeatureRegistry
 	fileTree                     editorFileTreeState
 	fileTreePreview              fileTreePreviewState
 	interaction                  editorInteractionState

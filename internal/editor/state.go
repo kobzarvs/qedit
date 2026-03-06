@@ -52,9 +52,10 @@ func New(opts Options) *Editor {
 		runtime: editorRuntimeDeps{
 			persistence: NewStoreBackedPersistenceRuntime(opts.SessionStore, nil, nil),
 		},
-		sidebarModes: newSidebarModeRegistry(),
-		commands:     newCommandRegistry(),
-		formatters:   newFormatterRegistry(),
+		sidebarModes:     newSidebarModeRegistry(),
+		commands:         newCommandRegistry(),
+		formatters:       newFormatterRegistry(),
+		languageFeatures: newLanguageFeatureRegistry(),
 		sidebar: NewSidebar(
 			opts.SidebarWidth,
 			opts.SidebarMinWidth,
@@ -70,6 +71,7 @@ func New(opts Options) *Editor {
 	e.registerBuiltInSidebarModes()
 	e.registerBuiltInCommands()
 	e.registerBuiltInFormatters()
+	e.registerBuiltInLanguageFeatures()
 	e.SetStyles(defaultEditorStyles())
 	return e
 }
