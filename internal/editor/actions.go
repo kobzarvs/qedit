@@ -10,8 +10,8 @@ import (
 )
 
 func (e *Editor) execAction(action string) bool {
-	if e.actionHook != nil {
-		e.actionHook(action)
+	if e.bindings.actionHook != nil {
+		e.bindings.actionHook(action)
 	}
 	switch action {
 	case actionMoveLeft:

@@ -21,7 +21,7 @@ func TestDefaultNormalHotkeysTriggerActions(t *testing.T) {
 			}
 			e := newTestEditor("one", "two", "three")
 			var got []string
-			e.actionHook = func(action string) {
+			e.bindings.actionHook = func(action string) {
 				got = append(got, action)
 			}
 			_ = e.HandleKey(eventForKeyString(t, key))
@@ -50,7 +50,7 @@ func TestDefaultInsertHotkeysTriggerActions(t *testing.T) {
 			e := newTestEditor("one", "two", "three")
 			e.mode = ModeInsert
 			var got []string
-			e.actionHook = func(action string) {
+			e.bindings.actionHook = func(action string) {
 				got = append(got, action)
 			}
 			_ = e.HandleKey(eventForKeyString(t, key))

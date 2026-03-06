@@ -346,7 +346,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 
 	// Build bindings list grouped
 	var allBindings []keybinding
-	for key, action := range e.keymap.normal {
+	for key, action := range e.bindings.keymap.normal {
 		desc := bindingDescs[action]
 		if desc == "" {
 			desc = action

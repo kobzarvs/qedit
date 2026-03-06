@@ -38,8 +38,8 @@ func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
 		return false, false
 	}
 
-	key := keyStringForMap(ev, e.keymap.normal)
-	action, ok := e.keymap.normal[key]
+	key := keyStringForMap(ev, e.bindings.keymap.normal)
+	action, ok := e.bindings.keymap.normal[key]
 	if !ok {
 		return false, false
 	}

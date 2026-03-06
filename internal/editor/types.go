@@ -401,7 +401,7 @@ type Editor struct {
 	filename                     string
 	file                         editorFileState
 	dirty                        bool
-	keymap                       keymapSet
+	bindings                     editorBindingsState
 	commandLine                  editorCommandLineState
 	styleMain                    Style
 	styleStatus                  Style
@@ -477,9 +477,6 @@ type Editor struct {
 
 	// LSP integration
 	refsPicker refsPickerState
-
-	// Test hook for keymap coverage.
-	actionHook func(action string)
 
 	// Command autocomplete state
 	cmdAutoComplete commandAutocompleteState

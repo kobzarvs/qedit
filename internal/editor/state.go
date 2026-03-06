@@ -29,8 +29,10 @@ func New(opts Options) *Editor {
 		SearchState: SearchState{
 			searchHistoryPath: opts.SearchHistoryPath,
 		},
-		mode:   ModeNormal,
-		keymap: keymapSet{normal: normal, insert: insert},
+		mode: ModeNormal,
+		bindings: editorBindingsState{
+			keymap: keymapSet{normal: normal, insert: insert},
+		},
 		display: editorDisplayState{
 			tabWidth:       tabWidth,
 			lineNumberMode: lineNumberMode,

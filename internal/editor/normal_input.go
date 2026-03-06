@@ -108,11 +108,11 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	if e.handleSelectionMove(ev) {
 		return false
 	}
-	key := keyStringForMap(ev, e.keymap.normal)
+	key := keyStringForMap(ev, e.bindings.keymap.normal)
 	if key == "" {
 		return false
 	}
-	action, ok := e.keymap.normal[key]
+	action, ok := e.bindings.keymap.normal[key]
 	if !ok {
 		return false
 	}

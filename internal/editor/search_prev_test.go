@@ -28,7 +28,7 @@ func TestSearchPrevKeyBinding(t *testing.T) {
 	}
 
 	// Check keymap
-	action, ok := ed.keymap.normal[key]
+	action, ok := ed.bindings.keymap.normal[key]
 	t.Logf("keymap.normal[%q] = %q (ok=%v)", key, action, ok)
 
 	if !ok {

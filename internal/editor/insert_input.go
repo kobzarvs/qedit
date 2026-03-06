@@ -4,9 +4,9 @@ func (e *Editor) handleInsert(ev EventKey) bool {
 	if e.handleSelectionMove(ev) {
 		return false
 	}
-	key := keyStringForMap(ev, e.keymap.insert)
+	key := keyStringForMap(ev, e.bindings.keymap.insert)
 	if key != "" {
-		if action, ok := e.keymap.insert[key]; ok {
+		if action, ok := e.bindings.keymap.insert[key]; ok {
 			return e.execAction(action)
 		}
 	}
