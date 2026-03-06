@@ -1,7 +1,6 @@
 package editor
 
 import (
-	"path/filepath"
 	"strconv"
 )
 
@@ -115,7 +114,7 @@ func (e *Editor) lspGoto(method string) bool {
 
 	// Single result: jump directly
 	loc := locations[0]
-	currentAbs, _ := filepath.Abs(e.document.filename)
+	currentAbs := e.normalizedPath(e.document.filename)
 	if loc.Path != currentAbs && loc.Path != e.document.filename {
 		e.requestOpenLocation(loc.Path, loc.StartLine, loc.StartCol)
 		return false

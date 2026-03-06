@@ -4,6 +4,7 @@ import "testing"
 
 type testFileStore struct {
 	absPath     string
+	absPaths    map[string]string
 	readData    []byte
 	writtenPath string
 	writtenData []byte
@@ -11,6 +12,9 @@ type testFileStore struct {
 }
 
 func (s *testFileStore) Abs(path string) (string, error) {
+	if abs, ok := s.absPaths[path]; ok {
+		return abs, nil
+	}
 	if s.absPath != "" {
 		return s.absPath, nil
 	}

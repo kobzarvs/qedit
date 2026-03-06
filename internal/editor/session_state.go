@@ -1,16 +1,14 @@
 package editor
 
-import "path/filepath"
-
 func (e *Editor) restoreSessionState() {
 	if e.runtime.sessionStore == nil || e.document.filename == "" {
 		return
 	}
-	absPath, err := filepath.Abs(e.document.filename)
-	if err != nil {
+	path := e.normalizedPath(e.document.filename)
+	if path == "" {
 		return
 	}
-	state, ok := e.runtime.sessionStore.GetFileState(absPath)
+	state, ok := e.runtime.sessionStore.GetFileState(path)
 	if !ok {
 		return
 	}
@@ -77,8 +75,8 @@ func (e *Editor) saveSessionState() {
 	if e.runtime.sessionStore == nil || e.document.filename == "" {
 		return
 	}
-	absPath, err := filepath.Abs(e.document.filename)
-	if err != nil {
+	path := e.normalizedPath(e.document.filename)
+	if path == "" {
 		return
 	}
 
@@ -99,7 +97,7 @@ func (e *Editor) saveSessionState() {
 		SelectionEndRow:   e.selectionEnd.Row,
 		SelectionEndCol:   e.selectionEnd.Col,
 	}
-	e.runtime.sessionStore.SetFileState(absPath, state)
+	e.runtime.sessionStore.SetFileState(path, state)
 }
 
 // Shutdown saves session state and stops background tasks

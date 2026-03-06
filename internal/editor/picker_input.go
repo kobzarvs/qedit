@@ -1,7 +1,5 @@
 package editor
 
-import "path/filepath"
-
 func (e *Editor) handleBranchPicker(ev EventKey) bool {
 	switch keyString(ev) {
 	case "esc", "ctrl+c":
@@ -86,7 +84,7 @@ func (e *Editor) jumpToSelectedRef() {
 		return
 	}
 	loc := e.refsPicker.items[e.refsPicker.index]
-	currentAbs, _ := filepath.Abs(e.document.filename)
+	currentAbs := e.normalizedPath(e.document.filename)
 	if loc.Path == currentAbs || loc.Path == e.document.filename {
 		e.cursor.Row = loc.StartLine
 		e.cursor.Col = loc.StartCol

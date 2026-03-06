@@ -1,8 +1,6 @@
 package editor
 
-import (
-	"path/filepath"
-)
+import ()
 
 func (e *Editor) ConsumeBranchPickerRequest() bool {
 	if !e.requests.branchPickerRequested {
@@ -73,7 +71,7 @@ func (e *Editor) showRefsPicker(title string, items []LSPLocation) {
 func (e *Editor) closeRefsPicker(jump bool) {
 	if jump && len(e.refsPicker.items) > 0 && e.refsPicker.index < len(e.refsPicker.items) {
 		loc := e.refsPicker.items[e.refsPicker.index]
-		currentAbs, _ := filepath.Abs(e.document.filename)
+		currentAbs := e.normalizedPath(e.document.filename)
 		if loc.Path == currentAbs || loc.Path == e.document.filename {
 			e.cursor.Row = loc.StartLine
 			e.cursor.Col = loc.StartCol
