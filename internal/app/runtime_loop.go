@@ -89,6 +89,7 @@ func newEditorRuntime(
 		ed:                ed,
 		cfg:               cfg,
 		screen:            screen,
+		clipboard:         newEditorClipboard(),
 		formatter:         newEditorFormatter(),
 		ls:                ls,
 		ts:                ts,

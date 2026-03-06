@@ -267,6 +267,30 @@ func TestExecCommandReloadQueuesRequest(t *testing.T) {
 	}
 }
 
+func TestPasteFromSystemClipboardQueuesRequest(t *testing.T) {
+	e := newTestEditor("abc")
+	e.pasteFromSystemClipboard(true)
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected clipboard read request")
+	}
+	if req.Kind != RuntimeRequestReadClipboard || !req.Before {
+		t.Fatalf("request = %#v, want read-clipboard before=true", req)
+	}
+}
+
+func TestYankToSystemClipboardQueuesRequest(t *testing.T) {
+	e := newTestEditor("abc")
+	e.yankToSystemClipboard()
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected clipboard write request")
+	}
+	if req.Kind != RuntimeRequestWriteClipboard || req.Content != "abc" || !req.Notify {
+		t.Fatalf("request = %#v, want write-clipboard content=abc notify=true", req)
+	}
+}
+
 func TestExecCommandQuitWithDirty(t *testing.T) {
 	e := newTestEditor("a")
 	e.insertRune('b')

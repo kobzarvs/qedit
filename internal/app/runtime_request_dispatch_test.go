@@ -17,6 +17,21 @@ func (f *testAppFormatter) FormatGo(src string) (string, error) {
 	return f.formatted, f.err
 }
 
+type testAppClipboard struct {
+	written string
+	read    string
+	readErr error
+}
+
+func (c *testAppClipboard) Read() (string, error) {
+	return c.read, c.readErr
+}
+
+func (c *testAppClipboard) Write(text string) error {
+	c.written = text
+	return nil
+}
+
 func TestHandleFormatBufferRequestAppliesFormattedContent(t *testing.T) {
 	ed := editor.New(editor.Options{})
 	original := "package main\nfunc main() {  }\n"
@@ -41,5 +56,27 @@ func TestHandleFormatBufferRequestAppliesFormattedContent(t *testing.T) {
 	}
 	if got := ed.Content(); got != formatted {
 		t.Fatalf("content = %q, want %q", got, formatted)
+	}
+}
+
+func TestHandleReadClipboardRequestAppliesClipboardText(t *testing.T) {
+	ed := editor.New(editor.Options{})
+	if err := ed.LoadFileContent("/tmp/main.txt", []byte("abc")); err != nil {
+		t.Fatalf("LoadFileContent returned error: %v", err)
+	}
+
+	clipboard := &testAppClipboard{read: "X"}
+	controller := editorRuntimeController{
+		ed:        ed,
+		clipboard: clipboard,
+	}
+
+	controller.handleReadClipboardRequest(editor.RuntimeRequest{
+		Kind:   editor.RuntimeRequestReadClipboard,
+		Before: false,
+	})
+
+	if got := ed.Content(); got != "aXbc" {
+		t.Fatalf("content = %q, want %q", got, "aXbc")
 	}
 }

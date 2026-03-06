@@ -17,6 +17,7 @@ type editorRuntimeController struct {
 	ed                *editor.Editor
 	cfg               *config.Config
 	screen            tcell.Screen
+	clipboard         editor.Clipboard
 	formatter         editor.Formatter
 	ls                *lsp.Manager
 	ts                *treesitter.Engine

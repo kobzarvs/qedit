@@ -12,6 +12,8 @@ const (
 	RuntimeRequestSaveFile            RuntimeRequestKind = "save_file"
 	RuntimeRequestReloadFile          RuntimeRequestKind = "reload_file"
 	RuntimeRequestFormatBuffer        RuntimeRequestKind = "format_buffer"
+	RuntimeRequestWriteClipboard      RuntimeRequestKind = "write_clipboard"
+	RuntimeRequestReadClipboard       RuntimeRequestKind = "read_clipboard"
 	RuntimeRequestPersistAutoReload   RuntimeRequestKind = "persist_auto_reload"
 	RuntimeRequestPersistSidebarWidth RuntimeRequestKind = "persist_sidebar_width"
 )
@@ -28,6 +30,8 @@ type RuntimeRequest struct {
 	PrevBool  bool
 	Force     bool
 	QuitAfter bool
+	Before    bool
+	Notify    bool
 }
 
 type editorRequestState struct {

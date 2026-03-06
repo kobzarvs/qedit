@@ -713,35 +713,14 @@ func (e *Editor) helixChange() {
 	e.saveLineState()
 }
 
-// copyToSystemClipboard copies text to system clipboard when available.
-func (e *Editor) copyToSystemClipboard() {
-	if len(e.clipboard.lines) == 0 {
-		return
-	}
-	if e.runtime.systemClipboard == nil {
-		return
-	}
-	// Join clipboard lines with newlines
-	var lines []string
-	for _, line := range e.clipboard.lines {
-		lines = append(lines, string(line))
-	}
-	text := strings.Join(lines, "\n")
-	_ = e.runtime.systemClipboard.Write(text)
-}
-
-// Helix-style yank (y) - copy selection to clipboard
-func (e *Editor) yankSelection() {
+func (e *Editor) fillClipboardFromSelection() bool {
 	start, end, ok := e.selectionRange()
 	if !ok {
 		// No selection - yank current line
 		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
 			e.clipboard.lines = [][]rune{append([]rune(nil), e.line(e.cursor.Row)...)}
 		}
-		e.copyToSystemClipboard()
-		e.modal.lastCommand = "y"
-		e.ui.copiedMessageTime = time.Now()
-		return
+		return false
 	}
 
 	// Copy selection to clipboard
@@ -767,11 +746,24 @@ func (e *Editor) yankSelection() {
 		}
 		e.clipboard.lines = append(e.clipboard.lines, append([]rune(nil), line[startCol:endCol]...))
 	}
-	e.copyToSystemClipboard()
+	return true
+}
+
+// copyToSystemClipboard copies text to system clipboard when available.
+func (e *Editor) copyToSystemClipboard(notify bool) {
+	e.queueClipboardWriteRequest(notify)
+}
+
+// Helix-style yank (y) - copy selection to clipboard
+func (e *Editor) yankSelection() {
+	hadSelection := e.fillClipboardFromSelection()
+	e.copyToSystemClipboard(false)
 	e.modal.lastCommand = "y"
 	e.ui.copiedMessageTime = time.Now()
-	e.clearSelection()
-	e.modal.selectMode = false
+	if hadSelection {
+		e.clearSelection()
+		e.modal.selectMode = false
+	}
 }
 
 // Helix-style paste (p) - paste after cursor

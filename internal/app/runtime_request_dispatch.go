@@ -35,6 +35,10 @@ func (c *editorRuntimeController) dispatchRuntimeRequest(req editor.RuntimeReque
 		c.handleReloadFileRequest(req)
 	case editor.RuntimeRequestFormatBuffer:
 		c.handleFormatBufferRequest(req)
+	case editor.RuntimeRequestWriteClipboard:
+		c.handleWriteClipboardRequest(req)
+	case editor.RuntimeRequestReadClipboard:
+		c.handleReadClipboardRequest(req)
 	case editor.RuntimeRequestPersistAutoReload:
 		c.handlePersistAutoReloadRequest(req)
 	case editor.RuntimeRequestPersistSidebarWidth:
@@ -144,6 +148,45 @@ func (c *editorRuntimeController) handleFormatBufferRequest(req editor.RuntimeRe
 	}
 	c.ed.ApplyFormattedContent(formatted)
 	c.ed.SetStatusMessage("formatted")
+}
+
+func (c *editorRuntimeController) handleWriteClipboardRequest(req editor.RuntimeRequest) {
+	if req.Content == "" {
+		return
+	}
+	if c.clipboard == nil {
+		if req.Notify {
+			c.ed.SetStatusMessage("yanked (clipboard unavailable)")
+		}
+		return
+	}
+	if err := c.clipboard.Write(req.Content); err != nil {
+		if req.Notify {
+			c.ed.SetStatusMessage("yanked (clipboard unavailable)")
+		}
+		return
+	}
+	if req.Notify {
+		c.ed.SetStatusMessage("yanked to clipboard")
+	}
+}
+
+func (c *editorRuntimeController) handleReadClipboardRequest(req editor.RuntimeRequest) {
+	if c.clipboard == nil {
+		c.ed.SetStatusMessage("clipboard unavailable")
+		return
+	}
+	text, err := c.clipboard.Read()
+	if err != nil {
+		c.ed.SetStatusMessage("clipboard unavailable")
+		return
+	}
+	if text == "" {
+		c.ed.SetStatusMessage("clipboard empty")
+		return
+	}
+	c.ed.ApplyClipboardText(text, req.Before)
+	c.ed.SetStatusMessage("pasted from clipboard")
 }
 
 func (c *editorRuntimeController) handlePersistAutoReloadRequest(req editor.RuntimeRequest) {

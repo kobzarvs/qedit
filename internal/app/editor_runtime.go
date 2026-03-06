@@ -28,6 +28,13 @@ func newEditorMerger() editor.Merger {
 	return integrations.GitMerger{}
 }
 
+func newEditorClipboard() editor.Clipboard {
+	if runtime.GOOS == "darwin" {
+		return integrations.MacClipboard{}
+	}
+	return nil
+}
+
 func editorHistoryPaths() (string, string) {
 	dir, err := config.ConfigDir()
 	if err != nil {
@@ -70,8 +77,8 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 		),
 		LanguageRuntime: languageRuntime,
 	}
-	if runtime.GOOS == "darwin" {
-		runtimeServices.SystemClipboard = integrations.MacClipboard{}
+	if clipboard := newEditorClipboard(); clipboard != nil {
+		runtimeServices.SystemClipboard = clipboard
 		runtimeServices.TerminalZoomer = integrations.TerminalZoomer{}
 	}
 	ed.ApplyRuntimeServices(runtimeServices)
