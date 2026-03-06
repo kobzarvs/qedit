@@ -293,8 +293,8 @@ func (e *Editor) openSidebarFileTree(path string) {
 
 	startDir := strings.TrimSpace(path)
 	if startDir == "" {
-		if e.filename != "" {
-			startDir = filepath.Dir(e.filename)
+		if e.document.filename != "" {
+			startDir = filepath.Dir(e.document.filename)
 		} else if cwd, err := os.Getwd(); err == nil {
 			startDir = cwd
 		}

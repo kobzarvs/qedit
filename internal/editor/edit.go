@@ -1083,13 +1083,13 @@ func (e *Editor) selectAll() {
 
 // expandSelection expands selection to the next larger syntax node
 func (e *Editor) expandSelection() {
-	if e.runtime.nodeStackFunc == nil || e.filename == "" {
+	if e.runtime.nodeStackFunc == nil || e.document.filename == "" {
 		e.setStatus("syntax tree not available")
 		return
 	}
 
 	// Get node stack at cursor position
-	stack := e.runtime.nodeStackFunc(e.filename, e.cursor.Row, e.cursor.Col)
+	stack := e.runtime.nodeStackFunc(e.document.filename, e.cursor.Row, e.cursor.Col)
 	if len(stack) == 0 {
 		e.setStatus("no syntax node at cursor")
 		return
@@ -1196,7 +1196,7 @@ func (e *Editor) selectionRangeForLine(lineIdx int) (int, int, bool) {
 // toggleLineComment toggles comment on current line or selection
 func (e *Editor) toggleLineComment() {
 	// Detect comment prefix based on file extension
-	ext := filepath.Ext(e.filename)
+	ext := filepath.Ext(e.document.filename)
 	var prefix, suffix string
 	switch ext {
 	case ".go", ".c", ".cpp", ".h", ".java", ".js", ".ts", ".rs", ".swift":
@@ -1326,7 +1326,7 @@ func (e *Editor) toggleLineComment() {
 	}
 
 	e.finishUndoGroup()
-	e.dirty = true
+	e.document.dirty = true
 	e.change.lastEdit.Valid = false
 }
 func (e *Editor) replaceBuffer(text string, markDirty bool) {

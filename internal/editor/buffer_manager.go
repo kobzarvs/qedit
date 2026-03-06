@@ -208,9 +208,9 @@ func (e *Editor) snapshotBufferState() *BufferState {
 	return &BufferState{
 		text:                e.text,
 		cursor:              e.cursor,
-		filename:            e.filename,
+		filename:            e.document.filename,
 		file:                e.file,
-		dirty:               e.dirty,
+		dirty:               e.document.dirty,
 		undo:                e.undo,
 		redo:                e.redo,
 		savePoint:           e.savePoint,
@@ -240,9 +240,9 @@ func (e *Editor) snapshotBufferState() *BufferState {
 func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.text = bs.text
 	e.cursor = bs.cursor
-	e.filename = bs.filename
+	e.document.filename = bs.filename
 	e.file = bs.file
-	e.dirty = bs.dirty
+	e.document.dirty = bs.dirty
 	e.undo = bs.undo
 	e.redo = bs.redo
 	e.savePoint = bs.savePoint

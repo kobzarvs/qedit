@@ -82,12 +82,12 @@ func (e *Editor) lspGoto(method string) bool {
 		e.setStatus("LSP: callback not set")
 		return false
 	}
-	if e.filename == "" {
+	if e.document.filename == "" {
 		e.setStatus("LSP: no file open")
 		return false
 	}
 
-	locations, err := e.runtime.lspGotoFunc(method, e.filename, e.cursor.Row, e.cursor.Col)
+	locations, err := e.runtime.lspGotoFunc(method, e.document.filename, e.cursor.Row, e.cursor.Col)
 	if err != nil {
 		e.setStatus("LSP: " + err.Error())
 		return false
@@ -115,8 +115,8 @@ func (e *Editor) lspGoto(method string) bool {
 
 	// Single result: jump directly
 	loc := locations[0]
-	currentAbs, _ := filepath.Abs(e.filename)
-	if loc.Path != currentAbs && loc.Path != e.filename {
+	currentAbs, _ := filepath.Abs(e.document.filename)
+	if loc.Path != currentAbs && loc.Path != e.document.filename {
 		e.requestOpenLocation(loc.Path, loc.StartLine, loc.StartCol)
 		return false
 	}

@@ -3,10 +3,10 @@ package editor
 import "path/filepath"
 
 func (e *Editor) restoreSessionState() {
-	if e.runtime.sessionStore == nil || e.filename == "" {
+	if e.runtime.sessionStore == nil || e.document.filename == "" {
 		return
 	}
-	absPath, err := filepath.Abs(e.filename)
+	absPath, err := filepath.Abs(e.document.filename)
 	if err != nil {
 		return
 	}
@@ -74,10 +74,10 @@ func (e *Editor) restoreSessionState() {
 }
 
 func (e *Editor) saveSessionState() {
-	if e.runtime.sessionStore == nil || e.filename == "" {
+	if e.runtime.sessionStore == nil || e.document.filename == "" {
 		return
 	}
-	absPath, err := filepath.Abs(e.filename)
+	absPath, err := filepath.Abs(e.document.filename)
 	if err != nil {
 		return
 	}
@@ -113,10 +113,10 @@ func (e *Editor) Shutdown() {
 		for _, info := range e.buffers.Items() {
 			if info.Filename != "" && e.runtime.sessionStore != nil {
 				// Temporarily set filename to save each buffer's session
-				// (restoreSessionState/saveSessionState use e.filename)
-				origFilename := e.filename
+				// (restoreSessionState/saveSessionState use current document filename)
+				origFilename := e.document.filename
 				bufState := e.buffers.buffers[info.Index]
-				e.filename = bufState.filename
+				e.document.filename = bufState.filename
 				e.cursor = bufState.cursor
 				e.viewport.scroll = bufState.scroll
 				e.viewport.scrollX = bufState.scrollX
@@ -125,7 +125,7 @@ func (e *Editor) Shutdown() {
 				e.selectionStart = bufState.selectionStart
 				e.selectionEnd = bufState.selectionEnd
 				e.saveSessionState()
-				e.filename = origFilename
+				e.document.filename = origFilename
 			}
 		}
 	} else {

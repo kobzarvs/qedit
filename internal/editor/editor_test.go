@@ -174,7 +174,7 @@ func TestExecCommandWriteAndSave(t *testing.T) {
 	if string(data) != "hello" {
 		t.Fatalf("file contents = %q, want %q", string(data), "hello")
 	}
-	if e.dirty {
+	if e.document.dirty {
 		t.Fatalf("dirty = true, want false")
 	}
 }
@@ -182,7 +182,7 @@ func TestExecCommandWriteAndSave(t *testing.T) {
 func TestExecCommandQuitWithDirty(t *testing.T) {
 	e := newTestEditor("a")
 	e.insertRune('b')
-	if !e.dirty {
+	if !e.document.dirty {
 		t.Fatalf("dirty = false, want true")
 	}
 	if quit := e.execCommand("q"); quit {

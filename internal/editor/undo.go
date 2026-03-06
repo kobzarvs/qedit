@@ -190,7 +190,7 @@ func (e *Editor) finishUndoGroup() {
 	e.updateDirty()
 }
 func (e *Editor) updateDirty() {
-	e.dirty = len(e.undo) != e.savePoint || e.file.externalChange != ExternalChangeNone
+	e.document.dirty = len(e.undo) != e.savePoint || e.file.externalChange != ExternalChangeNone
 }
 
 // changelogFilePath returns the path for the changelog file for the given file path.
@@ -278,11 +278,11 @@ type undoHistoryHeader struct {
 
 // SaveUndoHistory saves the undo history to the changelog file
 func (e *Editor) SaveUndoHistory() error {
-	if e.filename == "" {
+	if e.document.filename == "" {
 		return nil // No file path, nothing to save
 	}
 
-	logPath := changelogFilePath(e.filename)
+	logPath := changelogFilePath(e.document.filename)
 	if logPath == "" {
 		return nil
 	}
@@ -295,7 +295,7 @@ func (e *Editor) SaveUndoHistory() error {
 
 	// Get file mtime for validation
 	var mtime int64
-	if info, err := os.Stat(e.filename); err == nil {
+	if info, err := os.Stat(e.document.filename); err == nil {
 		mtime = info.ModTime().UnixNano()
 	}
 
@@ -327,11 +327,11 @@ func (e *Editor) SaveUndoHistory() error {
 
 // LoadUndoHistory loads the undo history from the changelog file
 func (e *Editor) LoadUndoHistory() error {
-	if e.filename == "" {
+	if e.document.filename == "" {
 		return nil
 	}
 
-	logPath := changelogFilePath(e.filename)
+	logPath := changelogFilePath(e.document.filename)
 	if logPath == "" {
 		return nil
 	}
@@ -347,7 +347,7 @@ func (e *Editor) LoadUndoHistory() error {
 
 	// Get current file mtime for validation
 	var currentMtime int64
-	if info, err := os.Stat(e.filename); err == nil {
+	if info, err := os.Stat(e.document.filename); err == nil {
 		currentMtime = info.ModTime().UnixNano()
 	}
 
@@ -389,11 +389,11 @@ func (e *Editor) LoadUndoHistory() error {
 
 // ClearUndoHistory removes the changelog file for the current file
 func (e *Editor) ClearUndoHistory() error {
-	if e.filename == "" {
+	if e.document.filename == "" {
 		return nil
 	}
 
-	logPath := changelogFilePath(e.filename)
+	logPath := changelogFilePath(e.document.filename)
 	if logPath == "" {
 		return nil
 	}

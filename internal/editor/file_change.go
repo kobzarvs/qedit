@@ -48,11 +48,11 @@ func (s fileSnapshot) equal(other fileSnapshot) bool {
 }
 
 func (e *Editor) syncFileSnapshot() error {
-	if e.filename == "" {
+	if e.document.filename == "" {
 		e.file.snapshot = fileSnapshot{}
 		return nil
 	}
-	info, err := os.Stat(e.filename)
+	info, err := os.Stat(e.document.filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			e.file.snapshot = fileSnapshot{exists: false, valid: true}
@@ -66,10 +66,10 @@ func (e *Editor) syncFileSnapshot() error {
 
 // CheckExternalChange compares the last known file snapshot with the current file state.
 func (e *Editor) CheckExternalChange() (ExternalChange, error) {
-	if e.filename == "" || !e.file.snapshot.valid {
+	if e.document.filename == "" || !e.file.snapshot.valid {
 		return ExternalChangeNone, nil
 	}
-	info, err := os.Stat(e.filename)
+	info, err := os.Stat(e.document.filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			if e.file.snapshot.exists {
@@ -88,13 +88,13 @@ func (e *Editor) CheckExternalChange() (ExternalChange, error) {
 
 // ReloadFromDisk replaces the buffer with on-disk contents.
 func (e *Editor) ReloadFromDisk(force bool) error {
-	if e.filename == "" {
+	if e.document.filename == "" {
 		return errors.New("no file name")
 	}
 	if e.HasLocalChanges() && !force {
 		return errors.New("unsaved changes (use :e!)")
 	}
-	data, err := os.ReadFile(e.filename)
+	data, err := os.ReadFile(e.document.filename)
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (e *Editor) SetSidebarWidthConfigHook(hook func(width string) error) {
 
 // IsDirty reports whether the buffer has unsaved changes.
 func (e *Editor) IsDirty() bool {
-	return e.dirty
+	return e.document.dirty
 }
 
 // HasLocalChanges reports whether the buffer has local unsaved edits.
@@ -231,5 +231,5 @@ func (e *Editor) MergeExternalContent(remote string) (bool, error) {
 
 // Filename returns the current buffer filename.
 func (e *Editor) Filename() string {
-	return e.filename
+	return e.document.filename
 }

@@ -73,8 +73,8 @@ func (e *Editor) showRefsPicker(title string, items []LSPLocation) {
 func (e *Editor) closeRefsPicker(jump bool) {
 	if jump && len(e.refsPicker.items) > 0 && e.refsPicker.index < len(e.refsPicker.items) {
 		loc := e.refsPicker.items[e.refsPicker.index]
-		currentAbs, _ := filepath.Abs(e.filename)
-		if loc.Path == currentAbs || loc.Path == e.filename {
+		currentAbs, _ := filepath.Abs(e.document.filename)
+		if loc.Path == currentAbs || loc.Path == e.document.filename {
 			e.cursor.Row = loc.StartLine
 			e.cursor.Col = loc.StartCol
 			e.ensureCursorVisible(e.viewHeightCached())

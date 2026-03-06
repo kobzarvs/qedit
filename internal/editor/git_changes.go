@@ -80,8 +80,8 @@ func (e *Editor) refreshGitChangesIfStale(maxAge time.Duration) error {
 }
 
 func (e *Editor) detectGitRoot() string {
-	if e.filename != "" {
-		if root := gitinfo.Root(e.filename); root != "" {
+	if e.document.filename != "" {
+		if root := gitinfo.Root(e.document.filename); root != "" {
 			return root
 		}
 	}
@@ -146,7 +146,7 @@ func (e *Editor) gotoGitChange(forward bool) {
 		return
 	}
 	e.git.pendingDiffJump = true
-	currentPath := e.filename
+	currentPath := e.document.filename
 	if currentPath != "" {
 		if abs, err := filepath.Abs(currentPath); err == nil {
 			currentPath = abs
@@ -199,7 +199,7 @@ func (e *Editor) gitDiffLineKind(lineIdx int) conflictLineKind {
 	if len(e.git.changeHunks) == 0 {
 		return conflictNone
 	}
-	currentPath := e.filename
+	currentPath := e.document.filename
 	if abs, err := filepath.Abs(currentPath); err == nil {
 		currentPath = abs
 	}
@@ -218,10 +218,10 @@ func (e *Editor) gitDiffLineKind(lineIdx int) conflictLineKind {
 }
 
 func (e *Editor) gitDiffHasCurrentFileHunks() bool {
-	if len(e.git.changeHunks) == 0 || e.filename == "" {
+	if len(e.git.changeHunks) == 0 || e.document.filename == "" {
 		return false
 	}
-	currentPath := e.filename
+	currentPath := e.document.filename
 	if abs, err := filepath.Abs(currentPath); err == nil {
 		currentPath = abs
 	}
@@ -239,10 +239,10 @@ func (e *Editor) gitDiffHasCurrentFileHunks() bool {
 
 func (e *Editor) gitDiffHighlightAppliesToCurrentFile() bool {
 	hunk := e.git.diffHighlight
-	if hunk == nil || hunk.AbsPath == "" || e.filename == "" {
+	if hunk == nil || hunk.AbsPath == "" || e.document.filename == "" {
 		return false
 	}
-	currentPath := e.filename
+	currentPath := e.document.filename
 	if abs, err := filepath.Abs(currentPath); err == nil {
 		currentPath = abs
 	}

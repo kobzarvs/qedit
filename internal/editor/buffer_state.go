@@ -20,7 +20,7 @@ func (e *Editor) OpenFile(path string) error {
 	}
 
 	// Save current buffer state before opening new file
-	if e.buffers != nil && e.buffers.Count() > 0 && e.filename != "" {
+	if e.buffers != nil && e.buffers.Count() > 0 && e.document.filename != "" {
 		e.saveSessionState()
 		_ = e.SaveUndoHistory()
 		bs := e.snapshotBufferState()
@@ -39,7 +39,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.viewport.scroll = 0
 	e.viewport.scrollX = 0
 	e.mode = ModeNormal
-	e.filename = absPath
+	e.document.filename = absPath
 	e.commandLine.text = e.commandLine.text[:0]
 	e.ui.statusMessage = ""
 	e.undo = nil
@@ -132,7 +132,7 @@ func (e *Editor) closeCurrentBuffer(force bool) {
 		e.setStatus("last buffer (use :q to quit)")
 		return
 	}
-	if !force && e.dirty {
+	if !force && e.document.dirty {
 		e.setStatus("unsaved changes (use :bc!)")
 		return
 	}

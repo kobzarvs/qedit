@@ -95,7 +95,7 @@ func (e *Editor) execAction(action string) bool {
 				e.setStatus("unsaved changes in open buffers (use :q!)")
 				return false
 			}
-		} else if e.dirty {
+		} else if e.document.dirty {
 			e.setStatus("unsaved changes (use :q!)")
 			return false
 		}
@@ -296,7 +296,7 @@ func (e *Editor) execAction(action string) bool {
 		if err := e.Save(""); err != nil {
 			e.setStatus(err.Error())
 		} else {
-			e.setStatus("saved " + e.filename)
+			e.setStatus("saved " + e.document.filename)
 			// Update buffer manager with saved state
 			if e.buffers != nil && e.buffers.Count() > 0 {
 				bs := e.snapshotBufferState()
@@ -329,16 +329,16 @@ func (e *Editor) execAction(action string) bool {
 }
 func (e *Editor) Save(path string) error {
 	if path == "" {
-		if e.filename == "" {
+		if e.document.filename == "" {
 			return errors.New("no file name")
 		}
-		path = e.filename
+		path = e.document.filename
 	}
 	data := []byte(e.Content())
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err
 	}
-	e.filename = path
+	e.document.filename = path
 	e.savePoint = len(e.undo)
 	e.file.externalChange = ExternalChangeNone
 	e.file.diskContent = e.Content()
@@ -364,13 +364,13 @@ func (e *Editor) FormatGo() error {
 	return nil
 }
 func (e *Editor) FormatCurrent() error {
-	if isMarkdownFile(e.filename) {
+	if isMarkdownFile(e.document.filename) {
 		return e.FormatMarkdownTables()
 	}
-	if isGoFile(e.filename) {
+	if isGoFile(e.document.filename) {
 		return e.FormatGo()
 	}
-	if e.filename == "" && looksLikeGo(e.Content()) {
+	if e.document.filename == "" && looksLikeGo(e.Content()) {
 		return e.FormatGo()
 	}
 	return errors.New("format not supported")

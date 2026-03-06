@@ -66,7 +66,7 @@ func (e *Editor) execCommand(cmd string) bool {
 				e.setStatus("unsaved changes in open buffers (use :q!)")
 				return false
 			}
-		} else if e.dirty {
+		} else if e.document.dirty {
 			e.setStatus("unsaved changes (use :q!)")
 			return false
 		}

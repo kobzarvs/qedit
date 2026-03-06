@@ -398,9 +398,8 @@ type Editor struct {
 	UndoManager
 	SearchState
 	mode                         Mode
-	filename                     string
+	document                     editorDocumentState
 	file                         editorFileState
-	dirty                        bool
 	bindings                     editorBindingsState
 	commandLine                  editorCommandLineState
 	styleMain                    Style

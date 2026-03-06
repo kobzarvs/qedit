@@ -341,7 +341,7 @@ func TestSpaceMenuHotkeys(t *testing.T) {
 	for _, item := range SpaceMenuItems {
 		t.Run(string(item.Key), func(t *testing.T) {
 			e := newTestEditor("line")
-			e.filename = "test.go"
+			e.document.filename = "test.go"
 			e.HandleKey(keyRune(' '))
 			if !e.modal.spaceMenuActive {
 				t.Fatalf("spaceMenuActive = false, want true")

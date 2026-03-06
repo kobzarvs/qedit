@@ -74,7 +74,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	} else if e.mode == ModeMerge {
 		mode = "MERGE"
 	}
-	name := e.filename
+	name := e.document.filename
 	if name == "" {
 		name = "[No Name]"
 	} else {
@@ -94,7 +94,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 		}
 	}
 	flags := ""
-	if e.dirty {
+	if e.document.dirty {
 		flags += "[*]"
 	}
 	if e.file.externalChange != ExternalChangeNone {

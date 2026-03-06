@@ -340,7 +340,7 @@ func TestSelectAllHotkeys(t *testing.T) {
 
 func TestExpandShrinkSelectionHotkeys(t *testing.T) {
 	e := newTestEditor("abcd")
-	e.filename = "test.go"
+	e.document.filename = "test.go"
 	e.runtime.nodeStackFunc = func(path string, row, col int) []NodeRange {
 		return []NodeRange{
 			{StartRow: 0, StartCol: 0, EndRow: 0, EndCol: 1},
