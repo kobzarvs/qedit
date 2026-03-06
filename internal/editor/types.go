@@ -448,6 +448,7 @@ type Editor struct {
 	change                       editorChangeState
 	branchPicker                 branchPickerState
 	sidebar                      *Sidebar
+	sidebarModes                 sidebarModeRegistry
 	sidebarStyles                SidebarStyles
 	fileTree                     editorFileTreeState
 	fileTreePreview              fileTreePreviewState

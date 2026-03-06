@@ -64,7 +64,9 @@ func TestSidebarSelectionKeepsForegrounds(t *testing.T) {
 	screen := newFakeScreen(20, 4)
 
 	sidebar := NewSidebar("20", 10, "20", false)
-	sidebar.Content = NewSidebarMenuContent(true)
+	sidebar.Content = NewSidebarMenuContent([]SidebarMenuItem{
+		{Label: "Project files", Mode: SidebarModeFileTree, Hotkey: "Cmd+O", Available: true},
+	})
 	sidebar.Focused = true
 	sidebar.Content.SetIndex(0)
 

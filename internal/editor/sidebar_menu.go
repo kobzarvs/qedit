@@ -2,9 +2,8 @@ package editor
 
 // SidebarMenuContent implements SidebarContent for the main menu
 type SidebarMenuContent struct {
-	items    []SidebarMenuItem
-	index    int
-	gitAvail bool
+	items []SidebarMenuItem
+	index int
 }
 
 // SidebarMenuItem represents a menu item
@@ -16,31 +15,25 @@ type SidebarMenuItem struct {
 }
 
 // NewSidebarMenuContent creates a new menu content
-func NewSidebarMenuContent(gitAvailable bool) *SidebarMenuContent {
-	m := &SidebarMenuContent{
-		gitAvail: gitAvailable,
-		index:    0,
-	}
-	m.buildItems()
+func NewSidebarMenuContent(items []SidebarMenuItem) *SidebarMenuContent {
+	m := &SidebarMenuContent{index: 0}
+	m.SetItems(items)
 	return m
 }
 
-// buildItems populates the menu items
-func (m *SidebarMenuContent) buildItems() {
-	m.items = []SidebarMenuItem{
-		{Label: "Project files", Mode: SidebarModeFileTree, Hotkey: "Cmd+O", Available: true},
-		{Label: "Open Buffers", Mode: SidebarModeBuffers, Hotkey: "", Available: true},
-		{Label: "Branches", Mode: SidebarModeBranches, Hotkey: "Cmd+B", Available: m.gitAvail},
-		{Label: "Recent History", Mode: SidebarModeRecentHistory, Hotkey: "", Available: false},
-		{Label: "Git Changes", Mode: SidebarModeLocalChanges, Hotkey: "", Available: m.gitAvail},
-		{Label: "Worktree", Mode: SidebarModeWorktrees, Hotkey: "Cmd+Shift+W", Available: m.gitAvail},
+// SetItems replaces the menu items while preserving a valid selection.
+func (m *SidebarMenuContent) SetItems(items []SidebarMenuItem) {
+	m.items = append(m.items[:0], items...)
+	if len(m.items) == 0 {
+		m.index = 0
+		return
 	}
-}
-
-// SetAvailability updates availability flags and rebuilds items
-func (m *SidebarMenuContent) SetAvailability(gitAvailable bool) {
-	m.gitAvail = gitAvailable
-	m.buildItems()
+	if m.index >= len(m.items) {
+		m.index = len(m.items) - 1
+	}
+	if m.index < 0 {
+		m.index = 0
+	}
 }
 
 // Mode returns the mode identifier
@@ -110,6 +103,5 @@ func (m *SidebarMenuContent) Available() bool {
 
 // Refresh reloads content
 func (m *SidebarMenuContent) Refresh() error {
-	m.buildItems()
 	return nil
 }

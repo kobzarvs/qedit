@@ -54,10 +54,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 
 	case SidebarActionBackToMenu:
 		logger.Debug("sidebar action: back to menu")
-		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
-			e.sidebar.SetContent(e.sidebar.MenuContent)
-		}
+		e.showSidebarMenu()
 		return false
 
 	case SidebarActionFocusEditor:
@@ -133,9 +130,7 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 		return false
 
 	case SidebarActionRefresh:
-		if action.Mode == SidebarModeWorktrees {
-			e.refreshSidebarWorktrees()
-		}
+		e.refreshSidebarMode(action.Mode)
 		return false
 	}
 
@@ -146,30 +141,7 @@ func (e *Editor) switchSidebarMode(mode SidebarMode) {
 	if mode != SidebarModeFileTree {
 		e.clearFileTreePreview()
 	}
-	switch mode {
-	case SidebarModeMenu:
-		if e.sidebar.MenuContent != nil {
-			e.sidebar.SetContent(e.sidebar.MenuContent)
-		}
-
-	case SidebarModeBranches:
-		e.openSidebarBranches()
-
-	case SidebarModeFileTree:
-		e.openSidebarFileTree("")
-
-	case SidebarModeRecentHistory:
-		e.setStatus("Recent History: not implemented yet")
-
-	case SidebarModeLocalChanges:
-		e.openSidebarGitChanges()
-
-	case SidebarModeWorktrees:
-		e.openSidebarWorktrees()
-
-	case SidebarModeBuffers:
-		e.openSidebarBuffers()
-	}
+	e.openSidebarMode(mode)
 }
 
 func (e *Editor) openSidebar() {
@@ -184,14 +156,7 @@ func (e *Editor) openSidebar() {
 		e.closeRefsPicker(false)
 	}
 
-	if e.sidebar.MenuContent == nil {
-		logger.Debug("openSidebar: creating menu content", "gitRepo", e.isGitRepo())
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
-	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
-	}
-
-	e.sidebar.Open(e.sidebar.MenuContent)
+	e.showSidebarMenu()
 	logger.Debug("openSidebar: sidebar opened")
 }
 
@@ -203,9 +168,6 @@ func (e *Editor) openSidebarBranches() {
 	}
 	if !e.isGitRepo() {
 		e.setStatus("not a git repository")
-		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(false)
-		}
 		return
 	}
 
@@ -214,11 +176,7 @@ func (e *Editor) openSidebarBranches() {
 		e.closeRefsPicker(false)
 	}
 
-	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
-	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
-	}
+	e.refreshSidebarMenu()
 
 	e.sidebar.Open(NewSidebarLoadingContent("Branches", "Loading..."))
 	e.setStatus("loading branches...")
@@ -234,9 +192,6 @@ func (e *Editor) openSidebarWorktrees() {
 	}
 	if !e.isGitRepo() {
 		e.setStatus("not a git repository")
-		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(false)
-		}
 		return
 	}
 
@@ -245,11 +200,7 @@ func (e *Editor) openSidebarWorktrees() {
 		e.closeRefsPicker(false)
 	}
 
-	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
-	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
-	}
+	e.refreshSidebarMenu()
 
 	e.sidebar.Open(NewSidebarLoadingContent("Worktree", "Loading..."))
 	e.setStatus("loading worktrees...")
@@ -294,11 +245,7 @@ func (e *Editor) openSidebarFileTree(path string) {
 		e.closeRefsPicker(false)
 	}
 
-	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
-	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
-	}
+	e.refreshSidebarMenu()
 	e.enqueueRuntimeRequest(RuntimeRequest{
 		Kind: RuntimeRequestShowFileTree,
 		Path: path,
@@ -339,9 +286,6 @@ func (e *Editor) openSidebarGitChanges() {
 	}
 	if !e.isGitRepo() {
 		e.setStatus("not a git repository")
-		if e.sidebar.MenuContent != nil {
-			e.sidebar.MenuContent.SetAvailability(false)
-		}
 		return
 	}
 
@@ -350,11 +294,7 @@ func (e *Editor) openSidebarGitChanges() {
 		e.closeRefsPicker(false)
 	}
 
-	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
-	} else {
-		e.sidebar.MenuContent.SetAvailability(e.isGitRepo())
-	}
+	e.refreshSidebarMenu()
 
 	if err := e.refreshGitChangesIfStale(2 * time.Second); err != nil {
 		logger.Error("openSidebarGitChanges: refresh failed", "error", err)

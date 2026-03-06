@@ -202,9 +202,7 @@ func (e *Editor) openSidebarBuffers() {
 	if e.refsPicker.active {
 		e.closeRefsPicker(false)
 	}
-	if e.sidebar.MenuContent == nil {
-		e.sidebar.MenuContent = NewSidebarMenuContent(e.isGitRepo())
-	}
+	e.refreshSidebarMenu()
 	content := NewSidebarBuffersContent(e)
 	// Position cursor on active buffer
 	if e.buffers != nil {
