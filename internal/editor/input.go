@@ -2,8 +2,8 @@ package editor
 
 func (e *Editor) HandleKey(ev EventKey) bool {
 	e.interaction.freeScroll = false
-	if e.mode != ModeCommand && e.mode != ModeSearch && e.statusMessage != "" && !e.file.autoReloadInProgress {
-		e.statusMessage = ""
+	if e.mode != ModeCommand && e.mode != ModeSearch && e.ui.statusMessage != "" && !e.file.autoReloadInProgress {
+		e.ui.statusMessage = ""
 	}
 	// Track last key combination for display
 	e.ui.lastKeyCombo = keyStringDisplay(ev)

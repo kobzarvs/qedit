@@ -41,7 +41,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.mode = ModeNormal
 	e.filename = absPath
 	e.commandLine.text = e.commandLine.text[:0]
-	e.statusMessage = ""
+	e.ui.statusMessage = ""
 	e.undo = nil
 	e.redo = nil
 	e.savePoint = 0

@@ -122,7 +122,7 @@ func TestCommandModeHistoryAndExitKeys(t *testing.T) {
 	if e.mode != ModeNormal || len(e.commandLine.text) != 0 {
 		t.Fatalf("enter exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.commandLine.text))
 	}
-	if e.statusMessage == "" {
+	if e.ui.statusMessage == "" {
 		t.Fatalf("expected status for unknown command")
 	}
 }
@@ -300,8 +300,8 @@ func TestMatchModeHotkeys(t *testing.T) {
 			e := newTestEditor("abc")
 			e.HandleKey(keyRune('m'))
 			e.HandleKey(keyRune(tt.key))
-			if e.statusMessage != tt.status {
-				t.Fatalf("status = %q, want %q", e.statusMessage, tt.status)
+			if e.ui.statusMessage != tt.status {
+				t.Fatalf("status = %q, want %q", e.ui.statusMessage, tt.status)
 			}
 		})
 	}
@@ -362,8 +362,8 @@ func TestSpaceMenuHotkeys(t *testing.T) {
 			}
 			if !item.Implemented {
 				want := item.Label + " (not implemented)"
-				if e.statusMessage != want {
-					t.Fatalf("status = %q, want %q", e.statusMessage, want)
+				if e.ui.statusMessage != want {
+					t.Fatalf("status = %q, want %q", e.ui.statusMessage, want)
 				}
 			}
 			if item.Action == "window_mode" {
@@ -396,8 +396,8 @@ func TestWindowModeHotkeys(t *testing.T) {
 	if e.modal.windowMode {
 		t.Fatalf("windowMode = true, want false")
 	}
-	if e.statusMessage != "window mode (not implemented)" {
-		t.Fatalf("status = %q, want %q", e.statusMessage, "window mode (not implemented)")
+	if e.ui.statusMessage != "window mode (not implemented)" {
+		t.Fatalf("status = %q, want %q", e.ui.statusMessage, "window mode (not implemented)")
 	}
 	if e.modal.lastCommand != "SPC wv" {
 		t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "SPC wv")
@@ -525,8 +525,8 @@ func TestGotoLinePromptHotkey(t *testing.T) {
 	if e.mode != ModeCommand {
 		t.Fatalf("mode = %v, want command", e.mode)
 	}
-	if e.statusMessage != "goto line:" {
-		t.Fatalf("status = %q, want %q", e.statusMessage, "goto line:")
+	if e.ui.statusMessage != "goto line:" {
+		t.Fatalf("status = %q, want %q", e.ui.statusMessage, "goto line:")
 	}
 	if len(e.commandLine.text) != 0 || e.commandLine.cursor != 0 {
 		t.Fatalf("cmd=%q cursor=%d, want empty/0", string(e.commandLine.text), e.commandLine.cursor)

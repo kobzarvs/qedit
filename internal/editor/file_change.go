@@ -133,11 +133,11 @@ func (e *Editor) AutoReloadInProgress() bool {
 func (e *Editor) SetAutoReloadInProgress(inProgress bool) {
 	e.file.autoReloadInProgress = inProgress
 	if inProgress {
-		e.statusMessage = "auto reload... waiting for file write to finish"
+		e.ui.statusMessage = "auto reload... waiting for file write to finish"
 		return
 	}
-	if e.statusMessage == "auto reload... waiting for file write to finish" {
-		e.statusMessage = ""
+	if e.ui.statusMessage == "auto reload... waiting for file write to finish" {
+		e.ui.statusMessage = ""
 	}
 }
 

@@ -188,7 +188,7 @@ func TestExecCommandQuitWithDirty(t *testing.T) {
 	if quit := e.execCommand("q"); quit {
 		t.Fatalf("expected quit=false when dirty")
 	}
-	if e.statusMessage == "" {
+	if e.ui.statusMessage == "" {
 		t.Fatalf("expected status message for dirty quit")
 	}
 	if quit := e.execCommand("q!"); !quit {
@@ -205,8 +205,8 @@ func TestExecCommandFmtNoGo(t *testing.T) {
 	if quit := e.execCommand("fmt"); quit {
 		t.Fatalf("execCommand fmt returned true")
 	}
-	if e.statusMessage != "formatted" {
-		t.Fatalf("unexpected status: %q", e.statusMessage)
+	if e.ui.statusMessage != "formatted" {
+		t.Fatalf("unexpected status: %q", e.ui.statusMessage)
 	}
 	if got := e.Content(); got == "package main\nfunc main() {  }\n" {
 		t.Fatalf("expected formatted content, got unchanged")
@@ -218,7 +218,7 @@ func TestExecCommandUnknown(t *testing.T) {
 	if quit := e.execCommand("nope"); quit {
 		t.Fatalf("execCommand unknown returned true")
 	}
-	if e.statusMessage == "" {
+	if e.ui.statusMessage == "" {
 		t.Fatalf("expected status message for unknown command")
 	}
 }

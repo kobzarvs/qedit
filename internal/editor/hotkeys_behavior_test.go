@@ -364,7 +364,7 @@ func TestExpandShrinkSelectionHotkeys(t *testing.T) {
 func TestSaveHotkeyNoFilename(t *testing.T) {
 	e := newTestEditor("one")
 	e.HandleKey(eventForKeyString(t, "cmd+s"))
-	if e.statusMessage != "no file name" {
-		t.Fatalf("status = %q, want %q", e.statusMessage, "no file name")
+	if e.ui.statusMessage != "no file name" {
+		t.Fatalf("status = %q, want %q", e.ui.statusMessage, "no file name")
 	}
 }

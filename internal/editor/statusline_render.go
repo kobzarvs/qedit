@@ -12,13 +12,13 @@ import (
 const statusMessageTopThreshold = 40
 
 func (e *Editor) showTopStatusMessage(w int) bool {
-	if e.statusMessage == "" {
+	if e.ui.statusMessage == "" {
 		return false
 	}
 	if e.file.autoReloadInProgress {
 		return true
 	}
-	msgLen := utf8.RuneCountInString(e.statusMessage)
+	msgLen := utf8.RuneCountInString(e.ui.statusMessage)
 	return msgLen >= statusMessageTopThreshold
 }
 
@@ -26,7 +26,7 @@ func (e *Editor) renderTopStatusMessage(s Screen, w int) {
 	if w <= 0 {
 		return
 	}
-	msgRunes := []rune(e.statusMessage)
+	msgRunes := []rune(e.ui.statusMessage)
 	if len(msgRunes) > w {
 		msgRunes = msgRunes[:w]
 	}
@@ -107,7 +107,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 		bufIndicator = fmt.Sprintf("[%d/%d]", e.buffers.ActiveIndex()+1, e.buffers.Count())
 	}
 
-	msg := e.statusMessage
+	msg := e.ui.statusMessage
 	if showTopMessage {
 		msg = ""
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 func (e *Editor) setStatus(msg string) {
-	e.statusMessage = msg
+	e.ui.statusMessage = msg
 }
 func (e *Editor) line(row int) []rune {
 	if e.text == nil {

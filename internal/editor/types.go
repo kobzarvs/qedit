@@ -408,7 +408,6 @@ type Editor struct {
 	keymap                       keymapSet
 	commandLine                  editorCommandLineState
 	searchHistoryPath            string // search history file path
-	statusMessage                string
 	tabWidth                     int
 	viewHeight                   int
 	viewWidth                    int

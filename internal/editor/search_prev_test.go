@@ -78,7 +78,7 @@ func TestSearchPrevAfterSearchMode(t *testing.T) {
 	// Now press Shift+N
 	shiftN := wrapKey(tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModShift))
 	ed.HandleKey(shiftN)
-	t.Logf("After Shift+N: row=%d, status=%q", ed.cursor.Row, ed.statusMessage)
+	t.Logf("After Shift+N: row=%d, status=%q", ed.cursor.Row, ed.ui.statusMessage)
 
 	// Should have moved to previous match (row 1)
 	if ed.cursor.Row != 1 {
