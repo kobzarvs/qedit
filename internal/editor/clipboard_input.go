@@ -8,13 +8,13 @@ func (e *Editor) yankToSystemClipboard() {
 	e.yankSelection()
 
 	// Then copy to system clipboard if available
-	if len(e.clipboard) == 0 {
+	if len(e.clipboard.lines) == 0 {
 		return
 	}
 
 	// Build text from clipboard
 	var sb strings.Builder
-	for i, line := range e.clipboard {
+	for i, line := range e.clipboard.lines {
 		if i > 0 {
 			sb.WriteRune('\n')
 		}
@@ -53,9 +53,9 @@ func (e *Editor) pasteFromSystemClipboard(before bool) {
 
 	// Parse into lines
 	lines := strings.Split(text, "\n")
-	e.clipboard = make([][]rune, len(lines))
+	e.clipboard.lines = make([][]rune, len(lines))
 	for i, line := range lines {
-		e.clipboard[i] = []rune(line)
+		e.clipboard.lines[i] = []rune(line)
 	}
 
 	// Paste

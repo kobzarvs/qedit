@@ -465,7 +465,7 @@ type Editor struct {
 	runtime                      editorRuntimeDeps
 
 	// Helix-style state
-	clipboard       [][]rune // yanked text (lines)
+	clipboard       editorClipboardState
 	modal           editorModalState
 	keybindingsHelp keybindingsHelpState
 

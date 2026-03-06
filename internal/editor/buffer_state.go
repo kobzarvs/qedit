@@ -49,7 +49,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.change.lastEdit.Valid = false
 	e.highlight = editorHighlightState{start: -1, end: -1}
 	e.selectionActive = false
-	e.clipboard = nil
+	e.clipboard = editorClipboardState{}
 	e.selectionScope = selectionScopeState{}
 	e.searchMatches = nil
 	e.searchMatchIndex = 0

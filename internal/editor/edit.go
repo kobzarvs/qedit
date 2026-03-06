@@ -715,7 +715,7 @@ func (e *Editor) helixChange() {
 
 // copyToSystemClipboard copies text to system clipboard when available.
 func (e *Editor) copyToSystemClipboard() {
-	if len(e.clipboard) == 0 {
+	if len(e.clipboard.lines) == 0 {
 		return
 	}
 	if e.runtime.systemClipboard == nil {
@@ -723,7 +723,7 @@ func (e *Editor) copyToSystemClipboard() {
 	}
 	// Join clipboard lines with newlines
 	var lines []string
-	for _, line := range e.clipboard {
+	for _, line := range e.clipboard.lines {
 		lines = append(lines, string(line))
 	}
 	text := strings.Join(lines, "\n")
@@ -736,7 +736,7 @@ func (e *Editor) yankSelection() {
 	if !ok {
 		// No selection - yank current line
 		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-			e.clipboard = [][]rune{append([]rune(nil), e.line(e.cursor.Row)...)}
+			e.clipboard.lines = [][]rune{append([]rune(nil), e.line(e.cursor.Row)...)}
 		}
 		e.copyToSystemClipboard()
 		e.modal.lastCommand = "y"
@@ -745,7 +745,7 @@ func (e *Editor) yankSelection() {
 	}
 
 	// Copy selection to clipboard
-	e.clipboard = nil
+	e.clipboard.lines = nil
 	for row := start.Row; row <= end.Row; row++ {
 		if row < 0 || row >= e.LineCount() {
 			continue
@@ -765,7 +765,7 @@ func (e *Editor) yankSelection() {
 		if endCol > len(line) {
 			endCol = len(line)
 		}
-		e.clipboard = append(e.clipboard, append([]rune(nil), line[startCol:endCol]...))
+		e.clipboard.lines = append(e.clipboard.lines, append([]rune(nil), line[startCol:endCol]...))
 	}
 	e.copyToSystemClipboard()
 	e.modal.lastCommand = "y"
@@ -776,16 +776,16 @@ func (e *Editor) yankSelection() {
 
 // Helix-style paste (p) - paste after cursor
 func (e *Editor) pasteAfter() {
-	if len(e.clipboard) == 0 {
+	if len(e.clipboard.lines) == 0 {
 		return
 	}
 
 	e.startUndoGroup()
 	defer e.finishUndoGroup()
 
-	if len(e.clipboard) == 1 {
+	if len(e.clipboard.lines) == 1 {
 		// Single line - paste inline after cursor
-		line := e.clipboard[0]
+		line := e.clipboard.lines[0]
 		pos := Cursor{Row: e.cursor.Row, Col: e.cursor.Col + 1}
 		if pos.Col > e.lineLen(e.cursor.Row) {
 			pos.Col = e.lineLen(e.cursor.Row)
@@ -802,7 +802,7 @@ func (e *Editor) pasteAfter() {
 		}
 	} else {
 		// Multi-line - paste lines below
-		insert := append([]rune{'\n'}, joinText(e.clipboard)...)
+		insert := append([]rune{'\n'}, joinText(e.clipboard.lines)...)
 		index := e.text.LineStartIndex(e.cursor.Row) + e.lineLen(e.cursor.Row)
 		e.text.Insert(index, insert)
 		e.cursor.Row++
@@ -813,16 +813,16 @@ func (e *Editor) pasteAfter() {
 
 // Helix-style paste before (P) - paste before cursor
 func (e *Editor) pasteBefore() {
-	if len(e.clipboard) == 0 {
+	if len(e.clipboard.lines) == 0 {
 		return
 	}
 
 	e.startUndoGroup()
 	defer e.finishUndoGroup()
 
-	if len(e.clipboard) == 1 {
+	if len(e.clipboard.lines) == 1 {
 		// Single line - paste inline at cursor
-		line := e.clipboard[0]
+		line := e.clipboard.lines[0]
 		pos := e.cursor
 		for _, r := range line {
 			if e.insertRuneAt(pos, r) {
@@ -832,7 +832,7 @@ func (e *Editor) pasteBefore() {
 		}
 	} else {
 		// Multi-line - paste lines above
-		insert := append(joinText(e.clipboard), '\n')
+		insert := append(joinText(e.clipboard.lines), '\n')
 		index := e.text.LineStartIndex(e.cursor.Row)
 		e.text.Insert(index, insert)
 		e.cursor.Col = 0

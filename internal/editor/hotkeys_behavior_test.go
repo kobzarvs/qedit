@@ -275,8 +275,8 @@ func TestYankPasteHotkeys(t *testing.T) {
 		e.HandleKey(keyRune('v'))
 		e.HandleKey(keyRune('l'))
 		e.HandleKey(keyRune('y'))
-		if len(e.clipboard) != 1 || string(e.clipboard[0]) != "a" {
-			t.Fatalf("clipboard = %#v, want [\"a\"]", e.clipboard)
+		if len(e.clipboard.lines) != 1 || string(e.clipboard.lines[0]) != "a" {
+			t.Fatalf("clipboard = %#v, want [\"a\"]", e.clipboard.lines)
 		}
 		if e.selectionActive || e.modal.selectMode {
 			t.Fatalf("selectionActive=%v selectMode=%v, want false/false", e.selectionActive, e.modal.selectMode)
@@ -284,7 +284,7 @@ func TestYankPasteHotkeys(t *testing.T) {
 	})
 	t.Run("paste after", func(t *testing.T) {
 		e := newTestEditor("abc")
-		e.clipboard = [][]rune{[]rune("X")}
+		e.clipboard.lines = [][]rune{[]rune("X")}
 		e.HandleKey(keyRune('p'))
 		if e.Content() != "aXbc" {
 			t.Fatalf("content = %q, want %q", e.Content(), "aXbc")
@@ -293,7 +293,7 @@ func TestYankPasteHotkeys(t *testing.T) {
 	t.Run("paste before", func(t *testing.T) {
 		e := newTestEditor("abc")
 		e.cursor = Cursor{Row: 0, Col: 1}
-		e.clipboard = [][]rune{[]rune("Y")}
+		e.clipboard.lines = [][]rune{[]rune("Y")}
 		e.HandleKey(keyRune('P'))
 		if e.Content() != "aYbc" {
 			t.Fatalf("content = %q, want %q", e.Content(), "aYbc")
