@@ -740,7 +740,7 @@ func (e *Editor) yankSelection() {
 		}
 		e.copyToSystemClipboard()
 		e.lastCommand = "y"
-		e.copiedMessageTime = time.Now()
+		e.ui.copiedMessageTime = time.Now()
 		return
 	}
 
@@ -769,7 +769,7 @@ func (e *Editor) yankSelection() {
 	}
 	e.copyToSystemClipboard()
 	e.lastCommand = "y"
-	e.copiedMessageTime = time.Now()
+	e.ui.copiedMessageTime = time.Now()
 	e.clearSelection()
 	e.selectMode = false
 }

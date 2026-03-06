@@ -416,8 +416,6 @@ type Editor struct {
 	cmdHistoryPath               string   // command history file path
 	searchHistoryPath            string   // search history file path
 	statusMessage                string
-	notificationMessage          string
-	notificationStarted          time.Time
 	tabWidth                     int
 	viewHeight                   int
 	viewWidth                    int
@@ -468,7 +466,7 @@ type Editor struct {
 	styleNotificationBright      Style
 	notificationFadeStyles       []Style
 	lineNumberMode               LineNumberMode
-	layoutName                   string
+	ui                           editorUIFeedbackState
 	git                          editorGitState
 	highlight                    editorHighlightState
 	changeTick                   uint64
@@ -481,7 +479,6 @@ type Editor struct {
 	fileTreeShowHidden           bool
 	fileTreeShowIgnored          bool
 	fileTreePreview              fileTreePreviewState
-	lastKeyCombo                 string
 	freeScroll                   bool
 	lastScrollTime               time.Time
 	resizeDragging               bool
@@ -514,9 +511,6 @@ type Editor struct {
 	zoomAnimating      bool // true = zoom animation in progress, block new zooms
 	zoomSavedScroll    int  // original scroll (vertical) before zoom
 	zoomSavedScrollX   int  // original scrollX before zoom
-
-	// Copied message state
-	copiedMessageTime time.Time // when "copied" was shown
 
 	// Selection scope (expand/shrink)
 	selectionScopeStack []NodeRange // stack of selection scopes for shrinking

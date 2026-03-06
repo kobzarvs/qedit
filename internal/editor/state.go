@@ -63,7 +63,7 @@ func (e *Editor) Content() string {
 	return e.text.String()
 }
 func (e *Editor) SetKeyboardLayout(name string) {
-	e.layoutName = strings.TrimSpace(name)
+	e.ui.layoutName = strings.TrimSpace(name)
 }
 func (e *Editor) SetGitBranch(name string) {
 	name = strings.TrimSpace(name)

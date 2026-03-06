@@ -16,27 +16,27 @@ func (e *Editor) Notify(msg string) {
 	if msg == "" {
 		return
 	}
-	e.notificationMessage = msg
-	e.notificationStarted = time.Now()
+	e.ui.notificationMessage = msg
+	e.ui.notificationStarted = time.Now()
 }
 
 func (e *Editor) notificationActive(now time.Time) bool {
-	if e.notificationMessage == "" {
+	if e.ui.notificationMessage == "" {
 		return false
 	}
-	elapsed := now.Sub(e.notificationStarted)
+	elapsed := now.Sub(e.ui.notificationStarted)
 	if elapsed >= notificationHoldDuration+notificationFadeDuration {
-		e.notificationMessage = ""
+		e.ui.notificationMessage = ""
 		return false
 	}
 	return true
 }
 
 func (e *Editor) notificationStyle(now time.Time) Style {
-	if e.notificationMessage == "" {
+	if e.ui.notificationMessage == "" {
 		return e.styleNotificationBright
 	}
-	elapsed := now.Sub(e.notificationStarted)
+	elapsed := now.Sub(e.ui.notificationStarted)
 	if elapsed < notificationHoldDuration || len(e.notificationFadeStyles) == 0 {
 		return e.styleNotificationBright
 	}

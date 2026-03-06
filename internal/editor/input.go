@@ -6,7 +6,7 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 		e.statusMessage = ""
 	}
 	// Track last key combination for display
-	e.lastKeyCombo = keyStringDisplay(ev)
+	e.ui.lastKeyCombo = keyStringDisplay(ev)
 
 	if handled, quit := e.handleGlobalFocusHotkeys(ev); handled {
 		return quit

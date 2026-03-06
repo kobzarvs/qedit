@@ -44,10 +44,10 @@ func (e *Editor) renderTopStatusMessage(s Screen, w int) {
 }
 
 func (e *Editor) renderNotification(s Screen, w int, now time.Time) {
-	if w <= 0 || e.notificationMessage == "" {
+	if w <= 0 || e.ui.notificationMessage == "" {
 		return
 	}
-	msgRunes := []rune(e.notificationMessage)
+	msgRunes := []rune(e.ui.notificationMessage)
 	if len(msgRunes) > w {
 		msgRunes = msgRunes[:w]
 	}
@@ -133,8 +133,8 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 		rightParts = append(rightParts, branchText)
 	}
 	layoutText := ""
-	if e.layoutName != "" {
-		layoutText = e.layoutName + " "
+	if e.ui.layoutName != "" {
+		layoutText = e.ui.layoutName + " "
 		rightParts = append(rightParts, layoutText)
 	}
 	right := strings.Join(rightParts, " | ")
@@ -182,9 +182,9 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	// Choose layout style based on layout name
 	layoutStyle := e.styleLayoutOther
 	switch {
-	case strings.HasPrefix(e.layoutName, "EN"):
+	case strings.HasPrefix(e.ui.layoutName, "EN"):
 		layoutStyle = e.styleLayoutUS
-	case strings.HasPrefix(e.layoutName, "RU"):
+	case strings.HasPrefix(e.ui.layoutName, "RU"):
 		layoutStyle = e.styleLayoutRU
 	}
 
