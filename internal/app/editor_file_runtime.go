@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/gdamore/tcell/v2"
 
 	"github.com/kobzarvs/qedit/internal/config"
@@ -18,6 +20,17 @@ type activeFileState struct {
 	lastChangeTick     uint64
 	lastHighlightStart int
 	lastHighlightEnd   int
+}
+
+func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts *treesitter.Engine, langs config.Languages, fileStore editor.FileStore, path string, highlightMaxBytes int64) (activeFileState, error) {
+	path = normalizeAppPath(fileStore, strings.TrimSpace(path))
+	if path == "" {
+		return activeFileState{}, nil
+	}
+	if err := ed.OpenFile(path); err != nil {
+		return activeFileState{}, err
+	}
+	return activateEditorFile(ed, screen, ls, ts, langs, fileStore, path, highlightMaxBytes), nil
 }
 
 func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts *treesitter.Engine, langs config.Languages, fileStore editor.FileStore, path string, highlightMaxBytes int64) activeFileState {

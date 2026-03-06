@@ -64,15 +64,11 @@ func newEditorRuntime(
 	}
 
 	if opts.InitialPath != "" {
-		rt.state.openPath = normalizeAppPath(fileStore, opts.InitialPath)
-		if err := ed.OpenFile(rt.state.openPath); err != nil {
+		state, err := openRuntimeFile(ed, screen, ls, ts, langs, fileStore, opts.InitialPath, opts.HighlightMaxBytes)
+		if err != nil {
 			return nil, err
 		}
-		rt.state.gitPath = rt.state.openPath
-		content := ed.Content()
-		ls.OpenFile(rt.state.openPath, content)
-		rt.state.langName, rt.state.highlightEnabled = detectHighlightLanguage(fileStore, rt.state.openPath, langs, opts.HighlightMaxBytes)
-		rt.state.highlightExpected = rt.state.highlightEnabled && rt.state.langName != ""
+		rt.state.applyActiveFile(state)
 	}
 	if rt.state.gitPath == "" {
 		if cwd := normalizeAppPath(fileStore, "."); cwd != "" {
@@ -88,19 +84,6 @@ func newEditorRuntime(
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
 	syncEditorRepoState(ed, rt.state.gitPath, sessionMgr)
 	wireEditorRuntimeCallbacks(ed, fileStore, ts, ls)
-
-	if rt.state.openPath != "" && rt.state.highlightEnabled && rt.state.langName != "" {
-		if isAsyncParseLang(rt.state.langName) {
-			ts.Parse(rt.state.openPath, rt.state.langName, ed.Content())
-		} else if ts.ParseSync(rt.state.openPath, rt.state.langName, ed.Content()) {
-			if _, end, ok := applyInitialScreenHighlights(ed, screen, ts, rt.state.openPath); ok {
-				rt.state.lastHighlightStart = 0
-				rt.state.lastHighlightEnd = end
-			}
-		} else {
-			rt.state.highlightExpected = false
-		}
-	}
 
 	rt.controller = editorRuntimeController{
 		ed:                ed,

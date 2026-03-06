@@ -2,7 +2,6 @@ package app
 
 import (
 	"strings"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 
@@ -36,17 +35,7 @@ func (c *editorRuntimeController) openFile(path string) error {
 	if c.state.openPath == absPath {
 		return nil
 	}
-	if err := c.ed.OpenFile(absPath); err != nil {
-		return err
-	}
-	state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, absPath, c.highlightMaxBytes)
-	c.state.applyActiveFile(state)
-
-	c.fileMonitor.Watch(absPath)
-	c.ed.SetGitMainBranch("")
-	syncEditorRepoState(c.ed, c.state.gitPath, c.sessionMgr)
-	c.state.lastGitCheck = time.Now()
-	return nil
+	return c.activateOpenFile(absPath)
 }
 
 func (c *editorRuntimeController) switchToWorktree(targetPath string) {

@@ -2,7 +2,6 @@ package app
 
 import (
 	"github.com/kobzarvs/qedit/internal/editor"
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/logger"
 )
 
@@ -80,10 +79,5 @@ func (c *editorRuntimeController) handleBufferSwitchedRequest() {
 	if path == c.state.openPath {
 		return
 	}
-	c.fileMonitor.Watch(path)
-	state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, path, c.highlightMaxBytes)
-	c.state.applyActiveFile(state)
-
-	c.ed.SetGitBranch(gitinfo.Branch(path))
-	c.ed.SetGitRoot(gitinfo.Root(path))
+	c.activateExistingBuffer(path)
 }
