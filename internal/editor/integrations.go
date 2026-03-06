@@ -98,6 +98,9 @@ func (e *Editor) SetHistoryStore(s HistoryStore) {
 
 func (e *Editor) SetFileStore(s FileStore) {
 	e.runtime.fileStore = s
+	if e.buffers != nil {
+		e.buffers.SetPathNormalizer(e.normalizedPath)
+	}
 }
 
 func (e *Editor) SetUndoStore(s UndoStore) {

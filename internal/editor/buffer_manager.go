@@ -1,7 +1,5 @@
 package editor
 
-import "path/filepath"
-
 // BufferState captures all per-file state from the Editor so that multiple
 // buffers can be tracked independently.
 type BufferState struct {
@@ -67,9 +65,10 @@ type BufferInfo struct {
 
 // BufferManager tracks multiple open buffers.
 type BufferManager struct {
-	buffers     []*BufferState
-	activeIndex int
-	prevIndex   int // for "goto last accessed" (ga)
+	buffers        []*BufferState
+	activeIndex    int
+	prevIndex      int // for "goto last accessed" (ga)
+	pathNormalizer func(string) string
 }
 
 // NewBufferManager creates a new buffer manager.
@@ -78,6 +77,10 @@ func NewBufferManager() *BufferManager {
 		activeIndex: 0,
 		prevIndex:   -1,
 	}
+}
+
+func (bm *BufferManager) SetPathNormalizer(fn func(string) string) {
+	bm.pathNormalizer = fn
 }
 
 // Add appends a new buffer and returns its index.
@@ -140,10 +143,8 @@ func (bm *BufferManager) Prev() int {
 func (bm *BufferManager) FindByPath(absPath string) int {
 	for i, bs := range bm.buffers {
 		bsAbs := bs.filename
-		if !filepath.IsAbs(bsAbs) {
-			if abs, err := filepath.Abs(bsAbs); err == nil {
-				bsAbs = abs
-			}
+		if bm.pathNormalizer != nil {
+			bsAbs = bm.pathNormalizer(bsAbs)
 		}
 		if bsAbs == absPath {
 			return i

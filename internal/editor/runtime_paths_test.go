@@ -143,3 +143,19 @@ func TestSidebarGitChangesUsesRuntimeFileStoreAbs(t *testing.T) {
 		t.Fatalf("currentPath = %q, want %q", content.currentPath, "/abs/rel.txt")
 	}
 }
+
+func TestBufferManagerUsesRuntimeFileStoreAbs(t *testing.T) {
+	e := newTestEditor("one")
+	e.SetFileStore(&testFileStore{
+		absPaths: map[string]string{
+			"rel.txt": "/abs/rel.txt",
+		},
+	})
+	e.buffers.Add(&BufferState{filename: "rel.txt"})
+
+	idx := e.buffers.FindByPath("/abs/rel.txt")
+
+	if idx != 0 {
+		t.Fatalf("buffer index = %d, want 0", idx)
+	}
+}
