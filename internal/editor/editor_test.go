@@ -42,6 +42,24 @@ func (realTestFileStore) IsNotExist(err error) bool {
 	return os.IsNotExist(err)
 }
 
+type noopTestUndoStore struct{}
+
+func (noopTestUndoStore) Load(string) ([]byte, error) {
+	return nil, nil
+}
+
+func (noopTestUndoStore) Save(string, []byte) error {
+	return nil
+}
+
+func (noopTestUndoStore) Remove(string) error {
+	return nil
+}
+
+func (noopTestUndoStore) IsNotExist(error) bool {
+	return false
+}
+
 func newTestEditor(lines ...string) *Editor {
 	if len(lines) == 0 {
 		lines = []string{""}
@@ -49,6 +67,7 @@ func newTestEditor(lines ...string) *Editor {
 	cfg := config.Default()
 	e := New(optionsFromConfig(cfg))
 	e.SetFileStore(realTestFileStore{})
+	e.SetUndoStore(noopTestUndoStore{})
 	applyTestStyles(e)
 	e.text = NewTextBufferFromString(strings.Join(lines, "\n"))
 	return e

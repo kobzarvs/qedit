@@ -7,6 +7,7 @@ type editorRuntimeDeps struct {
 	sessionStore           SessionStore
 	historyStore           HistoryStore
 	fileStore              FileStore
+	undoStore              UndoStore
 	nodeStackFunc          NodeStackFunc
 	lspGotoFunc            LSPGotoFunc
 	highlightRangeFunc     HighlightRangeFunc

@@ -61,6 +61,14 @@ type HistoryStore interface {
 	Save(path string, entries []string) error
 }
 
+// UndoStore persists serialized undo history for a file path.
+type UndoStore interface {
+	Load(path string) ([]byte, error)
+	Save(path string, data []byte) error
+	Remove(path string) error
+	IsNotExist(err error) bool
+}
+
 func (e *Editor) SetClipboard(c Clipboard) {
 	e.runtime.systemClipboard = c
 }
@@ -83,4 +91,8 @@ func (e *Editor) SetHistoryStore(s HistoryStore) {
 
 func (e *Editor) SetFileStore(s FileStore) {
 	e.runtime.fileStore = s
+}
+
+func (e *Editor) SetUndoStore(s UndoStore) {
+	e.runtime.undoStore = s
 }

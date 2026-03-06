@@ -2,10 +2,9 @@ package editor
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
+	"errors"
 )
 
 func (e *Editor) Undo() {
@@ -195,31 +194,6 @@ func (e *Editor) updateDirty() {
 
 // changelogFilePath returns the path for the changelog file for the given file path.
 // Format: $XDG_STATE_HOME/qedit/undo/<encoded-path>.log
-func changelogFilePath(filePath string) string {
-	// XDG state directory (same as session)
-	stateDir := os.Getenv("XDG_STATE_HOME")
-	if stateDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		stateDir = filepath.Join(home, ".local", "state")
-	}
-	dir := filepath.Join(stateDir, "qedit", "undo")
-
-	// Get absolute path and encode it
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		absPath = filePath
-	}
-	// Replace path separators with underscores and other special chars
-	encoded := strings.ReplaceAll(absPath, string(filepath.Separator), "_")
-	encoded = strings.ReplaceAll(encoded, ":", "_")
-	encoded = strings.ReplaceAll(encoded, " ", "_")
-
-	return filepath.Join(dir, encoded+".log")
-}
-
 // actionToJSON converts an action to its JSON-serializable form
 func actionToJSON(a action) actionJSON {
 	var textStrings []string
@@ -281,32 +255,20 @@ func (e *Editor) SaveUndoHistory() error {
 	if e.document.filename == "" {
 		return nil // No file path, nothing to save
 	}
-
-	logPath := changelogFilePath(e.document.filename)
-	if logPath == "" {
-		return nil
-	}
-
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(logPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+	if e.runtime.undoStore == nil {
+		return errUndoStoreUnavailable()
 	}
 
 	// Get file mtime for validation
 	var mtime int64
-	if info, err := os.Stat(e.document.filename); err == nil {
-		mtime = info.ModTime().UnixNano()
+	if e.runtime.fileStore != nil {
+		if info, err := e.runtime.fileStore.Stat(e.document.filename); err == nil {
+			mtime = info.ModTime.UnixNano()
+		}
 	}
 
-	// Open file for writing
-	f, err := os.Create(logPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	writer := bufio.NewWriter(f)
+	var buf bytes.Buffer
+	writer := bufio.NewWriter(&buf)
 	encoder := json.NewEncoder(writer)
 
 	// Write header with mtime for validation
@@ -322,7 +284,10 @@ func (e *Editor) SaveUndoHistory() error {
 		}
 	}
 
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+	return e.runtime.undoStore.Save(e.document.filename, buf.Bytes())
 }
 
 // LoadUndoHistory loads the undo history from the changelog file
@@ -330,29 +295,28 @@ func (e *Editor) LoadUndoHistory() error {
 	if e.document.filename == "" {
 		return nil
 	}
-
-	logPath := changelogFilePath(e.document.filename)
-	if logPath == "" {
-		return nil
+	if e.runtime.undoStore == nil {
+		return errUndoStoreUnavailable()
 	}
 
-	f, err := os.Open(logPath)
+	data, err := e.runtime.undoStore.Load(e.document.filename)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if e.runtime.undoStore.IsNotExist(err) {
 			return nil // No history file, that's ok
 		}
 		return err
 	}
-	defer f.Close()
 
 	// Get current file mtime for validation
 	var currentMtime int64
-	if info, err := os.Stat(e.document.filename); err == nil {
-		currentMtime = info.ModTime().UnixNano()
+	if e.runtime.fileStore != nil {
+		if info, err := e.runtime.fileStore.Stat(e.document.filename); err == nil {
+			currentMtime = info.ModTime.UnixNano()
+		}
 	}
 
 	e.undo = nil
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	// Increase buffer size for large actions
 	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
 
@@ -392,17 +356,19 @@ func (e *Editor) ClearUndoHistory() error {
 	if e.document.filename == "" {
 		return nil
 	}
-
-	logPath := changelogFilePath(e.document.filename)
-	if logPath == "" {
-		return nil
+	if e.runtime.undoStore == nil {
+		return errUndoStoreUnavailable()
 	}
 
-	err := os.Remove(logPath)
-	if os.IsNotExist(err) {
+	err := e.runtime.undoStore.Remove(e.document.filename)
+	if e.runtime.undoStore.IsNotExist(err) {
 		return nil
 	}
 	return err
+}
+
+func errUndoStoreUnavailable() error {
+	return errors.New("undo store unavailable")
 }
 func (e *Editor) saveLineState() {
 	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
