@@ -47,9 +47,7 @@ func (e *Editor) OpenFile(path string) error {
 	e.savePoint = 0
 	e.changeTick = 0
 	e.lastEdit.Valid = false
-	e.highlights = nil
-	e.highlightStart = -1
-	e.highlightEnd = -1
+	e.highlight = editorHighlightState{start: -1, end: -1}
 	e.selectionActive = false
 	e.clipboard = nil
 	e.selectionScopeStack = nil

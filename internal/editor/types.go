@@ -470,9 +470,7 @@ type Editor struct {
 	lineNumberMode                LineNumberMode
 	layoutName                    string
 	git                           editorGitState
-	highlights                    map[int][]HighlightSpan
-	highlightStart                int
-	highlightEnd                  int
+	highlight                     editorHighlightState
 	changeTick                    uint64
 	lastEdit                      TextEdit
 	branchPickerActive            bool

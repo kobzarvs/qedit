@@ -114,10 +114,10 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 		selStart = -1
 		selEnd = -1
 	}
-	highlightActive := e.highlightStart >= 0 && lineIdx >= e.highlightStart && lineIdx <= e.highlightEnd
+	highlightActive := e.highlight.start >= 0 && lineIdx >= e.highlight.start && lineIdx <= e.highlight.end
 	var spans []HighlightSpan
 	if highlightActive {
-		spans = e.highlights[lineIdx]
+		spans = e.highlight.spans[lineIdx]
 	}
 	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.scrollX, kind)
 }

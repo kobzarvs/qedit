@@ -36,8 +36,7 @@ func New(opts Options) *Editor {
 		git: editorGitState{
 			branchSymbol: gitBranchSymbol,
 		},
-		highlightStart:    -1,
-		highlightEnd:      -1,
+		highlight:         editorHighlightState{start: -1, end: -1},
 		cmdHistoryPath:    opts.CmdHistoryPath,
 		searchHistoryPath: opts.SearchHistoryPath,
 		runtime: editorRuntimeDeps{
@@ -160,31 +159,29 @@ func (e *Editor) VisibleRange() (int, int) {
 }
 func (e *Editor) SetHighlights(startLine, endLine int, spans map[int][]HighlightSpan) {
 	if spans == nil || startLine < 0 || endLine < startLine {
-		e.highlights = nil
-		e.highlightStart = -1
-		e.highlightEnd = -1
+		e.highlight = editorHighlightState{start: -1, end: -1}
 		return
 	}
-	e.highlights = spans
-	e.highlightStart = startLine
-	e.highlightEnd = endLine
+	e.highlight.spans = spans
+	e.highlight.start = startLine
+	e.highlight.end = endLine
 }
 func (e *Editor) HasHighlights() bool {
-	return e.highlights != nil && e.highlightStart >= 0 && e.highlightEnd >= e.highlightStart
+	return e.highlight.spans != nil && e.highlight.start >= 0 && e.highlight.end >= e.highlight.start
 }
 
 // AdjustHighlights shifts the cached highlight map in-place after an edit.
 // Lines in [editStart, oldEnd) are removed; lines >= oldEnd shift by (newEnd - oldEnd).
 func (e *Editor) AdjustHighlights(editStart, oldEnd, newEnd int) {
-	if e.highlights == nil {
+	if e.highlight.spans == nil {
 		return
 	}
 	delta := newEnd - oldEnd // negative for deletions, positive for insertions
 	if delta == 0 && editStart == oldEnd {
 		return
 	}
-	updated := make(map[int][]HighlightSpan, len(e.highlights))
-	for line, spans := range e.highlights {
+	updated := make(map[int][]HighlightSpan, len(e.highlight.spans))
+	for line, spans := range e.highlight.spans {
 		if line < editStart {
 			updated[line] = spans
 		} else if line >= oldEnd {
@@ -192,11 +189,9 @@ func (e *Editor) AdjustHighlights(editStart, oldEnd, newEnd int) {
 		}
 		// lines in [editStart, oldEnd) are dropped
 	}
-	e.highlights = updated
-	e.highlightEnd += delta
-	if e.highlightEnd < e.highlightStart {
-		e.highlights = nil
-		e.highlightStart = -1
-		e.highlightEnd = -1
+	e.highlight.spans = updated
+	e.highlight.end += delta
+	if e.highlight.end < e.highlight.start {
+		e.highlight = editorHighlightState{start: -1, end: -1}
 	}
 }

@@ -40,9 +40,7 @@ type BufferState struct {
 	mode Mode
 
 	// Syntax highlight cache
-	highlights     map[int][]HighlightSpan
-	highlightStart int
-	highlightEnd   int
+	highlight editorHighlightState
 
 	// Change tracking
 	changeTick uint64
@@ -229,9 +227,7 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		searchMatches:       e.searchMatches,
 		searchMatchIndex:    e.searchMatchIndex,
 		mode:                e.mode,
-		highlights:          e.highlights,
-		highlightStart:      e.highlightStart,
-		highlightEnd:        e.highlightEnd,
+		highlight:           e.highlight,
 		changeTick:          e.changeTick,
 		lastEdit:            e.lastEdit,
 		conflictBlocks:      e.conflictBlocks,
@@ -264,9 +260,7 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.searchMatches = bs.searchMatches
 	e.searchMatchIndex = bs.searchMatchIndex
 	e.mode = bs.mode
-	e.highlights = bs.highlights
-	e.highlightStart = bs.highlightStart
-	e.highlightEnd = bs.highlightEnd
+	e.highlight = bs.highlight
 	e.changeTick = bs.changeTick
 	e.lastEdit = bs.lastEdit
 	e.conflictBlocks = bs.conflictBlocks
