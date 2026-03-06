@@ -1,7 +1,6 @@
 package app
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -68,21 +67,19 @@ func checkoutBranch(ed *editor.Editor, gitPath, branch string) {
 	ed.SetStatusMessage("checked out " + branch)
 }
 
-func pickWorktreeFile(targetRoot, openPath string) string {
+func pickWorktreeFile(fileStore editor.FileStore, targetRoot, openPath string) string {
 	targetRoot = strings.TrimSpace(targetRoot)
 	if targetRoot == "" {
 		return ""
 	}
-	if abs, err := filepath.Abs(targetRoot); err == nil {
-		targetRoot = abs
-	}
+	targetRoot = normalizeAppPath(fileStore, targetRoot)
 
 	if openPath != "" {
 		currentRoot := gitinfo.Root(openPath)
 		if currentRoot != "" {
 			if rel, err := filepath.Rel(currentRoot, openPath); err == nil && !strings.HasPrefix(rel, "..") {
 				candidate := filepath.Join(targetRoot, rel)
-				if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				if info, err := fileStore.Stat(candidate); err == nil && !info.IsDir {
 					return candidate
 				}
 			}
@@ -91,36 +88,36 @@ func pickWorktreeFile(targetRoot, openPath string) string {
 
 	for _, name := range []string{"README.md", "README", "go.mod", "package.json"} {
 		candidate := filepath.Join(targetRoot, name)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		if info, err := fileStore.Stat(candidate); err == nil && !info.IsDir {
 			return candidate
 		}
 	}
 
-	if entries, err := os.ReadDir(targetRoot); err == nil {
+	if entries, err := fileStore.ReadDir(targetRoot); err == nil {
 		for _, entry := range entries {
-			if entry.IsDir() {
+			if entry.IsDir {
 				continue
 			}
-			candidate := filepath.Join(targetRoot, entry.Name())
-			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			candidate := filepath.Join(targetRoot, entry.Name)
+			if info, err := fileStore.Stat(candidate); err == nil && !info.IsDir {
 				return candidate
 			}
 		}
 		for _, entry := range entries {
-			if !entry.IsDir() || entry.Name() == ".git" {
+			if !entry.IsDir || entry.Name == ".git" {
 				continue
 			}
-			dirPath := filepath.Join(targetRoot, entry.Name())
-			child, err := os.ReadDir(dirPath)
+			dirPath := filepath.Join(targetRoot, entry.Name)
+			child, err := fileStore.ReadDir(dirPath)
 			if err != nil {
 				continue
 			}
 			for _, c := range child {
-				if c.IsDir() {
+				if c.IsDir {
 					continue
 				}
-				candidate := filepath.Join(dirPath, c.Name())
-				if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				candidate := filepath.Join(dirPath, c.Name)
+				if info, err := fileStore.Stat(candidate); err == nil && !info.IsDir {
 					return candidate
 				}
 			}

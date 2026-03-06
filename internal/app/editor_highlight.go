@@ -1,8 +1,6 @@
 package app
 
 import (
-	"os"
-
 	"github.com/gdamore/tcell/v2"
 
 	"github.com/kobzarvs/qedit/internal/config"
@@ -19,10 +17,10 @@ func isAsyncParseLang(name string) bool {
 	}
 }
 
-func detectHighlightLanguage(path string, langs config.Languages, highlightMaxBytes int64) (string, bool) {
+func detectHighlightLanguage(fileStore editor.FileStore, path string, langs config.Languages, highlightMaxBytes int64) (string, bool) {
 	highlightEnabled := true
-	if highlightMaxBytes > 0 {
-		if info, err := os.Stat(path); err == nil && info.Size() > highlightMaxBytes {
+	if fileStore != nil && highlightMaxBytes > 0 {
+		if info, err := fileStore.Stat(path); err == nil && info.Size > highlightMaxBytes {
 			highlightEnabled = false
 		}
 	}

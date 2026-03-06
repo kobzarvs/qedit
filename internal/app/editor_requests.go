@@ -1,7 +1,6 @@
 package app
 
 import (
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,6 +25,7 @@ type editorRuntimeController struct {
 	sessionMgr        *session.Manager
 	fileMonitor       *externalFileMonitor
 	state             *editorRuntimeState
+	fileStore         editor.FileStore
 }
 
 func (c *editorRuntimeController) openFile(path string) error {
@@ -33,17 +33,14 @@ func (c *editorRuntimeController) openFile(path string) error {
 	if path == "" {
 		return nil
 	}
-	absPath := path
-	if abs, err := filepath.Abs(path); err == nil {
-		absPath = abs
-	}
+	absPath := normalizeAppPath(c.fileStore, path)
 	if c.state.openPath == absPath {
 		return nil
 	}
 	if err := c.ed.OpenFile(absPath); err != nil {
 		return err
 	}
-	state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, absPath, c.highlightMaxBytes)
+	state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, absPath, c.highlightMaxBytes)
 	c.state.applyActiveFile(state)
 
 	c.fileMonitor.Watch(absPath)
@@ -58,10 +55,8 @@ func (c *editorRuntimeController) switchToWorktree(targetPath string) {
 	if targetPath == "" {
 		return
 	}
-	if abs, err := filepath.Abs(targetPath); err == nil {
-		targetPath = abs
-	}
-	candidate := pickWorktreeFile(targetPath, c.state.openPath)
+	targetPath = normalizeAppPath(c.fileStore, targetPath)
+	candidate := pickWorktreeFile(c.fileStore, targetPath, c.state.openPath)
 	if candidate == "" {
 		c.ed.SetGitBranch(gitinfo.Branch(targetPath))
 		c.ed.SetGitRoot(gitinfo.Root(targetPath))
@@ -115,7 +110,7 @@ func (c *editorRuntimeController) handleEditorRequests() {
 		path := c.ed.Filename()
 		if path != c.state.openPath {
 			c.fileMonitor.Watch(path)
-			state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, path, c.highlightMaxBytes)
+			state := activateEditorFile(c.ed, c.screen, c.ls, c.ts, c.langs, c.fileStore, path, c.highlightMaxBytes)
 			c.state.applyActiveFile(state)
 
 			c.ed.SetGitBranch(gitinfo.Branch(path))

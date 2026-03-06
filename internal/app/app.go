@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/kobzarvs/qedit/internal/config"
+	"github.com/kobzarvs/qedit/internal/integrations"
 	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/session"
 )
@@ -40,13 +41,14 @@ func (a *App) Run() error {
 
 	sessionMgr, _ := session.NewManager()
 	sessionStore := newEditorSessionStore(sessionMgr)
-	ed := newConfiguredEditor(&cfg, langs, services.ts, sessionStore)
+	fileStore := integrations.FileStore{}
+	ed := newConfiguredEditor(&cfg, langs, services.ts, sessionStore, fileStore)
 	defer ed.Shutdown()
 	autoReloadStabilizeDelay := time.Duration(cfg.Editor.AutoReloadStabilizeMS) * time.Millisecond
 	if autoReloadStabilizeDelay < 0 {
 		autoReloadStabilizeDelay = 0
 	}
-	rt, err := newEditorRuntime(services.screen, ed, services.ls, services.ts, langs, sessionMgr, editorRuntimeOptions{
+	rt, err := newEditorRuntime(services.screen, ed, services.ls, services.ts, langs, sessionMgr, fileStore, editorRuntimeOptions{
 		InitialPath:              firstArg(a.args),
 		HighlightMaxBytes:        cfg.Editor.HighlightMaxBytes,
 		AutoReloadMaxBytes:       int64(8 << 20),

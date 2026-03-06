@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 
@@ -31,7 +30,7 @@ func editorHistoryPaths() (string, string) {
 	return filepath.Join(dir, "history"), filepath.Join(dir, "search_history")
 }
 
-func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesitter.Engine, sessionStore editor.SessionStore) *editor.Editor {
+func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesitter.Engine, sessionStore editor.SessionStore, fileStore editor.FileStore) *editor.Editor {
 	cmdHistoryPath, searchHistoryPath := editorHistoryPaths()
 	ed := editor.New(editor.Options{
 		TabWidth:             cfg.Editor.TabWidth,
@@ -52,7 +51,7 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 	})
 
 	ed.SetStyles(ui.StylesFromConfig(*cfg))
-	ed.SetHighlightRangeFunc(newHighlightRangeFunc(langs, ts, cfg.Editor.HighlightMaxBytes))
+	ed.SetHighlightRangeFunc(newHighlightRangeFunc(fileStore, langs, ts, cfg.Editor.HighlightMaxBytes))
 	ed.SetAutoReloadConfigHook(func(enabled bool) error {
 		if err := config.UpdateEditorAutoReloadOnChanges(enabled); err != nil {
 			return err
@@ -70,7 +69,7 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 	ed.SetFormatter(integrations.GoFormatter{})
 	ed.SetMerger(integrations.GitMerger{})
 	ed.SetHistoryStore(integrations.FileHistoryStore{})
-	ed.SetFileStore(integrations.FileStore{})
+	ed.SetFileStore(fileStore)
 	ed.SetUndoStore(integrations.FileUndoStore{})
 	if runtime.GOOS == "darwin" {
 		ed.SetClipboard(integrations.MacClipboard{})
@@ -82,21 +81,24 @@ func newConfiguredEditor(cfg *config.Config, langs config.Languages, ts *treesit
 	return ed
 }
 
-func newHighlightRangeFunc(langs config.Languages, ts *treesitter.Engine, highlightMaxBytes int64) editor.HighlightRangeFunc {
+func newHighlightRangeFunc(fileStore editor.FileStore, langs config.Languages, ts *treesitter.Engine, highlightMaxBytes int64) editor.HighlightRangeFunc {
 	return func(path string, startLine, endLine int) map[int][]editor.HighlightSpan {
 		if path == "" || startLine < 0 || endLine < startLine {
 			return nil
 		}
-		if info, err := os.Stat(path); err != nil {
+		if fileStore == nil {
 			return nil
-		} else if highlightMaxBytes > 0 && info.Size() > highlightMaxBytes {
+		}
+		if info, err := fileStore.Stat(path); err != nil {
+			return nil
+		} else if highlightMaxBytes > 0 && info.Size > highlightMaxBytes {
 			return nil
 		}
 		lang := langs.Match(path)
 		if lang == nil {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		data, err := fileStore.Read(path)
 		if err != nil {
 			return nil
 		}
@@ -154,7 +156,7 @@ func repoState(gitPath string, sessionMgr *session.Manager) (string, string) {
 	return gitRoot, mainBranch
 }
 
-func wireEditorRuntimeCallbacks(ed *editor.Editor, ts *treesitter.Engine, ls *lsp.Manager) {
+func wireEditorRuntimeCallbacks(ed *editor.Editor, fileStore editor.FileStore, ts *treesitter.Engine, ls *lsp.Manager) {
 	ed.SetNodeStackFunc(func(path string, row, col int) []editor.NodeRange {
 		stack := ts.GetNodeStackAt(path, row, col)
 		if stack == nil {
@@ -173,11 +175,9 @@ func wireEditorRuntimeCallbacks(ed *editor.Editor, ts *treesitter.Engine, ls *ls
 	})
 
 	ed.SetLSPGotoFunc(func(method, path string, line, col int) ([]editor.LSPLocation, error) {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			absPath = path
-		}
+		absPath := normalizeAppPath(fileStore, path)
 		var locs []lsp.Location
+		var err error
 		switch method {
 		case "definition":
 			locs, err = ls.GotoDefinition(absPath, line, col)

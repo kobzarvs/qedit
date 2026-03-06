@@ -20,7 +20,7 @@ type activeFileState struct {
 	lastHighlightEnd   int
 }
 
-func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts *treesitter.Engine, langs config.Languages, path string, highlightMaxBytes int64) activeFileState {
+func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts *treesitter.Engine, langs config.Languages, fileStore editor.FileStore, path string, highlightMaxBytes int64) activeFileState {
 	content := ed.Content()
 	ls.OpenFile(path, content)
 
@@ -33,7 +33,7 @@ func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager,
 		lastHighlightStart: -1,
 		lastHighlightEnd:   -1,
 	}
-	state.langName, state.highlightEnabled = detectHighlightLanguage(path, langs, highlightMaxBytes)
+	state.langName, state.highlightEnabled = detectHighlightLanguage(fileStore, path, langs, highlightMaxBytes)
 	state.highlightExpected = state.highlightEnabled && state.langName != ""
 
 	if state.highlightEnabled && state.langName != "" {

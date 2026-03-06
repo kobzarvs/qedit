@@ -1,7 +1,6 @@
 package app
 
 import (
-	"os"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -45,6 +44,7 @@ func newEditorRuntime(
 	ts *treesitter.Engine,
 	langs config.Languages,
 	sessionMgr *session.Manager,
+	fileStore editor.FileStore,
 	opts editorRuntimeOptions,
 ) (*editorRuntime, error) {
 	autoReloadRetries := opts.AutoReloadRetries
@@ -64,30 +64,30 @@ func newEditorRuntime(
 	}
 
 	if opts.InitialPath != "" {
-		rt.state.openPath = opts.InitialPath
+		rt.state.openPath = normalizeAppPath(fileStore, opts.InitialPath)
 		if err := ed.OpenFile(rt.state.openPath); err != nil {
 			return nil, err
 		}
 		rt.state.gitPath = rt.state.openPath
 		content := ed.Content()
 		ls.OpenFile(rt.state.openPath, content)
-		rt.state.langName, rt.state.highlightEnabled = detectHighlightLanguage(rt.state.openPath, langs, opts.HighlightMaxBytes)
+		rt.state.langName, rt.state.highlightEnabled = detectHighlightLanguage(fileStore, rt.state.openPath, langs, opts.HighlightMaxBytes)
 		rt.state.highlightExpected = rt.state.highlightEnabled && rt.state.langName != ""
 	}
 	if rt.state.gitPath == "" {
-		if cwd, err := os.Getwd(); err == nil {
+		if cwd := normalizeAppPath(fileStore, "."); cwd != "" {
 			rt.state.gitPath = cwd
 		}
 	}
 
-	rt.fileMonitor = newExternalFileMonitor(screen, ed, opts.AutoReloadMaxBytes, autoReloadRetries, opts.AutoReloadStabilizeDelay)
+	rt.fileMonitor = newExternalFileMonitor(screen, ed, fileStore, opts.AutoReloadMaxBytes, autoReloadRetries, opts.AutoReloadStabilizeDelay)
 	if rt.state.openPath != "" {
 		rt.fileMonitor.Watch(rt.state.openPath)
 	}
 
 	ed.SetKeyboardLayout(keyboard.CurrentLayout())
 	syncEditorRepoState(ed, rt.state.gitPath, sessionMgr)
-	wireEditorRuntimeCallbacks(ed, ts, ls)
+	wireEditorRuntimeCallbacks(ed, fileStore, ts, ls)
 
 	if rt.state.openPath != "" && rt.state.highlightEnabled && rt.state.langName != "" {
 		if isAsyncParseLang(rt.state.langName) {
@@ -111,6 +111,7 @@ func newEditorRuntime(
 		highlightMaxBytes: opts.HighlightMaxBytes,
 		sessionMgr:        sessionMgr,
 		fileMonitor:       rt.fileMonitor,
+		fileStore:         fileStore,
 		state:             &rt.state,
 	}
 

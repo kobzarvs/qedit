@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -37,12 +36,14 @@ type externalFileMonitor struct {
 	autoReloadActive  bool
 	autoReloadPending bool
 	autoReloadResults chan autoReloadResult
+	fileStore         editor.FileStore
 }
 
-func newExternalFileMonitor(screen tcell.Screen, ed *editor.Editor, autoReloadMaxBytes int64, autoReloadRetries int, autoReloadStabilizeDelay time.Duration) *externalFileMonitor {
+func newExternalFileMonitor(screen tcell.Screen, ed *editor.Editor, fileStore editor.FileStore, autoReloadMaxBytes int64, autoReloadRetries int, autoReloadStabilizeDelay time.Duration) *externalFileMonitor {
 	return &externalFileMonitor{
 		screen:                   screen,
 		ed:                       ed,
+		fileStore:                fileStore,
 		autoReloadMaxBytes:       autoReloadMaxBytes,
 		autoReloadRetries:        autoReloadRetries,
 		autoReloadStabilizeDelay: autoReloadStabilizeDelay,
@@ -70,10 +71,7 @@ func (m *externalFileMonitor) Watch(path string) {
 	if path == "" {
 		return
 	}
-	absPath := path
-	if abs, err := filepath.Abs(path); err == nil {
-		absPath = abs
-	}
+	absPath := normalizeAppPath(m.fileStore, path)
 	m.watchedPath = absPath
 	watchedDir := filepath.Dir(absPath)
 	watcher, err := fsnotify.NewWatcher()
@@ -134,30 +132,30 @@ func (m *externalFileMonitor) watchLoop(w *fsnotify.Watcher, events chan time.Ti
 func (m *externalFileMonitor) readFileStable(path string) ([]byte, error) {
 	var lastErr error
 	for i := 0; i < m.autoReloadRetries; i++ {
-		infoBefore, err := os.Stat(path)
+		infoBefore, err := m.fileStore.Stat(path)
 		if err != nil {
 			return nil, err
 		}
 		time.Sleep(m.autoReloadStabilizeDelay)
-		infoMid, err := os.Stat(path)
+		infoMid, err := m.fileStore.Stat(path)
 		if err != nil {
 			return nil, err
 		}
-		if !infoBefore.ModTime().Equal(infoMid.ModTime()) || infoBefore.Size() != infoMid.Size() {
+		if !infoBefore.ModTime.Equal(infoMid.ModTime) || infoBefore.Size != infoMid.Size {
 			lastErr = fmt.Errorf("file changed during read")
 			continue
 		}
-		data, err := os.ReadFile(path)
+		data, err := m.fileStore.Read(path)
 		if err != nil {
 			lastErr = err
 			time.Sleep(m.autoReloadStabilizeDelay)
 			continue
 		}
-		infoAfter, err := os.Stat(path)
+		infoAfter, err := m.fileStore.Stat(path)
 		if err != nil {
 			return nil, err
 		}
-		if infoMid.ModTime().Equal(infoAfter.ModTime()) && infoMid.Size() == infoAfter.Size() && int64(len(data)) == infoAfter.Size() {
+		if infoMid.ModTime.Equal(infoAfter.ModTime) && infoMid.Size == infoAfter.Size && int64(len(data)) == infoAfter.Size {
 			return data, nil
 		}
 		lastErr = fmt.Errorf("file changed during read")
@@ -214,7 +212,7 @@ func (m *externalFileMonitor) applyExternalChange() {
 		}
 		largeFile := false
 		if name := m.ed.Filename(); name != "" {
-			if info, err := os.Stat(name); err == nil && info.Size() > m.autoReloadMaxBytes {
+			if info, err := m.fileStore.Stat(name); err == nil && info.Size > m.autoReloadMaxBytes {
 				largeFile = true
 			}
 		}
