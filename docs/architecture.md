@@ -19,6 +19,10 @@ mechanical code splits and future feature work move toward the same end state.
   main loop until a stronger event/effect boundary is introduced.
 - Early phases prefer mechanical splits inside existing packages over large
   cross-package rewrites.
+- Capability registries now exist for commands, sidebar modes, formatters,
+  language support, git integration, and behavior profiles.
+- `editor.profile` is now explicit runtime configuration and can also be
+  changed from inside the editor via `:profile basic|helix|vim`.
 
 ## Target Layers
 
@@ -56,6 +60,11 @@ Owns plugin discovery and registration:
 - lifecycle hooks
 - built-in and in-process Go extensions
 
+Current implementation:
+- `internal/plugins` provides an in-process registry for Go plugins.
+- Example plugin: a profile sidebar plugin that registers a custom sidebar mode
+  and command without editing core dispatch.
+
 ## Plugin Capability Model
 The registry should expose explicit capabilities instead of ad-hoc editor hooks.
 Initial capability groups:
@@ -76,15 +85,19 @@ Profiles define semantics and default bindings together:
 - non-modal text editing
 - familiar movement/selection behavior
 - command palette and sidebar remain available
+- implemented as a first-class profile in the input router
 
 ### `helix`
 - selection-first motions
 - existing `g`, `m`, `z`, `space` command families
 - command semantics stay close to current editor behavior
+- implemented as the extracted legacy engine
 
 ### `vim`
 - normal/insert/visual/operator-pending/command modes
 - counts and operators are profile semantics, not keymap aliases
+- current MVP supports distinct normal/insert/visual behavior, operator
+  pending, counts, linewise yank/paste, and profile switching
 
 ## Refactor Order
 1. Mechanical split inside `internal/editor`.
