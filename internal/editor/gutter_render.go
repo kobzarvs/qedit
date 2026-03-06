@@ -123,17 +123,17 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 }
 
 func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {
-	if e.fileTreePreviewText == nil || width <= 0 || viewHeight <= 0 {
+	if e.fileTreePreview.text == nil || width <= 0 || viewHeight <= 0 {
 		return
 	}
-	if e.runtime.highlightRangeFunc != nil && e.fileTreePreviewHighlightEnd >= 0 &&
-		e.fileTreePreviewHighlightEnd < e.fileTreePreviewScroll+viewHeight-1 {
+	if e.runtime.highlightRangeFunc != nil && e.fileTreePreview.highlight.end >= 0 &&
+		e.fileTreePreview.highlight.end < e.fileTreePreview.scroll+viewHeight-1 {
 		e.updateFileTreePreviewHighlights()
 	}
-	lineCount := e.fileTreePreviewText.LineCount()
+	lineCount := e.fileTreePreview.text.LineCount()
 	gutterWidth := previewGutterWidth(lineCount, e.lineNumberMode)
 	for y := 0; y < viewHeight; y++ {
-		lineIdx := e.fileTreePreviewScroll + y
+		lineIdx := e.fileTreePreview.scroll + y
 		if lineIdx >= lineCount {
 			clearLineAt(s, x0, y, width, e.styleMain)
 			continue
@@ -143,7 +143,7 @@ func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {
 }
 
 func (e *Editor) drawPreviewLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx int) {
-	line := e.fileTreePreviewText.Line(lineIdx)
+	line := e.fileTreePreview.text.Line(lineIdx)
 	if gutterWidth >= w {
 		return
 	}
@@ -174,10 +174,10 @@ func (e *Editor) drawPreviewLineWithGutterAt(s Screen, x0, y, w, gutterWidth, li
 			s.SetContent(x0+numWidth-1, y, ' ', nil, spaceStyle)
 		}
 	}
-	highlightActive := e.fileTreePreviewHighlightStart >= 0 && lineIdx >= e.fileTreePreviewHighlightStart && lineIdx <= e.fileTreePreviewHighlightEnd
+	highlightActive := e.fileTreePreview.highlight.start >= 0 && lineIdx >= e.fileTreePreview.highlight.start && lineIdx <= e.fileTreePreview.highlight.end
 	var spans []HighlightSpan
 	if highlightActive {
-		spans = e.fileTreePreviewHighlights[lineIdx]
+		spans = e.fileTreePreview.highlight.spans[lineIdx]
 	}
-	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.tabWidth, -1, -1, spans, highlightActive, nil, lineIdx, 0, e.fileTreePreviewScrollX, conflictNone)
+	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.tabWidth, -1, -1, spans, highlightActive, nil, lineIdx, 0, e.fileTreePreview.scrollX, conflictNone)
 }

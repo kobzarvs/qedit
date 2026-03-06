@@ -28,7 +28,7 @@ func (e *Editor) fileTreePreviewCurrent(content *SidebarFileTreeContent) {
 		e.clearFileTreePreview()
 		return
 	}
-	if e.fileTreePreviewActive && e.fileTreePreviewPath == path && e.fileTreePreviewText != nil {
+	if e.fileTreePreview.active && e.fileTreePreview.path == path && e.fileTreePreview.text != nil {
 		return
 	}
 	data, err := os.ReadFile(path)
@@ -38,26 +38,24 @@ func (e *Editor) fileTreePreviewCurrent(content *SidebarFileTreeContent) {
 	}
 	isBinary := isBinaryData(data)
 	if isBinary {
-		e.fileTreePreviewText = NewTextBufferFromString(formatHexPreview(data))
+		e.fileTreePreview.text = NewTextBufferFromString(formatHexPreview(data))
 	} else {
-		e.fileTreePreviewText = NewTextBufferFromBytes(data)
+		e.fileTreePreview.text = NewTextBufferFromBytes(data)
 	}
-	e.fileTreePreviewPath = path
-	e.fileTreePreviewScroll = 0
-	e.fileTreePreviewScrollX = 0
-	e.fileTreePreviewActive = true
-	e.fileTreePreviewBinary = isBinary
-	e.fileTreePreviewHighlights = nil
-	e.fileTreePreviewHighlightStart = -1
-	e.fileTreePreviewHighlightEnd = -1
+	e.fileTreePreview.path = path
+	e.fileTreePreview.scroll = 0
+	e.fileTreePreview.scrollX = 0
+	e.fileTreePreview.active = true
+	e.fileTreePreview.binary = isBinary
+	e.fileTreePreview.highlight = editorHighlightState{start: -1, end: -1}
 	e.updateFileTreePreviewHighlights()
 }
 
 func (e *Editor) updateFileTreePreviewHighlights() {
-	if e.runtime.highlightRangeFunc == nil || e.fileTreePreviewText == nil || e.fileTreePreviewPath == "" || e.fileTreePreviewBinary {
+	if e.runtime.highlightRangeFunc == nil || e.fileTreePreview.text == nil || e.fileTreePreview.path == "" || e.fileTreePreview.binary {
 		return
 	}
-	lineCount := e.fileTreePreviewText.LineCount()
+	lineCount := e.fileTreePreview.text.LineCount()
 	if lineCount <= 0 {
 		return
 	}
@@ -68,16 +66,14 @@ func (e *Editor) updateFileTreePreviewHighlights() {
 	if end >= lineCount {
 		end = lineCount - 1
 	}
-	spans := e.runtime.highlightRangeFunc(e.fileTreePreviewPath, 0, end)
+	spans := e.runtime.highlightRangeFunc(e.fileTreePreview.path, 0, end)
 	if spans == nil {
-		e.fileTreePreviewHighlights = nil
-		e.fileTreePreviewHighlightStart = -1
-		e.fileTreePreviewHighlightEnd = -1
+		e.fileTreePreview.highlight = editorHighlightState{start: -1, end: -1}
 		return
 	}
-	e.fileTreePreviewHighlights = spans
-	e.fileTreePreviewHighlightStart = 0
-	e.fileTreePreviewHighlightEnd = end
+	e.fileTreePreview.highlight.spans = spans
+	e.fileTreePreview.highlight.start = 0
+	e.fileTreePreview.highlight.end = end
 }
 
 func (e *Editor) updateFileTreeStatus(content *SidebarFileTreeContent, action SidebarActionData) {
@@ -96,7 +92,7 @@ func (e *Editor) updateFileTreeStatus(content *SidebarFileTreeContent, action Si
 }
 
 func (e *Editor) fileTreePreviewVisible() bool {
-	if !e.fileTreePreviewActive || e.fileTreePreviewText == nil {
+	if !e.fileTreePreview.active || e.fileTreePreview.text == nil {
 		return false
 	}
 	if e.sidebar == nil || !e.sidebar.Visible || !e.sidebar.Focused {
@@ -110,15 +106,9 @@ func (e *Editor) fileTreePreviewVisible() bool {
 }
 
 func (e *Editor) clearFileTreePreview() {
-	e.fileTreePreviewActive = false
-	e.fileTreePreviewPath = ""
-	e.fileTreePreviewText = nil
-	e.fileTreePreviewScroll = 0
-	e.fileTreePreviewScrollX = 0
-	e.fileTreePreviewBinary = false
-	e.fileTreePreviewHighlights = nil
-	e.fileTreePreviewHighlightStart = -1
-	e.fileTreePreviewHighlightEnd = -1
+	e.fileTreePreview = fileTreePreviewState{
+		highlight: editorHighlightState{start: -1, end: -1},
+	}
 }
 
 const (

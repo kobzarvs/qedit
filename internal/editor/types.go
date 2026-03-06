@@ -399,102 +399,94 @@ type Editor struct {
 	Selection
 	UndoManager
 	SearchState
-	scroll                        int
-	scrollX                       int // horizontal scroll offset (visual columns)
-	mode                          Mode
-	filename                      string
-	file                          editorFileState
-	dirty                         bool
-	conflictBlocks                []conflictBlock
-	conflictBlocksDirty           bool
-	keymap                        keymapSet
-	cmd                           []rune
-	cmdCursor                     int      // cursor position within cmd
-	cmdHistory                    []string // command history
-	cmdHistoryIndex               int      // current position in history (-1 = not browsing)
-	cmdHistoryPrefix              string   // prefix for filtered history search
-	cmdHistoryPath                string   // command history file path
-	searchHistoryPath             string   // search history file path
-	statusMessage                 string
-	notificationMessage           string
-	notificationStarted           time.Time
-	tabWidth                      int
-	viewHeight                    int
-	viewWidth                     int
-	styleMain                     Style
-	styleStatus                   Style
-	styleStatusWarning            Style
-	styleMergeLocal               Style
-	styleMergeRemote              Style
-	styleMergeHeader              Style
-	styleCommand                  Style
-	styleLineNumber               Style
-	styleLineNumberActive         Style
-	styleSelection                Style
-	styleSearchMatch              Style
-	styleSyntaxKeyword            Style
-	styleSyntaxString             Style
-	styleSyntaxComment            Style
-	styleSyntaxType               Style
-	styleSyntaxFunction           Style
-	styleSyntaxNumber             Style
-	styleSyntaxConstant           Style
-	styleSyntaxOperator           Style
-	styleSyntaxPunctuation        Style
-	styleSyntaxField              Style
-	styleSyntaxBuiltin            Style
-	styleSyntaxUnknown            Style
-	styleSyntaxVariable           Style
-	styleSyntaxParameter          Style
-	styleSyntaxYAMLKey            Style
-	styleSyntaxYAMLValue          Style
-	styleSyntaxYAMLListItem       Style
-	styleTableBorder              Style
-	styleBranch                   Style
-	styleMainBranch               Style
-	styleLayoutUS                 Style
-	styleLayoutRU                 Style
-	styleLayoutOther              Style
-	styleAutoComplete             Style
-	styleAutoCompleteHotkey       Style
-	styleAutoCompleteDescription  Style
-	styleAutoCompleteGroup        Style
-	styleCommandCheckmark         Style
-	styleScrollIndicator          Style
-	styleBranchMarker             Style
-	styleFilterActive             Style
-	styleFilterInactive           Style
-	styleBoxBorder                Style
-	styleNotificationBright       Style
-	notificationFadeStyles        []Style
-	lineNumberMode                LineNumberMode
-	layoutName                    string
-	git                           editorGitState
-	highlight                     editorHighlightState
-	changeTick                    uint64
-	lastEdit                      TextEdit
-	branchPickerActive            bool
-	branchPickerItems             []string
-	branchPickerIndex             int
-	sidebar                       *Sidebar
-	sidebarStyles                 SidebarStyles
-	fileTreeShowHidden            bool
-	fileTreeShowIgnored           bool
-	fileTreePreviewActive         bool
-	fileTreePreviewPath           string
-	fileTreePreviewText           *TextBuffer
-	fileTreePreviewScroll         int
-	fileTreePreviewScrollX        int
-	fileTreePreviewBinary         bool
-	fileTreePreviewHighlights     map[int][]HighlightSpan
-	fileTreePreviewHighlightStart int
-	fileTreePreviewHighlightEnd   int
-	lastKeyCombo                  string
-	freeScroll                    bool
-	lastScrollTime                time.Time
-	resizeDragging                bool
-	resizeTarget                  resizeTarget
-	runtime                       editorRuntimeDeps
+	scroll                       int
+	scrollX                      int // horizontal scroll offset (visual columns)
+	mode                         Mode
+	filename                     string
+	file                         editorFileState
+	dirty                        bool
+	conflictBlocks               []conflictBlock
+	conflictBlocksDirty          bool
+	keymap                       keymapSet
+	cmd                          []rune
+	cmdCursor                    int      // cursor position within cmd
+	cmdHistory                   []string // command history
+	cmdHistoryIndex              int      // current position in history (-1 = not browsing)
+	cmdHistoryPrefix             string   // prefix for filtered history search
+	cmdHistoryPath               string   // command history file path
+	searchHistoryPath            string   // search history file path
+	statusMessage                string
+	notificationMessage          string
+	notificationStarted          time.Time
+	tabWidth                     int
+	viewHeight                   int
+	viewWidth                    int
+	styleMain                    Style
+	styleStatus                  Style
+	styleStatusWarning           Style
+	styleMergeLocal              Style
+	styleMergeRemote             Style
+	styleMergeHeader             Style
+	styleCommand                 Style
+	styleLineNumber              Style
+	styleLineNumberActive        Style
+	styleSelection               Style
+	styleSearchMatch             Style
+	styleSyntaxKeyword           Style
+	styleSyntaxString            Style
+	styleSyntaxComment           Style
+	styleSyntaxType              Style
+	styleSyntaxFunction          Style
+	styleSyntaxNumber            Style
+	styleSyntaxConstant          Style
+	styleSyntaxOperator          Style
+	styleSyntaxPunctuation       Style
+	styleSyntaxField             Style
+	styleSyntaxBuiltin           Style
+	styleSyntaxUnknown           Style
+	styleSyntaxVariable          Style
+	styleSyntaxParameter         Style
+	styleSyntaxYAMLKey           Style
+	styleSyntaxYAMLValue         Style
+	styleSyntaxYAMLListItem      Style
+	styleTableBorder             Style
+	styleBranch                  Style
+	styleMainBranch              Style
+	styleLayoutUS                Style
+	styleLayoutRU                Style
+	styleLayoutOther             Style
+	styleAutoComplete            Style
+	styleAutoCompleteHotkey      Style
+	styleAutoCompleteDescription Style
+	styleAutoCompleteGroup       Style
+	styleCommandCheckmark        Style
+	styleScrollIndicator         Style
+	styleBranchMarker            Style
+	styleFilterActive            Style
+	styleFilterInactive          Style
+	styleBoxBorder               Style
+	styleNotificationBright      Style
+	notificationFadeStyles       []Style
+	lineNumberMode               LineNumberMode
+	layoutName                   string
+	git                          editorGitState
+	highlight                    editorHighlightState
+	changeTick                   uint64
+	lastEdit                     TextEdit
+	branchPickerActive           bool
+	branchPickerItems            []string
+	branchPickerIndex            int
+	sidebar                      *Sidebar
+	sidebarStyles                SidebarStyles
+	fileTreeShowHidden           bool
+	fileTreeShowIgnored          bool
+	fileTreePreview              fileTreePreviewState
+	lastKeyCombo                 string
+	freeScroll                   bool
+	lastScrollTime               time.Time
+	resizeDragging               bool
+	resizeTarget                 resizeTarget
+	runtime                      editorRuntimeDeps
 
 	// Helix-style state
 	clipboard                  [][]rune // yanked text (lines)
