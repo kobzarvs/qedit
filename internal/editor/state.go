@@ -56,6 +56,7 @@ func New(opts Options) *Editor {
 		commands:         newCommandRegistry(),
 		formatters:       newFormatterRegistry(),
 		languageFeatures: newLanguageFeatureRegistry(),
+		gitFeatures:      newGitFeatureRegistry(),
 		sidebar: NewSidebar(
 			opts.SidebarWidth,
 			opts.SidebarMinWidth,
@@ -72,6 +73,7 @@ func New(opts Options) *Editor {
 	e.registerBuiltInCommands()
 	e.registerBuiltInFormatters()
 	e.registerBuiltInLanguageFeatures()
+	e.registerBuiltInGitFeatures()
 	e.SetStyles(defaultEditorStyles())
 	return e
 }

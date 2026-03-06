@@ -6,4 +6,5 @@ type editorRuntimeDeps struct {
 	workspace       WorkspaceRuntime
 	persistence     PersistenceRuntime
 	languageRuntime LanguageRuntime
+	gitRuntime      GitRuntime
 }

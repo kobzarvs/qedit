@@ -63,6 +63,19 @@ type LanguageRuntime interface {
 	HighlightRange(path string, startLine, endLine int) map[int][]HighlightSpan
 }
 
+// GitRuntime provides editor git-aware runtime queries and operations.
+type GitRuntime interface {
+	Root(path string) string
+	Branch(path string) string
+	MainBranch(path string) string
+	ListBranches(root string) ([]string, string, error)
+	ListWorktrees(root string) ([]WorktreeInfo, string, error)
+	Checkout(root, branch string) error
+	AddWorktree(root, name string) (string, error)
+	RemoveWorktree(root, path string) error
+	Changes(root string) ([]GitFileChange, []GitChangeHunk, error)
+}
+
 // WorkspaceRuntime provides file, merge, and formatting operations.
 type WorkspaceRuntime interface {
 	HasFileStore() bool
@@ -108,6 +121,7 @@ type RuntimeServices struct {
 	FileStore          FileStore
 	UndoStore          UndoStore
 	LanguageRuntime    LanguageRuntime
+	GitRuntime         GitRuntime
 }
 
 // FileStore provides editor filesystem operations.
@@ -378,6 +392,10 @@ func (e *Editor) SetLanguageRuntime(r LanguageRuntime) {
 	e.runtime.languageRuntime = r
 }
 
+func (e *Editor) SetGitRuntime(r GitRuntime) {
+	e.runtime.gitRuntime = r
+}
+
 func (e *Editor) ApplyRuntimeServices(services RuntimeServices) {
 	if services.SystemClipboard != nil {
 		e.runtime.systemClipboard = services.SystemClipboard
@@ -414,5 +432,8 @@ func (e *Editor) ApplyRuntimeServices(services RuntimeServices) {
 	}
 	if services.LanguageRuntime != nil {
 		e.runtime.languageRuntime = services.LanguageRuntime
+	}
+	if services.GitRuntime != nil {
+		e.runtime.gitRuntime = services.GitRuntime
 	}
 }

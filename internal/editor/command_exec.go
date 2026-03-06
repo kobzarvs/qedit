@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 )
 
 func (e *Editor) execCommand(cmd string) bool {
@@ -178,7 +176,7 @@ func (e *Editor) handleWorktreeCommand(args []string) bool {
 			e.setStatus("usage: worktree new <name>")
 			return false
 		}
-		path, err := gitinfo.AddWorktree(root, name)
+		path, err := e.gitAddWorktree(root, name)
 		if err != nil {
 			e.setStatus(err.Error())
 			return false
@@ -217,7 +215,7 @@ func (e *Editor) handleWorktreeCommand(args []string) bool {
 			e.setStatus(err.Error())
 			return false
 		}
-		if err := gitinfo.RemoveWorktree(root, path); err != nil {
+		if err := e.gitRemoveWorktree(root, path); err != nil {
 			e.setStatus(err.Error())
 			return false
 		}
@@ -235,7 +233,7 @@ func (e *Editor) resolveWorktreeTarget(root, target string) (string, error) {
 	if target == "" {
 		return "", errors.New("worktree name required")
 	}
-	worktrees, _, err := gitinfo.ListWorktrees(root)
+	worktrees, _, err := e.gitListWorktrees(root)
 	if err != nil {
 		return "", err
 	}

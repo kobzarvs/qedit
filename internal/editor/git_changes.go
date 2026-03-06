@@ -1,12 +1,9 @@
 package editor
 
 import (
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 )
 
 // GitFileChange represents a changed file in the repo.
@@ -63,11 +60,11 @@ func (e *Editor) RefreshGitChanges() error {
 		e.git.changesUpdated = time.Now()
 		return nil
 	}
-	changes, hunks, err := gitinfo.Changes(root)
+	changes, hunks, err := e.gitChanges(root)
 	if err != nil {
 		return err
 	}
-	e.applyGitChanges(root, changes, hunks)
+	e.applyGitChanges(changes, hunks)
 	return nil
 }
 
@@ -80,47 +77,25 @@ func (e *Editor) refreshGitChangesIfStale(maxAge time.Duration) error {
 
 func (e *Editor) detectGitRoot() string {
 	if e.document.filename != "" {
-		if root := gitinfo.Root(e.document.filename); root != "" {
+		if root := e.gitRoot(e.document.filename); root != "" {
 			return root
 		}
 	}
 	if cwd := e.normalizedPath("."); cwd != "" {
-		if root := gitinfo.Root(cwd); root != "" {
+		if root := e.gitRoot(cwd); root != "" {
 			return root
 		}
 	}
 	return ""
 }
 
-func (e *Editor) applyGitChanges(root string, changes []gitinfo.FileChange, hunks []gitinfo.Hunk) {
-	e.git.changes = make([]GitFileChange, 0, len(changes))
-	for _, ch := range changes {
-		abs := filepath.Join(root, filepath.FromSlash(ch.Path))
-		e.git.changes = append(e.git.changes, GitFileChange{
-			Path:       ch.Path,
-			AbsPath:    abs,
-			Status:     ch.Status,
-			Insertions: ch.Insertions,
-			Deletions:  ch.Deletions,
-			Binary:     ch.Binary,
-			Staged:     ch.Staged,
-			Unstaged:   ch.Unstaged,
-		})
-	}
+func (e *Editor) applyGitChanges(changes []GitFileChange, hunks []GitChangeHunk) {
+	e.git.changes = append(e.git.changes[:0], changes...)
 	sort.Slice(e.git.changes, func(i, j int) bool {
 		return e.git.changes[i].Path < e.git.changes[j].Path
 	})
 
-	e.git.changeHunks = make([]GitChangeHunk, 0, len(hunks))
-	for _, h := range hunks {
-		abs := filepath.Join(root, filepath.FromSlash(h.Path))
-		e.git.changeHunks = append(e.git.changeHunks, GitChangeHunk{
-			Path:      h.Path,
-			AbsPath:   abs,
-			StartLine: h.StartLine,
-			EndLine:   h.EndLine,
-		})
-	}
+	e.git.changeHunks = append(e.git.changeHunks[:0], hunks...)
 	sort.Slice(e.git.changeHunks, func(i, j int) bool {
 		if e.git.changeHunks[i].AbsPath != e.git.changeHunks[j].AbsPath {
 			return e.git.changeHunks[i].AbsPath < e.git.changeHunks[j].AbsPath

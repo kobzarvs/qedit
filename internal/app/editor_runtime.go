@@ -6,7 +6,6 @@ import (
 
 	"github.com/kobzarvs/qedit/internal/config"
 	"github.com/kobzarvs/qedit/internal/editor"
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/integrations"
 	"github.com/kobzarvs/qedit/internal/session"
 	"github.com/kobzarvs/qedit/internal/treesitter"
@@ -26,6 +25,10 @@ func newEditorFormatter() editor.Formatter {
 
 func newEditorMerger() editor.Merger {
 	return integrations.GitMerger{}
+}
+
+func newEditorGitRuntime() editor.GitRuntime {
+	return integrations.GitInfoRuntime{}
 }
 
 func newEditorClipboard() editor.Clipboard {
@@ -76,6 +79,7 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 			integrations.FileUndoStore{},
 		),
 		LanguageRuntime: languageRuntime,
+		GitRuntime:      newEditorGitRuntime(),
 	}
 	if clipboard := newEditorClipboard(); clipboard != nil {
 		runtimeServices.SystemClipboard = clipboard
@@ -127,17 +131,17 @@ func toEditorHighlightSpans(spans map[int][]treesitter.HighlightSpan) map[int][]
 	return editorSpans
 }
 
-func syncEditorRepoState(ed *editor.Editor, gitPath string, sessionMgr *session.Manager) {
-	ed.SetGitBranch(gitinfo.Branch(gitPath))
-	gitRoot, mainBranch := repoState(gitPath, sessionMgr)
+func syncEditorRepoState(ed *editor.Editor, gitPath string, sessionMgr *session.Manager, gitRuntime editor.GitRuntime) {
+	ed.SetGitBranch(gitRuntime.Branch(gitPath))
+	gitRoot, mainBranch := repoState(gitPath, sessionMgr, gitRuntime)
 	ed.SetGitRoot(gitRoot)
 	if mainBranch != "" {
 		ed.SetGitMainBranch(mainBranch)
 	}
 }
 
-func repoState(gitPath string, sessionMgr *session.Manager) (string, string) {
-	gitRoot := gitinfo.Root(gitPath)
+func repoState(gitPath string, sessionMgr *session.Manager, gitRuntime editor.GitRuntime) (string, string) {
+	gitRoot := gitRuntime.Root(gitPath)
 	if gitRoot == "" {
 		return "", ""
 	}
@@ -148,7 +152,7 @@ func repoState(gitPath string, sessionMgr *session.Manager) (string, string) {
 		}
 	}
 
-	mainBranch := gitinfo.MainBranch(gitPath)
+	mainBranch := gitRuntime.MainBranch(gitPath)
 	if mainBranch != "" && sessionMgr != nil {
 		sessionMgr.SetRepoMainBranch(gitRoot, mainBranch)
 	}
