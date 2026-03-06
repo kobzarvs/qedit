@@ -149,24 +149,9 @@ func (a *App) Run() error {
 	screen := ui.WrapScreen(s)
 	ed.Render(screen)
 	for {
-		ev := s.PollEvent()
-		isMouseScroll := false
-		switch ev := ev.(type) {
-		case *tcell.EventKey:
-			// Emergency exit: allow Ctrl+C to quit even if editor state is stuck.
-			if ev.Key() == tcell.KeyCtrlC {
-				return nil
-			}
-			if ed.HandleKey(ui.WrapKey(ev)) {
-				return nil
-			}
-		case *tcell.EventMouse:
-			ed.HandleMouse(ui.WrapMouse(ev))
-			isMouseScroll = true
-		case *tcell.EventResize:
-			s.Sync()
-		case *tcell.EventInterrupt:
-			// Layout updates are handled below.
+		quit, isMouseScroll := handleScreenEvent(s, ed, s.PollEvent())
+		if quit {
+			return nil
 		}
 		if !isMouseScroll {
 			ed.UpdateScroll()
