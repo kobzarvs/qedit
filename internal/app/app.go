@@ -8,7 +8,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 
 	"github.com/kobzarvs/qedit/internal/config"
-	"github.com/kobzarvs/qedit/internal/gitinfo"
 	"github.com/kobzarvs/qedit/internal/logger"
 	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/platform/keyboard"
@@ -173,36 +172,15 @@ func (a *App) Run() error {
 			ed.UpdateScroll()
 		}
 		controller.handleEditorRequests()
-		now := time.Now()
-		fileMonitor.ProcessWatcherEvents(now, fileChangeDebounce)
-		fileMonitor.HandleAutoReloadResults()
-		if runtimeState.openPath != "" {
-			fileMonitor.PollExternalChange(now, filePollInterval)
-		}
-		runtimeState.lastChangeTick, runtimeState.lastHighlightStart, runtimeState.lastHighlightEnd = syncVisibleHighlights(
+		runEditorRuntimeTick(
 			ed,
 			ts,
-			runtimeState.openPath,
-			runtimeState.langName,
-			runtimeState.highlightEnabled,
-			runtimeState.lastChangeTick,
-			runtimeState.lastHighlightStart,
-			runtimeState.lastHighlightEnd,
+			fileMonitor,
+			&runtimeState,
+			fileChangeDebounce,
+			filePollInterval,
+			&lastLayoutRaw,
 		)
-		layoutRaw := keyboard.CurrentLayoutRaw()
-		if layoutRaw != lastLayoutRaw {
-			lastLayoutRaw = layoutRaw
-			ed.SetKeyboardLayout(keyboard.CurrentLayout())
-		}
-		if runtimeState.gitPath != "" && time.Since(runtimeState.lastGitCheck) > 2*time.Second {
-			runtimeState.lastGitCheck = time.Now()
-			ed.SetGitBranch(gitinfo.Branch(runtimeState.gitPath))
-		}
-		if runtimeState.highlightExpected && !ed.HasHighlights() {
-			if runtimeState.openPath != ed.Filename() {
-				runtimeState.highlightExpected = false
-			}
-		}
 
 		ed.Render(screen)
 	}
