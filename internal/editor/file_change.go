@@ -14,6 +14,23 @@ const (
 	ExternalChangeDeleted
 )
 
+// ExternalMergeMode describes how external content should be applied.
+type ExternalMergeMode int
+
+const (
+	ExternalMergeModeNoChange ExternalMergeMode = iota
+	ExternalMergeModeReplace
+	ExternalMergeModeMerge
+)
+
+// ExternalMergePlan captures the state needed to merge on-disk content into the buffer.
+type ExternalMergePlan struct {
+	Mode   ExternalMergeMode
+	Base   string
+	Local  string
+	Remote string
+}
+
 type fileSnapshot struct {
 	modTime time.Time
 	size    int64
@@ -186,59 +203,95 @@ func (e *Editor) MarkExternalDirty() {
 	e.updateDirty()
 }
 
-// MergeExternalContent merges on-disk content into the current buffer.
-// Returns true if conflicts were produced.
-func (e *Editor) MergeExternalContent(remote string) (bool, error) {
+// PrepareExternalMerge determines how on-disk content should be applied to the current buffer.
+func (e *Editor) PrepareExternalMerge(remote string) ExternalMergePlan {
 	remoteNormalized := string(normalizeNewlines([]byte(remote)))
 	base := e.file.diskContent
 	if base == "" {
 		base = e.Content()
 	}
 	local := e.Content()
-	if local == remoteNormalized {
-		e.file.diskContent = remoteNormalized
-		e.file.externalChange = ExternalChangeNone
+	switch {
+	case local == remoteNormalized:
+		return ExternalMergePlan{
+			Mode:   ExternalMergeModeNoChange,
+			Base:   base,
+			Local:  local,
+			Remote: remoteNormalized,
+		}
+	case local == base:
+		return ExternalMergePlan{
+			Mode:   ExternalMergeModeReplace,
+			Base:   base,
+			Local:  local,
+			Remote: remoteNormalized,
+		}
+	default:
+		return ExternalMergePlan{
+			Mode:   ExternalMergeModeMerge,
+			Base:   base,
+			Local:  local,
+			Remote: remoteNormalized,
+		}
+	}
+}
+
+// ApplyExternalMergePlan applies a previously prepared external merge result to editor state.
+func (e *Editor) ApplyExternalMergePlan(plan ExternalMergePlan, merged string, conflict bool) {
+	e.file.externalChange = ExternalChangeNone
+	switch plan.Mode {
+	case ExternalMergeModeNoChange:
+		e.file.diskContent = plan.Remote
 		e.updateDirty()
 		_ = e.syncFileSnapshot()
-		return false, nil
-	}
-	if local == base {
-		e.file.externalChange = ExternalChangeNone
-		e.replaceBuffer(remoteNormalized, false)
+		return
+	case ExternalMergeModeReplace:
+		e.replaceBuffer(plan.Remote, false)
 		e.selectionActive = false
-		e.file.diskContent = remoteNormalized
+		e.file.diskContent = plan.Remote
 		e.updateDirty()
 		e.resetConflictBlocks()
 		_ = e.syncFileSnapshot()
+		return
+	case ExternalMergeModeMerge:
+		if conflict {
+			cleaned, blocks := buildConflictView(merged)
+			e.replaceBuffer(cleaned, true)
+			e.conflicts.blocks = blocks
+			e.conflicts.dirty = false
+			if e.mode == ModeNormal {
+				e.mode = ModeMerge
+			}
+		} else {
+			e.replaceBuffer(merged, true)
+			e.resetConflictBlocks()
+			if e.mode == ModeMerge {
+				e.mode = ModeNormal
+			}
+		}
+		e.selectionActive = false
+		e.file.diskContent = plan.Remote
+		e.updateDirty()
+		_ = e.syncFileSnapshot()
+	}
+}
+
+// MergeExternalContent merges on-disk content into the current buffer.
+// Returns true if conflicts were produced.
+func (e *Editor) MergeExternalContent(remote string) (bool, error) {
+	plan := e.PrepareExternalMerge(remote)
+	if plan.Mode != ExternalMergeModeMerge {
+		e.ApplyExternalMergePlan(plan, "", false)
 		return false, nil
 	}
 	if e.runtime.workspace == nil || !e.runtime.workspace.HasMerger() {
 		return false, errMergerUnavailable()
 	}
-	merged, conflict, err := e.runtime.workspace.Merge(base, local, remoteNormalized)
+	merged, conflict, err := e.runtime.workspace.Merge(plan.Base, plan.Local, plan.Remote)
 	if err != nil {
 		return false, err
 	}
-	e.file.externalChange = ExternalChangeNone
-	if conflict {
-		cleaned, blocks := buildConflictView(merged)
-		e.replaceBuffer(cleaned, true)
-		e.conflicts.blocks = blocks
-		e.conflicts.dirty = false
-		if e.mode == ModeNormal {
-			e.mode = ModeMerge
-		}
-	} else {
-		e.replaceBuffer(merged, true)
-		e.resetConflictBlocks()
-		if e.mode == ModeMerge {
-			e.mode = ModeNormal
-		}
-	}
-	e.selectionActive = false
-	e.file.diskContent = remoteNormalized
-	e.updateDirty()
-	_ = e.syncFileSnapshot()
+	e.ApplyExternalMergePlan(plan, merged, conflict)
 	return conflict, nil
 }
 

@@ -77,7 +77,7 @@ func newEditorRuntime(
 		}
 	}
 
-	rt.fileMonitor = newExternalFileMonitor(screen, ed, fileStore, opts.AutoReloadMaxBytes, autoReloadRetries, opts.AutoReloadStabilizeDelay)
+	rt.fileMonitor = newExternalFileMonitor(screen, ed, fileStore, newEditorMerger(), opts.AutoReloadMaxBytes, autoReloadRetries, opts.AutoReloadStabilizeDelay)
 	if rt.state.openPath != "" {
 		rt.fileMonitor.Watch(rt.state.openPath)
 	}

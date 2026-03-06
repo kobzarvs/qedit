@@ -37,13 +37,15 @@ type externalFileMonitor struct {
 	autoReloadPending bool
 	autoReloadResults chan autoReloadResult
 	fileStore         editor.FileStore
+	merger            editor.Merger
 }
 
-func newExternalFileMonitor(screen tcell.Screen, ed *editor.Editor, fileStore editor.FileStore, autoReloadMaxBytes int64, autoReloadRetries int, autoReloadStabilizeDelay time.Duration) *externalFileMonitor {
+func newExternalFileMonitor(screen tcell.Screen, ed *editor.Editor, fileStore editor.FileStore, merger editor.Merger, autoReloadMaxBytes int64, autoReloadRetries int, autoReloadStabilizeDelay time.Duration) *externalFileMonitor {
 	return &externalFileMonitor{
 		screen:                   screen,
 		ed:                       ed,
 		fileStore:                fileStore,
+		merger:                   merger,
 		autoReloadMaxBytes:       autoReloadMaxBytes,
 		autoReloadRetries:        autoReloadRetries,
 		autoReloadStabilizeDelay: autoReloadStabilizeDelay,
@@ -295,13 +297,25 @@ func (m *externalFileMonitor) HandleAutoReloadResults() {
 			if res.err != nil {
 				m.ed.SetExternalChange(editor.ExternalChangeModified)
 				m.ed.SetStatusMessage("auto reload failed: " + res.err.Error())
-			} else if conflict, err := m.ed.MergeExternalContent(string(res.data)); err != nil {
-				m.ed.SetExternalChange(editor.ExternalChangeModified)
-				m.ed.SetStatusMessage("auto reload failed: " + err.Error())
-			} else if conflict {
-				m.ed.SetStatusMessage("auto reload merged with conflicts")
 			} else {
-				m.ed.SetStatusMessage("auto reload complete")
+				plan := m.ed.PrepareExternalMerge(string(res.data))
+				if plan.Mode != editor.ExternalMergeModeMerge {
+					m.ed.ApplyExternalMergePlan(plan, "", false)
+					m.ed.SetStatusMessage("auto reload complete")
+				} else if m.merger == nil {
+					m.ed.SetExternalChange(editor.ExternalChangeModified)
+					m.ed.SetStatusMessage("auto reload failed: merger unavailable")
+				} else if merged, conflict, err := m.merger.Merge(plan.Base, plan.Local, plan.Remote); err != nil {
+					m.ed.SetExternalChange(editor.ExternalChangeModified)
+					m.ed.SetStatusMessage("auto reload failed: " + err.Error())
+				} else {
+					m.ed.ApplyExternalMergePlan(plan, merged, conflict)
+					if conflict {
+						m.ed.SetStatusMessage("auto reload merged with conflicts")
+					} else {
+						m.ed.SetStatusMessage("auto reload complete")
+					}
+				}
 			}
 		}
 		if m.autoReloadPending && m.ed.AutoReloadOnChanges() {
