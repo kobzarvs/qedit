@@ -278,7 +278,7 @@ func (e *Editor) swapLines(a, b int) bool {
 	lineB := e.text.Line(b)
 	_ = e.text.ReplaceLine(a, lineB)
 	_ = e.text.ReplaceLine(b, lineA)
-	e.lastEdit.Valid = false
+	e.change.lastEdit.Valid = false
 	return true
 }
 func runeByteLen(r rune) int {
@@ -330,7 +330,7 @@ func (e *Editor) recordTextEdit(start, oldEnd, newEnd Cursor, insertedBytes int)
 	if newEnd.Row == start.Row {
 		newEndColBytes = startColBytes + insertedBytes
 	}
-	e.lastEdit = TextEdit{
+	e.change.lastEdit = TextEdit{
 		Valid:          true,
 		StartByte:      startByte,
 		OldEndByte:     oldEndByte,

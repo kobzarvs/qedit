@@ -243,7 +243,7 @@ func (e *Editor) deleteSelection(start, end Cursor, restoreSelectionOnUndo bool)
 	e.finishUndoGroup()
 
 	// Record text edit for tree-sitter
-	e.lastEdit = TextEdit{
+	e.change.lastEdit = TextEdit{
 		Valid:          true,
 		StartByte:      startByte,
 		OldEndByte:     oldEndByte,
@@ -262,7 +262,7 @@ func (e *Editor) deleteSelection(start, end Cursor, restoreSelectionOnUndo bool)
 
 	e.cursor = start
 	e.clearSelection()
-	e.changeTick++
+	e.change.tick++
 	e.updateDirty()
 }
 
@@ -293,7 +293,7 @@ func (e *Editor) deleteWordLeft() {
 			startByte, startColBytes := e.byteOffset(pos)
 			oldEndByte := startByte + 1 // +1 for newline
 
-			e.lastEdit = TextEdit{
+			e.change.lastEdit = TextEdit{
 				Valid:          true,
 				StartByte:      startByte,
 				OldEndByte:     oldEndByte,
@@ -350,7 +350,7 @@ func (e *Editor) deleteWordLeft() {
 	oldEndByte, oldEndColBytes := e.byteOffset(Cursor{Row: e.cursor.Row, Col: endCol})
 
 	// Record text edit for tree-sitter
-	e.lastEdit = TextEdit{
+	e.change.lastEdit = TextEdit{
 		Valid:          true,
 		StartByte:      startByte,
 		OldEndByte:     oldEndByte,
@@ -394,7 +394,7 @@ func (e *Editor) deleteWordRight() {
 			startByte, startColBytes := e.byteOffset(e.cursor)
 			oldEndByte := startByte + 1 // +1 for newline
 
-			e.lastEdit = TextEdit{
+			e.change.lastEdit = TextEdit{
 				Valid:          true,
 				StartByte:      startByte,
 				OldEndByte:     oldEndByte,
@@ -444,7 +444,7 @@ func (e *Editor) deleteWordRight() {
 	oldEndByte, oldEndColBytes := e.byteOffset(Cursor{Row: e.cursor.Row, Col: endCol})
 
 	// Record text edit for tree-sitter
-	e.lastEdit = TextEdit{
+	e.change.lastEdit = TextEdit{
 		Valid:          true,
 		StartByte:      startByte,
 		OldEndByte:     oldEndByte,
@@ -542,7 +542,7 @@ func (e *Editor) indentSelection() {
 		e.appendUndo(action{kind: actionDeleteRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
 	}
 	e.finishUndoGroup()
-	e.lastEdit.Valid = false
+	e.change.lastEdit.Valid = false
 
 	// Adjust cursor and selection columns - they shift by 1 for affected lines
 	if e.cursor.Row >= start.Row && e.cursor.Row <= endRow {
@@ -569,7 +569,7 @@ func (e *Editor) indentCurrentLine() {
 	_ = e.text.ReplaceLine(row, newLine)
 	e.recordUndo(action{kind: actionDeleteRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
 	e.cursor.Col++
-	e.lastEdit.Valid = false
+	e.change.lastEdit.Valid = false
 }
 func (e *Editor) unindentSelection() {
 	start, end, hasSelection := e.selectionRange()
@@ -630,7 +630,7 @@ func (e *Editor) unindentSelection() {
 		}
 	}
 	e.finishUndoGroup()
-	e.lastEdit.Valid = false
+	e.change.lastEdit.Valid = false
 
 	// Adjust cursor column
 	if cursorLineRemoved > 0 {
@@ -807,7 +807,7 @@ func (e *Editor) pasteAfter() {
 		e.text.Insert(index, insert)
 		e.cursor.Row++
 		e.cursor.Col = 0
-		e.lastEdit.Valid = false
+		e.change.lastEdit.Valid = false
 	}
 }
 
@@ -836,7 +836,7 @@ func (e *Editor) pasteBefore() {
 		index := e.text.LineStartIndex(e.cursor.Row)
 		e.text.Insert(index, insert)
 		e.cursor.Col = 0
-		e.lastEdit.Valid = false
+		e.change.lastEdit.Valid = false
 	}
 }
 
@@ -873,7 +873,7 @@ func (e *Editor) openAbove() {
 	e.cursor.Col = len(indent)
 	e.mode = ModeInsert
 	e.saveLineState()
-	e.lastEdit.Valid = false
+	e.change.lastEdit.Valid = false
 }
 
 // insertLineAboveCursor inserts an empty line at cursor position,
@@ -918,7 +918,7 @@ func (e *Editor) insertLineAboveCursor() {
 
 	// Cursor stays at same row (now on the new indented line)
 	e.cursor.Col = len(indent)
-	e.lastEdit.Valid = false
+	e.change.lastEdit.Valid = false
 }
 
 // Helix-style append (a) - move right and enter insert
@@ -1327,7 +1327,7 @@ func (e *Editor) toggleLineComment() {
 
 	e.finishUndoGroup()
 	e.dirty = true
-	e.lastEdit.Valid = false
+	e.change.lastEdit.Valid = false
 }
 func (e *Editor) replaceBuffer(text string, markDirty bool) {
 	e.text = NewTextBufferFromString(text)
@@ -1352,8 +1352,8 @@ func (e *Editor) replaceBuffer(text string, markDirty bool) {
 	} else {
 		e.savePoint = 0
 	}
-	e.lastEdit.Valid = false
-	e.changeTick++
+	e.change.lastEdit.Valid = false
+	e.change.tick++
 	e.updateDirty()
 	e.resetConflictBlocks()
 }

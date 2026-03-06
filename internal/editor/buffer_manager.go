@@ -227,8 +227,8 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		searchMatchIndex:    e.searchMatchIndex,
 		mode:                e.mode,
 		highlight:           e.highlight,
-		changeTick:          e.changeTick,
-		lastEdit:            e.lastEdit,
+		changeTick:          e.change.tick,
+		lastEdit:            e.change.lastEdit,
 		conflictBlocks:      e.conflictBlocks,
 		conflictBlocksDirty: e.conflictBlocksDirty,
 		clipboard:           e.clipboard,
@@ -259,8 +259,8 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.searchMatchIndex = bs.searchMatchIndex
 	e.mode = bs.mode
 	e.highlight = bs.highlight
-	e.changeTick = bs.changeTick
-	e.lastEdit = bs.lastEdit
+	e.change.tick = bs.changeTick
+	e.change.lastEdit = bs.lastEdit
 	e.conflictBlocks = bs.conflictBlocks
 	e.conflictBlocksDirty = bs.conflictBlocksDirty
 	e.clipboard = bs.clipboard

@@ -461,8 +461,7 @@ type Editor struct {
 	ui                           editorUIFeedbackState
 	git                          editorGitState
 	highlight                    editorHighlightState
-	changeTick                   uint64
-	lastEdit                     TextEdit
+	change                       editorChangeState
 	branchPicker                 branchPickerState
 	sidebar                      *Sidebar
 	sidebarStyles                SidebarStyles

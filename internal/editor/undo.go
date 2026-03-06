@@ -35,7 +35,7 @@ func (e *Editor) Undo() {
 		inv.group = act.group
 		e.redo = append(e.redo, inv)
 	}
-	e.changeTick++
+	e.change.tick++
 	e.updateDirty()
 	e.setUndoRedoEdit(minRow, linesBefore)
 }
@@ -66,7 +66,7 @@ func (e *Editor) Redo() {
 		inv.group = act.group
 		e.undo = append(e.undo, inv)
 	}
-	e.changeTick++
+	e.change.tick++
 	e.updateDirty()
 	e.setUndoRedoEdit(minRow, linesBefore)
 }
@@ -83,7 +83,7 @@ func (e *Editor) setUndoRedoEdit(minRow, linesBefore int) {
 	} else if delta < 0 {
 		oldEnd = minRow - delta
 	}
-	e.lastEdit = TextEdit{
+	e.change.lastEdit = TextEdit{
 		Valid:     true,
 		StartRow:  minRow,
 		OldEndRow: oldEnd,
@@ -166,7 +166,7 @@ func (e *Editor) recordUndo(act action) {
 	act.group = e.undoGroup
 	e.undo = append(e.undo, act)
 	e.redo = e.redo[:0]
-	e.changeTick++
+	e.change.tick++
 	e.updateDirty()
 }
 
@@ -186,7 +186,7 @@ func (e *Editor) appendUndo(act action) {
 // finishUndoGroup clears redo and updates state after a group of undo actions.
 func (e *Editor) finishUndoGroup() {
 	e.redo = e.redo[:0]
-	e.changeTick++
+	e.change.tick++
 	e.updateDirty()
 }
 func (e *Editor) updateDirty() {

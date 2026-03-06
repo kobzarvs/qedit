@@ -115,7 +115,7 @@ func (e *Editor) SetStatusMessage(msg string) {
 	e.Notify(msg)
 }
 func (e *Editor) ChangeTick() uint64 {
-	return e.changeTick
+	return e.change.tick
 }
 func (e *Editor) UpdateScroll() {
 	if e.interaction.freeScroll {
@@ -124,20 +124,20 @@ func (e *Editor) UpdateScroll() {
 	e.ensureCursorVisible(e.viewHeightCached())
 }
 func (e *Editor) ConsumeLastEdit() (TextEdit, bool) {
-	if !e.lastEdit.Valid {
+	if !e.change.lastEdit.Valid {
 		return TextEdit{}, false
 	}
-	edit := e.lastEdit
-	e.lastEdit.Valid = false
+	edit := e.change.lastEdit
+	e.change.lastEdit.Valid = false
 	return edit, true
 }
 
 // PeekLastEdit returns the last edit info without consuming it.
 func (e *Editor) PeekLastEdit() (TextEdit, bool) {
-	if !e.lastEdit.Valid {
+	if !e.change.lastEdit.Valid {
 		return TextEdit{}, false
 	}
-	return e.lastEdit, true
+	return e.change.lastEdit, true
 }
 func (e *Editor) LineCount() int {
 	if e.text == nil {
