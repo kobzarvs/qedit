@@ -37,6 +37,9 @@ func New(opts Options) *Editor {
 			tabWidth:       tabWidth,
 			lineNumberMode: lineNumberMode,
 		},
+		profile: editorProfileState{
+			name: normalizeBehaviorProfileName(opts.Profile),
+		},
 		file: editorFileState{
 			autoReloadOnChanges: opts.AutoReloadOnChanges,
 		},
@@ -52,6 +55,7 @@ func New(opts Options) *Editor {
 		runtime: editorRuntimeDeps{
 			persistence: NewStoreBackedPersistenceRuntime(opts.SessionStore, nil, nil),
 		},
+		behaviorProfiles: newBehaviorProfileRegistry(),
 		sidebarModes:     newSidebarModeRegistry(),
 		commands:         newCommandRegistry(),
 		formatters:       newFormatterRegistry(),
@@ -69,11 +73,13 @@ func New(opts Options) *Editor {
 		},
 		buffers: NewBufferManager(),
 	}
+	e.registerBuiltInBehaviorProfiles()
 	e.registerBuiltInSidebarModes()
 	e.registerBuiltInCommands()
 	e.registerBuiltInFormatters()
 	e.registerBuiltInLanguageFeatures()
 	e.registerBuiltInGitFeatures()
+	e.SetBehaviorProfile(e.profile.name)
 	e.SetStyles(defaultEditorStyles())
 	return e
 }

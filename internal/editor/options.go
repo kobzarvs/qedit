@@ -3,6 +3,7 @@ package editor
 // Options configures editor behavior without coupling to external config packages.
 type Options struct {
 	TabWidth             int
+	Profile              string
 	LineNumbers          string
 	GitBranchSymbol      string
 	SidebarWidth         string

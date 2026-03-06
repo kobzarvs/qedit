@@ -17,20 +17,7 @@ func (e *Editor) HandleKey(ev EventKey) bool {
 		return e.handleSidebarKey(ev)
 	}
 
-	switch e.mode {
-	case ModeInsert:
-		return e.handleInsert(ev)
-	case ModeCommand:
-		return e.handleCommand(ev)
-	case ModeBranchPicker:
-		return e.handleBranchPicker(ev)
-	case ModeSearch:
-		return e.handleSearch(ev)
-	case ModeMerge:
-		return e.handleMerge(ev)
-	default:
-		return e.handleNormal(ev)
-	}
+	return e.handleProfileKey(ev)
 }
 
 func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {

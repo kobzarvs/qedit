@@ -50,6 +50,7 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 	cmdHistoryPath, searchHistoryPath := editorHistoryPaths()
 	ed := editor.New(editor.Options{
 		TabWidth:             cfg.Editor.TabWidth,
+		Profile:              cfg.Editor.Profile,
 		LineNumbers:          cfg.Editor.LineNumbers,
 		GitBranchSymbol:      cfg.Editor.GitBranchSymbol,
 		SidebarWidth:         cfg.Editor.SidebarWidth,

@@ -15,6 +15,7 @@ type Keymap struct {
 
 type EditorOptions struct {
 	TabWidth              int    `toml:"tab-width"`
+	Profile               string `toml:"profile"`
 	LineNumbers           string `toml:"line-numbers"`
 	GitBranchSymbol       string `toml:"git-branch-symbol"`
 	SidebarWidth          string `toml:"sidebar-width"`
@@ -111,6 +112,7 @@ func Default() Config {
 	return Config{
 		Editor: EditorOptions{
 			TabWidth:              4,
+			Profile:               "helix",
 			LineNumbers:           "absolute",
 			GitBranchSymbol:       "git:",
 			SidebarWidth:          "30",

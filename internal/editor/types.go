@@ -401,6 +401,7 @@ type Editor struct {
 	styleNotificationBright      Style
 	notificationFadeStyles       []Style
 	display                      editorDisplayState
+	profile                      editorProfileState
 	ui                           editorUIFeedbackState
 	viewport                     editorViewportState
 	git                          editorGitState
@@ -409,6 +410,7 @@ type Editor struct {
 	change                       editorChangeState
 	branchPicker                 branchPickerState
 	sidebar                      *Sidebar
+	behaviorProfiles             behaviorProfileRegistry
 	sidebarModes                 sidebarModeRegistry
 	sidebarStyles                SidebarStyles
 	formatters                   formatterRegistry
