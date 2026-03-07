@@ -589,7 +589,7 @@ func TestHugeFileBufferLoadsPartialIndexCacheAndResumes(t *testing.T) {
 	}
 }
 
-func TestHugeFileBufferPrefersByteAnchorsForLongLines(t *testing.T) {
+func TestHugeFileBufferPrefersPageAnchorsForLongLines(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	prevAnchorSpacing := hugeFileByteAnchorSpacingOverride
 	hugeFileInitialSampleBytes = 0
@@ -625,17 +625,20 @@ func TestHugeFileBufferPrefersByteAnchorsForLongLines(t *testing.T) {
 	defer buf.Close()
 
 	checkpoint := buf.nearestCheckpoint(10)
-	byteAnchor := buf.nearestByteAnchor(10)
+	pageAnchor := buf.nearestPageAnchor(10)
 	scanAnchor := buf.scanStartAnchor(10)
 
 	if checkpoint.offset != 0 {
 		t.Fatalf("checkpoint offset = %d, want 0 without intermediate line checkpoints", checkpoint.offset)
 	}
-	if byteAnchor.offset <= 0 {
-		t.Fatalf("expected byte anchors to advance past offset 0")
+	if pageAnchor.offset <= 0 {
+		t.Fatalf("expected page anchors to advance past offset 0")
 	}
-	if scanAnchor.offset != byteAnchor.offset {
-		t.Fatalf("scan anchor offset = %d, want byte anchor offset %d", scanAnchor.offset, byteAnchor.offset)
+	if scanAnchor.offset != pageAnchor.offset {
+		t.Fatalf("scan anchor offset = %d, want page anchor offset %d", scanAnchor.offset, pageAnchor.offset)
+	}
+	if scanAnchor.lineStart != pageAnchor.lineStart {
+		t.Fatalf("scan anchor lineStart = %d, want page anchor lineStart %d", scanAnchor.lineStart, pageAnchor.lineStart)
 	}
 }
 

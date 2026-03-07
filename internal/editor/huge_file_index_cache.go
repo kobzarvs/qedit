@@ -7,11 +7,12 @@ import (
 	"strings"
 )
 
-const hugeFileIndexCacheVersion = 2
+const hugeFileIndexCacheVersion = 3
 
 type hugeFileCachedIndex struct {
 	Checkpoints        []hugeFileCheckpoint
 	ByteAnchors        []hugeFileCheckpoint
+	PageAnchors        []hugeFilePageAnchor
 	LineCount          int
 	EstimatedLineCount int
 	FullyIndexed       bool
@@ -26,6 +27,7 @@ type hugeFileIndexCache struct {
 	FullyIndexed       bool                 `json:"fully_indexed"`
 	Checkpoints        []hugeFileCheckpoint `json:"checkpoints"`
 	ByteAnchors        []hugeFileCheckpoint `json:"byte_anchors,omitempty"`
+	PageAnchors        []hugeFilePageAnchor `json:"page_anchors,omitempty"`
 }
 
 func loadHugeFileIndexCache(filePath string, meta FileMetadata) (hugeFileCachedIndex, bool) {
@@ -60,13 +62,14 @@ func loadHugeFileIndexCache(filePath string, meta FileMetadata) (hugeFileCachedI
 	return hugeFileCachedIndex{
 		Checkpoints:        cache.Checkpoints,
 		ByteAnchors:        ensureHugeFileAnchors(cache.ByteAnchors),
+		PageAnchors:        ensureHugeFilePageAnchors(cache.PageAnchors),
 		LineCount:          cache.LineCount,
 		EstimatedLineCount: estimated,
 		FullyIndexed:       cache.FullyIndexed,
 	}, true
 }
 
-func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints, byteAnchors []hugeFileCheckpoint, lineCount, estimatedLineCount int, fullyIndexed bool) error {
+func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints, byteAnchors []hugeFileCheckpoint, pageAnchors []hugeFilePageAnchor, lineCount, estimatedLineCount int, fullyIndexed bool) error {
 	cachePath := hugeFileIndexCachePath(filePath)
 	if cachePath == "" {
 		return nil
@@ -84,6 +87,7 @@ func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints, byt
 		FullyIndexed:       fullyIndexed,
 		Checkpoints:        checkpoints,
 		ByteAnchors:        ensureHugeFileAnchors(byteAnchors),
+		PageAnchors:        ensureHugeFilePageAnchors(pageAnchors),
 	}
 	data, err := json.Marshal(cache)
 	if err != nil {
@@ -100,6 +104,16 @@ func ensureHugeFileAnchors(anchors []hugeFileCheckpoint) []hugeFileCheckpoint {
 		return anchors
 	}
 	return append([]hugeFileCheckpoint{{row: 0, offset: 0}}, anchors...)
+}
+
+func ensureHugeFilePageAnchors(anchors []hugeFilePageAnchor) []hugeFilePageAnchor {
+	if len(anchors) == 0 {
+		return []hugeFilePageAnchor{{row: 0, offset: 0, lineStart: 0}}
+	}
+	if anchors[0].row == 0 && anchors[0].offset == 0 && anchors[0].lineStart == 0 {
+		return anchors
+	}
+	return append([]hugeFilePageAnchor{{row: 0, offset: 0, lineStart: 0}}, anchors...)
 }
 
 func hugeFileIndexCachePath(filePath string) string {
