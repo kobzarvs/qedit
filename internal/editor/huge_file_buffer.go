@@ -949,6 +949,150 @@ func (b *HugeFileBuffer) LineInfo(row int) (hugeFileLineInfo, bool) {
 	return info, true
 }
 
+func (b *HugeFileBuffer) LineSegment(row, startCol, maxCols int) ([]rune, bool) {
+	if b == nil || b.reader == nil {
+		return nil, false
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 {
+		return nil, false
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= lineCount {
+		row = lineCount - 1
+	}
+	if maxCols <= 0 {
+		return []rune{}, true
+	}
+
+	info, ok := b.LineInfo(row)
+	if !ok || !info.asciiOnly || info.hasTabs {
+		return nil, false
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	if startCol > info.runeLen {
+		startCol = info.runeLen
+	}
+	endCol := startCol + maxCols
+	if endCol > info.runeLen {
+		endCol = info.runeLen
+	}
+	if endCol <= startCol {
+		return []rune{}, true
+	}
+
+	if cached, ok := b.cachedLine(row); ok {
+		if startCol >= len(cached) {
+			return []rune{}, true
+		}
+		if endCol > len(cached) {
+			endCol = len(cached)
+		}
+		return append([]rune(nil), cached[startCol:endCol]...), true
+	}
+
+	if page, ok := b.cachedPageData(row); ok {
+		if segment, ok := b.cachedPageLineSegment(row, page, startCol, endCol); ok {
+			return segment, true
+		}
+	}
+
+	span, err := b.resolveLineSpan(row)
+	if err != nil {
+		return nil, false
+	}
+	if err := b.cachePageDataFromReader(b.reader, row); err == nil {
+		if page, ok := b.cachedPageData(row); ok {
+			if segment, ok := b.cachedPageLineSegment(row, page, startCol, endCol); ok {
+				return segment, true
+			}
+		}
+	}
+
+	readStart := span.start + int64(startCol)
+	readLen := endCol - startCol
+	if readStart < span.start {
+		readStart = span.start
+	}
+	if readLen <= 0 {
+		return []rune{}, true
+	}
+	if _, err := b.reader.Seek(readStart, io.SeekStart); err != nil {
+		return nil, false
+	}
+	data := make([]byte, readLen)
+	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, false
+	}
+	segment := make([]rune, len(data))
+	for i, ch := range data {
+		segment[i] = rune(ch)
+	}
+	return segment, true
+}
+
+func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
+	if b == nil || b.reader == nil {
+		return nil, false
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 {
+		return nil, false
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= lineCount {
+		row = lineCount - 1
+	}
+	if maxBytes <= 0 {
+		return []rune{}, true
+	}
+
+	if cached, ok := b.cachedLine(row); ok {
+		if len(cached) <= maxBytes {
+			return append([]rune(nil), cached...), true
+		}
+		return append([]rune(nil), cached[:maxBytes]...), true
+	}
+	if page, ok := b.cachedPageData(row); ok {
+		if prefix, ok := b.cachedPageLinePrefix(row, page, maxBytes); ok {
+			return prefix, true
+		}
+	}
+	span, err := b.resolveLineSpan(row)
+	if err != nil {
+		return nil, false
+	}
+	if err := b.cachePageDataFromReader(b.reader, row); err == nil {
+		if page, ok := b.cachedPageData(row); ok {
+			if prefix, ok := b.cachedPageLinePrefix(row, page, maxBytes); ok {
+				return prefix, true
+			}
+		}
+	}
+
+	readLen := span.end - span.start
+	if readLen > int64(maxBytes) {
+		readLen = int64(maxBytes)
+	}
+	if readLen <= 0 {
+		return []rune{}, true
+	}
+	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
+		return nil, false
+	}
+	data := make([]byte, readLen)
+	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, false
+	}
+	return []rune(string(data)), true
+}
+
 func (b *HugeFileBuffer) LineEnding(row int) string {
 	if b == nil || b.reader == nil {
 		return ""
@@ -2294,6 +2438,46 @@ func (b *HugeFileBuffer) cachedPageLine(row int, span hugeFileLineSpan) ([]rune,
 	b.storeCachedLine(row, line)
 	b.storeCachedLineInfo(row, analyzeHugeFileLineData(lineData))
 	return line, true
+}
+
+func (b *HugeFileBuffer) cachedPageLineSegment(row int, page hugeFileCachedPageData, startCol, endCol int) ([]rune, bool) {
+	if row < page.startRow || row > page.endRow {
+		return nil, false
+	}
+	span, ok := page.spanForRow(row)
+	if !ok {
+		return nil, false
+	}
+	relStart := span.start - page.startOffset + int64(startCol)
+	relEnd := span.start - page.startOffset + int64(endCol)
+	if relStart < 0 || relEnd < relStart || relEnd > int64(len(page.data)) {
+		return nil, false
+	}
+	data := page.data[relStart:relEnd]
+	segment := make([]rune, len(data))
+	for i, ch := range data {
+		segment[i] = rune(ch)
+	}
+	return segment, true
+}
+
+func (b *HugeFileBuffer) cachedPageLinePrefix(row int, page hugeFileCachedPageData, maxBytes int) ([]rune, bool) {
+	if row < page.startRow || row > page.endRow {
+		return nil, false
+	}
+	span, ok := page.spanForRow(row)
+	if !ok {
+		return nil, false
+	}
+	relStart := span.start - page.startOffset
+	relEnd := span.end - page.startOffset
+	if relStart < 0 || relEnd < relStart || relEnd > int64(len(page.data)) {
+		return nil, false
+	}
+	if limit := relStart + int64(maxBytes); relEnd > limit {
+		relEnd = limit
+	}
+	return []rune(string(page.data[relStart:relEnd])), true
 }
 
 func (b *HugeFileBuffer) cachedPageLineInfo(row int, span hugeFileLineSpan) (hugeFileLineInfo, bool) {

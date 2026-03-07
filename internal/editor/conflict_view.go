@@ -7,6 +7,8 @@ import (
 
 type conflictLineKind uint8
 
+const conflictMarkerProbeBytes = 256
+
 const (
 	conflictNone conflictLineKind = iota
 	conflictMarkerStart
@@ -103,7 +105,10 @@ func (e *Editor) ensureConflictBlocks() {
 	remoteLabel := ""
 	inBlock := false
 	for i := 0; i < lineCount; i++ {
-		line := e.line(i)
+		line, ok := e.hugeLinePrefix(i, conflictMarkerProbeBytes)
+		if !ok {
+			line = e.line(i)
+		}
 		kind, label := parseConflictMarker(line)
 		switch kind {
 		case conflictMarkerStart:

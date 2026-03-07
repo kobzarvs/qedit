@@ -343,7 +343,9 @@ func (e *Editor) setCursorFromEditorClick(screenX, contentY, editorX int) {
 		visualX = 0
 	}
 	col := 0
-	if line, ok := e.tryLine(row); ok {
+	if vc, ok := e.hugeVisualCol(row, visualX); ok {
+		col = vc
+	} else if line, ok := e.tryLine(row); ok {
 		col = visualToLogicalCol(line, visualX, e.display.tabWidth)
 	}
 

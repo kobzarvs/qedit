@@ -110,7 +110,9 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	row := e.cursor.Row + 1
 	col := 1
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-		if line, ok := e.tryLine(e.cursor.Row); ok {
+		if vc, ok := e.hugeVisualCol(e.cursor.Row, e.cursor.Col); ok {
+			col = vc + 1
+		} else if line, ok := e.tryLine(e.cursor.Row); ok {
 			col = visualCol(line, e.cursor.Col, e.display.tabWidth) + 1
 		} else {
 			col = e.cursor.Col + 1

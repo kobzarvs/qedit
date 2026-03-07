@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 func TestOpenHugeFileBufferIndexesLines(t *testing.T) {
@@ -1277,6 +1279,69 @@ func TestHugeFileLongLineHorizontalHelpersAvoidFullDecode(t *testing.T) {
 	}
 	if e.huge.buffer.hasCachedLine(0) {
 		t.Fatalf("expected returning to column 0 to avoid decoding full huge line")
+	}
+}
+
+func TestRenderHugeLongLineUsesVisibleSegment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge-long-line.txt")
+	content := strings.Repeat("a", 300000) + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+	defer e.closeHugeFileBuffer()
+
+	e.display.lineNumberMode = LineNumberOff
+	e.interaction.freeScroll = true
+	e.cursor = Cursor{Row: 0, Col: 299995}
+	e.viewport.scroll = 0
+	e.viewport.scrollX = 299990
+
+	e.huge.buffer.mu.Lock()
+	e.huge.buffer.lineCache = map[int][]rune{}
+	e.huge.buffer.cacheOrder = nil
+	e.huge.buffer.mu.Unlock()
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(20, 4)
+
+	e.Render(wrapScreen(s))
+
+	if e.huge.buffer.hasCachedLine(0) {
+		t.Fatalf("expected render to avoid decoding full huge line")
+	}
+
+	cells, w, _ := s.GetContents()
+	var b strings.Builder
+	for x := 0; x < w; x++ {
+		r := ' '
+		if len(cells[x].Runes) > 0 {
+			r = cells[x].Runes[0]
+		}
+		if r == ' ' {
+			r = '.'
+		}
+		b.WriteRune(r)
+	}
+	if got, want := b.String(), strings.Repeat("a", 10)+strings.Repeat(".", 10); got != want {
+		t.Fatalf("first row = %q, want %q", got, want)
 	}
 }
 

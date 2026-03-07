@@ -20,6 +20,7 @@ type hugeFileResolveCache struct {
 }
 
 const hugeFilePrimeViewportLines = 64
+const hugeFileViewportWarmLineLimit = 128 << 10
 
 func (e *Editor) hugeFileActive() bool {
 	return e.huge.active && e.huge.buffer != nil
@@ -40,11 +41,35 @@ func (e *Editor) prefetchHugeRows(startRow, count int) {
 	if startRow < 0 {
 		startRow = 0
 	}
+	if e.shouldSkipHugeViewportWarm(startRow, count) {
+		return
+	}
 	if !e.huge.buffer.CanPrefetchQuick(startRow, count) {
 		e.huge.buffer.WarmLines(startRow, count)
 		return
 	}
 	_ = e.huge.buffer.PrefetchLines(startRow, count)
+}
+
+func (e *Editor) shouldSkipHugeViewportWarm(startRow, count int) bool {
+	if !e.hugeFileActive() || count <= 0 {
+		return false
+	}
+	endRow := startRow + count - 1
+	checkRows := []int{startRow}
+	if e.cursor.Row >= startRow && e.cursor.Row <= endRow && e.cursor.Row != startRow {
+		checkRows = append(checkRows, e.cursor.Row)
+	}
+	for _, row := range checkRows {
+		info, ok := e.hugeLineInfo(row)
+		if !ok {
+			continue
+		}
+		if !info.hasTabs && info.runeLen > hugeFileViewportWarmLineLimit {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Editor) primeHugeViewport() {

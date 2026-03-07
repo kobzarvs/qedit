@@ -3,10 +3,24 @@ package editor
 import "fmt"
 
 func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx int) {
-	line := e.lineForDisplay(lineIdx)
-	if markerKind, _ := parseConflictMarker(line); markerKind != conflictNone {
-		e.drawConflictMarkerLine(s, y, x0+gutterWidth, x0+w)
-		return
+	line := []rune(nil)
+	logicalStart := 0
+	visualStart := 0
+	useSegment := false
+	if textWidth := w - gutterWidth; textWidth > 0 {
+		if segment, logical, visual, ok := e.hugeLineSegment(lineIdx, e.viewport.scrollX, textWidth); ok && !e.hasConflictBlocks() {
+			line = segment
+			logicalStart = logical
+			visualStart = visual
+			useSegment = true
+		}
+	}
+	if !useSegment {
+		line = e.lineForDisplay(lineIdx)
+		if markerKind, _ := parseConflictMarker(line); markerKind != conflictNone {
+			e.drawConflictMarkerLine(s, y, x0+gutterWidth, x0+w)
+			return
+		}
 	}
 	kind, _ := e.conflictLineInfo(lineIdx)
 	if kind == conflictNone {
@@ -119,7 +133,7 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 	if highlightActive {
 		spans = e.highlight.spans[lineIdx]
 	}
-	e.drawLine(s, y, x0+w, x0+gutterWidth, line, e.display.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.viewport.scrollX, kind)
+	e.drawLineSegment(s, y, x0+w, x0+gutterWidth, line, logicalStart, visualStart, e.display.tabWidth, selStart, selEnd, spans, highlightActive, e.searchMatches, lineIdx, e.searchMatchIndex, e.viewport.scrollX, kind)
 }
 
 func (e *Editor) renderFileTreePreview(s Screen, x0, viewHeight, width int) {

@@ -131,8 +131,12 @@ func (e *Editor) Render(s Screen) {
 			cursorVisible = false
 		}
 		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-			line := e.lineForDisplay(e.cursor.Row)
-			cx = editorX + gutterWidth + visualCol(line, e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
+			if vc, ok := e.hugeVisualCol(e.cursor.Row, e.cursor.Col); ok {
+				cx = editorX + gutterWidth + vc - e.viewport.scrollX
+			} else {
+				line := e.lineForDisplay(e.cursor.Row)
+				cx = editorX + gutterWidth + visualCol(line, e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
+			}
 		}
 		if cx < editorX+gutterWidth {
 			cx = editorX + gutterWidth
@@ -278,7 +282,11 @@ func (e *Editor) drawScrollIndicator(s Screen, x, y, height int, totalLines int,
 	}
 }
 func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int, scrollX int, conflictKind conflictLineKind) {
-	col := 0 // visual column (accounting for tabs)
+	e.drawLineSegment(s, y, w, startX, line, 0, 0, tabWidth, selStart, selEnd, spans, highlightActive, searchMatches, lineIdx, currentMatchIdx, scrollX, conflictKind)
+}
+
+func (e *Editor) drawLineSegment(s Screen, y, w, startX int, line []rune, logicalStart, visualStart, tabWidth int, selStart, selEnd int, spans []HighlightSpan, highlightActive bool, searchMatches []SearchMatch, lineIdx int, currentMatchIdx int, scrollX int, conflictKind conflictLineKind) {
+	col := visualStart // visual column (accounting for tabs)
 	if tabWidth < 1 {
 		tabWidth = 1
 	}
@@ -292,7 +300,8 @@ func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int,
 		fallbackStyle = fallbackStyle.Foreground(fg).Background(conflictBg)
 	}
 
-	for idx, r := range line {
+	for offset, r := range line {
+		idx := logicalStart + offset
 		// Calculate screen x from visual column and scrollX
 		x := startX + col - scrollX
 		if x >= w {

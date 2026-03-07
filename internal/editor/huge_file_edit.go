@@ -555,6 +555,61 @@ func (e *Editor) hugeLineInfo(row int) (hugeFileLineInfo, bool) {
 	return e.huge.buffer.LineInfo(ref.baseStart)
 }
 
+func (e *Editor) hugeLineSegment(row, startCol, maxCols int) ([]rune, int, int, bool) {
+	if !e.hugeFileActive() || e.huge.buffer == nil {
+		return nil, 0, 0, false
+	}
+	if maxCols <= 0 {
+		return []rune{}, startCol, startCol, true
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	ref, ok := e.hugeResolveLogicalRow(row)
+	if !ok {
+		return nil, 0, 0, false
+	}
+	if ref.patchIndex >= 0 {
+		return hugeOverlaySegment(e.huge.patches[ref.patchIndex].rows[ref.rowOffset].text, startCol, maxCols)
+	}
+	if line, ok := e.huge.edits[ref.baseStart]; ok {
+		return hugeOverlaySegment(line, startCol, maxCols)
+	}
+	info, ok := e.huge.buffer.LineInfo(ref.baseStart)
+	if !ok || !info.asciiOnly || info.hasTabs {
+		return nil, 0, 0, false
+	}
+	segment, ok := e.huge.buffer.LineSegment(ref.baseStart, startCol, maxCols)
+	if !ok {
+		return nil, 0, 0, false
+	}
+	return segment, startCol, startCol, true
+}
+
+func (e *Editor) hugeLinePrefix(row, maxBytes int) ([]rune, bool) {
+	if !e.hugeFileActive() || e.huge.buffer == nil {
+		return nil, false
+	}
+	ref, ok := e.hugeResolveLogicalRow(row)
+	if !ok {
+		return nil, false
+	}
+	if ref.patchIndex >= 0 {
+		line := e.huge.patches[ref.patchIndex].rows[ref.rowOffset].text
+		if len(line) <= maxBytes {
+			return append([]rune(nil), line...), true
+		}
+		return append([]rune(nil), line[:maxBytes]...), true
+	}
+	if line, ok := e.huge.edits[ref.baseStart]; ok {
+		if len(line) <= maxBytes {
+			return append([]rune(nil), line...), true
+		}
+		return append([]rune(nil), line[:maxBytes]...), true
+	}
+	return e.huge.buffer.LinePrefix(ref.baseStart, maxBytes)
+}
+
 func analyzeHugeRunes(line []rune) hugeFileLineInfo {
 	info := hugeFileLineInfo{
 		runeLen:   len(line),
@@ -569,6 +624,30 @@ func analyzeHugeRunes(line []rune) hugeFileLineInfo {
 		}
 	}
 	return info
+}
+
+func hugeOverlaySegment(line []rune, startCol, maxCols int) ([]rune, int, int, bool) {
+	if maxCols <= 0 {
+		return []rune{}, startCol, startCol, true
+	}
+	info := analyzeHugeRunes(line)
+	if info.hasTabs {
+		return nil, 0, 0, false
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	if startCol > len(line) {
+		startCol = len(line)
+	}
+	endCol := startCol + maxCols
+	if endCol > len(line) {
+		endCol = len(line)
+	}
+	if endCol <= startCol {
+		return []rune{}, startCol, startCol, true
+	}
+	return append([]rune(nil), line[startCol:endCol]...), startCol, startCol, true
 }
 
 func (e *Editor) hugeSetLine(row int, line []rune) bool {
