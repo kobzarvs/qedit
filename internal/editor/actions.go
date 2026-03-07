@@ -343,6 +343,7 @@ func (e *Editor) hugeFileAllowsAction(action string) bool {
 		actionEnterInsert, actionEnterNormal,
 		actionBackspace, actionNewline, actionDeleteChar,
 		actionUndo, actionRedo, actionSave,
+		actionOpenBelow, actionOpenAbove, actionInsertLineAbove,
 		actionSearchForward, actionSearchBackward,
 		actionSearchFuzzy, actionSearchRegex,
 		actionSearchNext, actionSearchPrev,

@@ -263,6 +263,47 @@ func TestHugeFileSaveWritesRowPatches(t *testing.T) {
 	}
 }
 
+func TestHugeFileSupportsOpenBelowAndOpenAbove(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "  alpha\nbeta\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.cursor = Cursor{Row: 0, Col: 0}
+	e.openBelow()
+	if got := string(e.line(1)); got != "  " {
+		t.Fatalf("line 1 after openBelow = %q, want %q", got, "  ")
+	}
+	if e.mode != ModeInsert {
+		t.Fatalf("mode after openBelow = %v, want %v", e.mode, ModeInsert)
+	}
+
+	e.mode = ModeNormal
+	e.cursor = Cursor{Row: 2, Col: 0}
+	e.openAbove()
+	if got := string(e.line(2)); got != "" {
+		t.Fatalf("line 2 after openAbove = %q, want empty", got)
+	}
+	if got := string(e.line(3)); got != "beta" {
+		t.Fatalf("line 3 after openAbove = %q, want %q", got, "beta")
+	}
+}
+
 func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")

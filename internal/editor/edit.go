@@ -895,6 +895,27 @@ func (e *Editor) openAbove() {
 		}
 	}
 
+	if e.hugeFileActive() {
+		e.startUndoGroup()
+		pos := Cursor{Row: e.cursor.Row, Col: 0}
+		if !e.splitLineAt(pos) {
+			return
+		}
+		e.appendUndo(action{kind: actionJoinLine, pos: pos})
+		e.cursor = Cursor{Row: pos.Row, Col: 0}
+		for _, r := range indent {
+			insertPos := e.cursor
+			if e.insertRuneAt(insertPos, r) {
+				e.appendUndo(action{kind: actionDeleteRune, pos: insertPos, r: r})
+			}
+		}
+		e.finishUndoGroup()
+		e.mode = ModeInsert
+		e.saveLineState()
+		e.change.lastEdit.Valid = false
+		return
+	}
+
 	// Insert new line above
 	insert := append([]rune(nil), indent...)
 	insert = append(insert, '\n')
@@ -935,6 +956,26 @@ func (e *Editor) insertLineAboveCursor() {
 	for col < visualX {
 		indent = append(indent, ' ')
 		col++
+	}
+
+	// Insert new line at cursor position, push current line down
+	if e.hugeFileActive() {
+		e.startUndoGroup()
+		pos := Cursor{Row: e.cursor.Row, Col: 0}
+		if !e.splitLineAt(pos) {
+			return
+		}
+		e.appendUndo(action{kind: actionJoinLine, pos: pos})
+		e.cursor = Cursor{Row: pos.Row, Col: 0}
+		for _, r := range indent {
+			insertPos := e.cursor
+			if e.insertRuneAt(insertPos, r) {
+				e.appendUndo(action{kind: actionDeleteRune, pos: insertPos, r: r})
+			}
+		}
+		e.finishUndoGroup()
+		e.change.lastEdit.Valid = false
+		return
 	}
 
 	// Insert new line at cursor position, push current line down
