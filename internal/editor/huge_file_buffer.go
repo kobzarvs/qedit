@@ -796,6 +796,13 @@ func (b *HugeFileBuffer) Line(row int) []rune {
 		}
 		return []rune(fmt.Sprintf("[read error: %v]", err))
 	}
+	if err := b.cachePageLinesFromReader(b.reader, row); err == nil {
+		if cached, ok := b.cachedLine(row); ok {
+			return cached
+		}
+	} else if !errors.Is(err, errHugeFileLineOutOfRange) {
+		return []rune(fmt.Sprintf("[read error: %v]", err))
+	}
 	length := span.end - span.start
 	if length < 0 {
 		length = 0
@@ -1113,6 +1120,13 @@ func (b *HugeFileBuffer) prefetchLinesFromReader(reader io.ReadSeeker, startRow,
 	if err := b.cacheLineSpansFromReader(reader, startRow, endRow); err != nil {
 		return err
 	}
+	return b.cacheLinesFromCachedSpans(reader, startRow, endRow)
+}
+
+func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRow, endRow int) error {
+	if b == nil || reader == nil {
+		return nil
+	}
 	startSpan, ok := b.peekLineSpan(startRow)
 	if !ok {
 		return nil
@@ -1344,6 +1358,44 @@ func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row 
 			return nil
 		}
 	}
+}
+
+func (b *HugeFileBuffer) cachePageLinesFromReader(reader io.ReadSeeker, row int) error {
+	if b == nil || reader == nil {
+		return nil
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 || row < 0 || row >= lineCount {
+		return errHugeFileLineOutOfRange
+	}
+	if b.hasCachedLine(row) {
+		return nil
+	}
+	if err := b.cachePageLineSpansFromReader(reader, row); err != nil && !errors.Is(err, errHugeFileLineOutOfRange) {
+		return err
+	}
+
+	start := b.nearestPageAnchor(row)
+	end, hasEnd := b.nextPageAnchor(row)
+	if !hasEnd {
+		endRow := row + hugeFileLinePrefetch
+		if endRow >= lineCount {
+			endRow = lineCount - 1
+		}
+		if err := b.cacheLineSpansFromReader(reader, row, endRow); err != nil {
+			return err
+		}
+		return b.cacheLinesFromCachedSpans(reader, row, endRow)
+	}
+
+	endRow := end.row
+	if endRow < start.row {
+		endRow = start.row
+	}
+	if endRow >= lineCount {
+		endRow = lineCount - 1
+	}
+	return b.cacheLinesFromCachedSpans(reader, start.row, endRow)
 }
 
 func (b *HugeFileBuffer) hasCachedLineSpans(startRow, endRow int) bool {
