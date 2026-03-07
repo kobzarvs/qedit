@@ -102,9 +102,10 @@ func (e *Editor) WriteHugeFileTo(w io.Writer) error {
 	br := bufio.NewReaderSize(reader, 256<<10)
 	row := 0
 	for {
-		lineBytes, err := br.ReadBytes('\n')
-		if len(lineBytes) > 0 {
-			if replacement, ok := edits[row]; ok {
+		replacement, edited := edits[row]
+		lineBytes, err := readHugeFileLine(br, w, edited)
+		if len(lineBytes) > 0 || edited {
+			if edited {
 				if _, writeErr := io.WriteString(w, replacement); writeErr != nil {
 					return writeErr
 				}
@@ -117,10 +118,6 @@ func (e *Editor) WriteHugeFileTo(w io.Writer) error {
 					if _, writeErr := io.WriteString(w, "\n"); writeErr != nil {
 						return writeErr
 					}
-				}
-			} else {
-				if _, writeErr := w.Write(lineBytes); writeErr != nil {
-					return writeErr
 				}
 			}
 			delete(edits, row)
@@ -144,6 +141,39 @@ func (e *Editor) WriteHugeFileTo(w io.Writer) error {
 		return errors.New("huge file save failed: unresolved edited rows")
 	}
 	return nil
+}
+
+func readHugeFileLine(r *bufio.Reader, w io.Writer, collect bool) ([]byte, error) {
+	if collect {
+		var line bytes.Buffer
+		for {
+			chunk, err := r.ReadSlice('\n')
+			if len(chunk) > 0 {
+				line.Write(chunk)
+			}
+			if err == nil || err == io.EOF {
+				return line.Bytes(), err
+			}
+			if !errors.Is(err, bufio.ErrBufferFull) {
+				return nil, err
+			}
+		}
+	}
+
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(chunk) > 0 {
+			if _, writeErr := w.Write(chunk); writeErr != nil {
+				return nil, writeErr
+			}
+		}
+		if err == nil || err == io.EOF {
+			return chunk, err
+		}
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return nil, err
+		}
+	}
 }
 
 func (e *Editor) WriteHugeFile(path string, store FileStore) error {
