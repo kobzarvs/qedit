@@ -1128,6 +1128,30 @@ func (b *HugeFileBuffer) rememberCheckpoint(row int, offset int64) {
 	}
 }
 
+func (b *HugeFileBuffer) observeScanOffset(row int, nextOffset, lineStart int64, nextPageAnchorOffset *int64) {
+	if b == nil || nextPageAnchorOffset == nil {
+		return
+	}
+	for *nextPageAnchorOffset > 0 && nextOffset >= *nextPageAnchorOffset {
+		b.appendPageAnchor(row, *nextPageAnchorOffset, lineStart)
+		*nextPageAnchorOffset += b.byteAnchorSpacing
+	}
+}
+
+func (b *HugeFileBuffer) observeScanLineBoundary(row int, nextOffset, lineStart int64, nextByteAnchorOffset, nextPageAnchorOffset *int64) {
+	if b == nil {
+		return
+	}
+	b.rememberCheckpoint(row, nextOffset)
+	if nextByteAnchorOffset != nil {
+		for *nextByteAnchorOffset > 0 && nextOffset >= *nextByteAnchorOffset {
+			b.appendByteAnchor(row, nextOffset)
+			*nextByteAnchorOffset += b.byteAnchorSpacing
+		}
+	}
+	b.observeScanOffset(row, nextOffset, lineStart, nextPageAnchorOffset)
+}
+
 func (b *HugeFileBuffer) PrefetchLines(startRow, count int) error {
 	return b.prefetchLinesFromReader(b.reader, startRow, count)
 }
@@ -1338,6 +1362,8 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 	currentRow := anchor.row
 	lineStart := anchor.lineStart
 	fileOffset := anchor.offset
+	nextByteAnchorOffset := b.nextByteAnchorOffset(anchor.offset)
+	nextPageAnchorOffset := b.nextPageAnchorOffset(anchor.offset)
 	buf := make([]byte, 64<<10)
 	pending := make([]hugeFileLineSpanEntry, 0, 256)
 
@@ -1357,7 +1383,9 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 		n, err := reader.Read(buf)
 		if n > 0 {
 			for i, ch := range buf[:n] {
+				nextOffset := fileOffset + int64(i) + 1
 				if ch != '\n' {
+					b.observeScanOffset(currentRow, nextOffset, lineStart, &nextPageAnchorOffset)
 					continue
 				}
 				pending = append(pending, hugeFileLineSpanEntry{
@@ -1368,16 +1396,17 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 					},
 				})
 				nextRow := currentRow + 1
-				nextOffset := fileOffset + int64(i) + 1
+				nextLineStart := nextOffset
 				if len(pending) >= 256 {
 					flushPending()
 				}
+				b.observeScanLineBoundary(nextRow, nextOffset, nextLineStart, &nextByteAnchorOffset, &nextPageAnchorOffset)
 				if currentRow >= endRow {
 					flushPending()
 					return nil
 				}
 				currentRow = nextRow
-				lineStart = nextOffset
+				lineStart = nextLineStart
 			}
 			fileOffset += int64(n)
 		}
@@ -1427,6 +1456,8 @@ func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row 
 	currentRow := start.row
 	lineStart := start.lineStart
 	fileOffset := start.offset
+	nextByteAnchorOffset := b.nextByteAnchorOffset(start.offset)
+	nextPageAnchorOffset := b.nextPageAnchorOffset(start.offset)
 	buf := make([]byte, 64<<10)
 	pending := make([]hugeFileLineSpanEntry, 0, 256)
 
@@ -1446,7 +1477,9 @@ func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row 
 		n, err := reader.Read(buf)
 		if n > 0 {
 			for i, ch := range buf[:n] {
+				nextOffset := fileOffset + int64(i) + 1
 				if ch != '\n' {
+					b.observeScanOffset(currentRow, nextOffset, lineStart, &nextPageAnchorOffset)
 					continue
 				}
 				pending = append(pending, hugeFileLineSpanEntry{
@@ -1456,12 +1489,15 @@ func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row 
 						end:   fileOffset + int64(i),
 					},
 				})
-				currentRow++
-				lineStart = fileOffset + int64(i) + 1
+				nextRow := currentRow + 1
+				nextLineStart := nextOffset
 				if len(pending) >= 256 {
 					flushPending()
 				}
-				if fileOffset+int64(i)+1 >= end.offset && currentRow > end.row {
+				b.observeScanLineBoundary(nextRow, nextOffset, nextLineStart, &nextByteAnchorOffset, &nextPageAnchorOffset)
+				currentRow = nextRow
+				lineStart = nextLineStart
+				if nextOffset >= end.offset && currentRow > end.row {
 					flushPending()
 					return nil
 				}

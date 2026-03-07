@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -808,6 +809,77 @@ func (s slowTestFileStore) ReadDir(path string) ([]DirEntry, error) {
 }
 func (s slowTestFileStore) IsNotExist(err error) bool { return realTestFileStore{}.IsNotExist(err) }
 
+type stagedSlowTestFileStore struct {
+	maxRead int
+	delay   time.Duration
+
+	mu        sync.Mutex
+	openCount int
+}
+
+func (s *stagedSlowTestFileStore) Open(path string) (io.ReadSeekCloser, error) {
+	s.mu.Lock()
+	s.openCount++
+	openCount := s.openCount
+	s.mu.Unlock()
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	if openCount == 1 {
+		return f, nil
+	}
+	return &slowReadSeekCloser{File: f, maxRead: s.maxRead, delay: s.delay}, nil
+}
+
+func (s *stagedSlowTestFileStore) Read(path string) ([]byte, error) { return os.ReadFile(path) }
+func (s *stagedSlowTestFileStore) Write(path string, data []byte) error {
+	return os.WriteFile(path, data, 0o644)
+}
+func (s *stagedSlowTestFileStore) WriteFrom(path string, src io.Reader) error {
+	data, err := io.ReadAll(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+func (s *stagedSlowTestFileStore) Stat(path string) (FileMetadata, error) {
+	return realTestFileStore{}.Stat(path)
+}
+func (s *stagedSlowTestFileStore) Abs(path string) (string, error) {
+	return realTestFileStore{}.Abs(path)
+}
+func (s *stagedSlowTestFileStore) HomeDir() (string, error) { return realTestFileStore{}.HomeDir() }
+func (s *stagedSlowTestFileStore) ReadDir(path string) ([]DirEntry, error) {
+	return realTestFileStore{}.ReadDir(path)
+}
+func (s *stagedSlowTestFileStore) IsNotExist(err error) bool {
+	return realTestFileStore{}.IsNotExist(err)
+}
+
+func stopHugeFileBackgroundIndex(t *testing.T, buf *HugeFileBuffer) {
+	t.Helper()
+	if buf == nil {
+		return
+	}
+	buf.mu.Lock()
+	cancel := buf.cancelIndex
+	indexDone := buf.indexDone
+	buf.mu.Unlock()
+	if cancel != nil {
+		close(cancel)
+	}
+	if indexDone != nil {
+		<-indexDone
+	}
+	buf.mu.Lock()
+	if buf.cancelIndex == cancel {
+		buf.cancelIndex = nil
+	}
+	buf.mu.Unlock()
+}
+
 func TestHugeFileBufferTryLineDefersFarRowsUntilIndexed(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 64
@@ -856,6 +928,64 @@ func TestHugeFileBufferTryLineDefersFarRowsUntilIndexed(t *testing.T) {
 	}
 	if !buf.CanPrefetchQuick(7000, 20) {
 		t.Fatalf("expected viewport prefetch to become available after indexing completes")
+	}
+}
+
+func TestHugeFileOnDemandScanDensifiesAnchors(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 200000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	store := &stagedSlowTestFileStore{maxRead: 128, delay: 2 * time.Millisecond}
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, store)
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	stopHugeFileBackgroundIndex(t, buf)
+
+	targetRow := 90000
+	beforeCheckpoint := buf.nearestCheckpoint(targetRow)
+	beforeByteAnchor := buf.nearestByteAnchor(targetRow)
+	beforePageAnchor := buf.nearestPageAnchor(targetRow)
+
+	if got := string(buf.Line(targetRow)); got != "line" {
+		t.Fatalf("line(%d) = %q, want %q", targetRow, got, "line")
+	}
+
+	afterCheckpoint := buf.nearestCheckpoint(targetRow)
+	afterByteAnchor := buf.nearestByteAnchor(targetRow)
+	afterPageAnchor := buf.nearestPageAnchor(targetRow)
+
+	if afterCheckpoint.row <= beforeCheckpoint.row || afterCheckpoint.offset <= beforeCheckpoint.offset {
+		t.Fatalf("expected checkpoint to advance after on-demand scan: before=%#v after=%#v", beforeCheckpoint, afterCheckpoint)
+	}
+	if afterByteAnchor.row <= beforeByteAnchor.row || afterByteAnchor.offset <= beforeByteAnchor.offset {
+		t.Fatalf("expected byte anchor to advance after on-demand scan: before=%#v after=%#v", beforeByteAnchor, afterByteAnchor)
+	}
+	if afterPageAnchor.row <= beforePageAnchor.row || afterPageAnchor.offset <= beforePageAnchor.offset {
+		t.Fatalf("expected page anchor to advance after on-demand scan: before=%#v after=%#v", beforePageAnchor, afterPageAnchor)
 	}
 }
 
