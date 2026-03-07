@@ -70,6 +70,26 @@ func (e *Editor) tryLineLen(row int) (int, bool) {
 	return len(line), true
 }
 
+func (e *Editor) hugeVisualCol(row, logicalCol int) (int, bool) {
+	if !e.hugeFileActive() {
+		return 0, false
+	}
+	info, ok := e.hugeLineInfo(row)
+	if !ok {
+		return 0, false
+	}
+	if logicalCol < 0 {
+		logicalCol = 0
+	}
+	if logicalCol > info.runeLen {
+		logicalCol = info.runeLen
+	}
+	if info.hasTabs {
+		return 0, false
+	}
+	return logicalCol, true
+}
+
 func (e *Editor) clampCursorCol() {
 	lineCount := e.LineCount()
 	if lineCount == 0 {
@@ -80,7 +100,7 @@ func (e *Editor) clampCursorCol() {
 		return
 	}
 	if e.hugeFileActive() {
-		lineLen, ok := e.tryLineLen(e.cursor.Row)
+		lineLen, ok := e.hugeLineLen(e.cursor.Row)
 		if !ok {
 			return
 		}
@@ -142,11 +162,15 @@ func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
 
 	var visualCursorCol int
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-		line, ok := e.tryLine(e.cursor.Row)
-		if !ok {
-			return
+		if vc, ok := e.hugeVisualCol(e.cursor.Row, e.cursor.Col); ok {
+			visualCursorCol = vc
+		} else {
+			line, ok := e.tryLine(e.cursor.Row)
+			if !ok {
+				return
+			}
+			visualCursorCol = visualCol(line, e.cursor.Col, e.display.tabWidth)
 		}
-		visualCursorCol = visualCol(line, e.cursor.Col, e.display.tabWidth)
 	}
 
 	// Cursor position relative to scrollX

@@ -3,6 +3,7 @@ package editor
 import (
 	"errors"
 	"io"
+	"unicode/utf8"
 )
 
 var errHugeFileUnavailable = errors.New("huge file buffer unavailable")
@@ -527,11 +528,47 @@ func (e *Editor) hugeTryLine(row int) ([]rune, bool) {
 }
 
 func (e *Editor) hugeLineLen(row int) (int, bool) {
-	line, ok := e.hugeTryLine(row)
+	info, ok := e.hugeLineInfo(row)
 	if !ok {
 		return 0, false
 	}
-	return len(line), true
+	return info.runeLen, true
+}
+
+func (e *Editor) hugeLineInfo(row int) (hugeFileLineInfo, bool) {
+	if !e.hugeFileActive() || e.huge.buffer == nil {
+		return hugeFileLineInfo{}, false
+	}
+	ref, ok := e.hugeResolveLogicalRow(row)
+	if !ok {
+		return hugeFileLineInfo{}, false
+	}
+	if ref.patchIndex >= 0 {
+		return analyzeHugeRunes(e.huge.patches[ref.patchIndex].rows[ref.rowOffset].text), true
+	}
+	if line, ok := e.huge.edits[ref.baseStart]; ok {
+		return analyzeHugeRunes(line), true
+	}
+	if !e.huge.buffer.canResolveLineQuick(ref.baseStart) {
+		return hugeFileLineInfo{}, false
+	}
+	return e.huge.buffer.LineInfo(ref.baseStart)
+}
+
+func analyzeHugeRunes(line []rune) hugeFileLineInfo {
+	info := hugeFileLineInfo{
+		runeLen:   len(line),
+		asciiOnly: true,
+	}
+	for _, r := range line {
+		if r == '\t' {
+			info.hasTabs = true
+		}
+		if r >= utf8.RuneSelf {
+			info.asciiOnly = false
+		}
+	}
+	return info
 }
 
 func (e *Editor) hugeSetLine(row int, line []rune) bool {

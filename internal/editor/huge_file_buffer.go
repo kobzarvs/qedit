@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const hugeFileLineCacheSize = 256
@@ -57,6 +58,17 @@ type hugeFileCachedLineEndingEntry struct {
 	eol string
 }
 
+type hugeFileLineInfo struct {
+	runeLen   int
+	asciiOnly bool
+	hasTabs   bool
+}
+
+type hugeFileCachedLineInfoEntry struct {
+	row  int
+	info hugeFileLineInfo
+}
+
 type hugeFileCachedPageData struct {
 	startRow    int
 	endRow      int
@@ -98,6 +110,8 @@ type HugeFileBuffer struct {
 	spanOrder    []int
 	lineCache    map[int][]rune
 	cacheOrder   []int
+	lineInfo     map[int]hugeFileLineInfo
+	infoOrder    []int
 	lineEndings  map[int]string
 	endingOrder  []int
 	pageData     map[int]hugeFileCachedPageData
@@ -138,6 +152,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 			indexDone:          make(chan struct{}),
 			lineSpans:          make(map[int]hugeFileLineSpan),
 			lineCache:          make(map[int][]rune),
+			lineInfo:           make(map[int]hugeFileLineInfo),
 			lineEndings:        make(map[int]string),
 			pageData:           make(map[int]hugeFileCachedPageData),
 			warmInFlight:       make(map[int]struct{}),
@@ -186,6 +201,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		indexDone:          make(chan struct{}),
 		lineSpans:          make(map[int]hugeFileLineSpan),
 		lineCache:          make(map[int][]rune),
+		lineInfo:           make(map[int]hugeFileLineInfo),
 		lineEndings:        make(map[int]string),
 		pageData:           make(map[int]hugeFileCachedPageData),
 		warmInFlight:       make(map[int]struct{}),
@@ -616,6 +632,8 @@ func (b *HugeFileBuffer) Close() error {
 	b.spanOrder = nil
 	b.lineCache = nil
 	b.cacheOrder = nil
+	b.lineInfo = nil
+	b.infoOrder = nil
 	b.lineEndings = nil
 	b.endingOrder = nil
 	b.pageData = nil
@@ -752,7 +770,11 @@ func (b *HugeFileBuffer) canResolveLineQuick(row int) bool {
 }
 
 func (b *HugeFileBuffer) LineLen(row int) int {
-	return len(b.Line(row))
+	info, ok := b.LineInfo(row)
+	if !ok {
+		return len(b.Line(row))
+	}
+	return info.runeLen
 }
 
 func (b *HugeFileBuffer) RawSpanForRows(startRow, endRow int) (int64, int64, error) {
@@ -868,7 +890,63 @@ func (b *HugeFileBuffer) Line(row int) []rune {
 	}
 	line := []rune(string(data))
 	b.storeCachedLine(row, line)
+	b.storeCachedLineInfo(row, analyzeHugeFileLineData(data))
 	return line
+}
+
+func (b *HugeFileBuffer) LineInfo(row int) (hugeFileLineInfo, bool) {
+	if b == nil || b.reader == nil {
+		return hugeFileLineInfo{}, false
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 {
+		return hugeFileLineInfo{}, false
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= lineCount {
+		row = lineCount - 1
+	}
+	if info, ok := b.cachedLineInfo(row); ok {
+		return info, true
+	}
+	if page, ok := b.cachedPageData(row); ok {
+		if span, ok := page.spanForRow(row); ok {
+			return b.cachedPageLineInfo(row, span)
+		}
+	}
+
+	span, err := b.resolveLineSpan(row)
+	if err != nil {
+		return hugeFileLineInfo{}, false
+	}
+	if info, ok := b.cachedPageLineInfo(row, span); ok {
+		return info, true
+	}
+	if err := b.cachePageDataFromReader(b.reader, row); err == nil {
+		if info, ok := b.cachedPageLineInfo(row, span); ok {
+			return info, true
+		}
+	}
+
+	length := span.end - span.start
+	if length < 0 {
+		length = 0
+	}
+	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
+		return hugeFileLineInfo{}, false
+	}
+	data := make([]byte, length)
+	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return hugeFileLineInfo{}, false
+	}
+	if len(data) > 0 && data[len(data)-1] == '\r' {
+		data = data[:len(data)-1]
+	}
+	info := analyzeHugeFileLineData(data)
+	b.storeCachedLineInfo(row, info)
+	return info, true
 }
 
 func (b *HugeFileBuffer) LineEnding(row int) string {
@@ -1374,6 +1452,7 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 		return err
 	}
 	cached := make([]hugeFileCachedLineEntry, 0, actualEndRow-startRow+1)
+	infos := make([]hugeFileCachedLineInfoEntry, 0, actualEndRow-startRow+1)
 	endings := make([]hugeFileCachedLineEndingEntry, 0, actualEndRow-startRow)
 	for row := startRow; row <= actualEndRow; row++ {
 		span, ok := b.peekLineSpan(row)
@@ -1394,6 +1473,10 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 			row:  row,
 			line: []rune(string(lineData)),
 		})
+		infos = append(infos, hugeFileCachedLineInfoEntry{
+			row:  row,
+			info: analyzeHugeFileLineData(lineData),
+		})
 		if row < actualEndRow {
 			nextSpan, ok := b.peekLineSpan(row + 1)
 			if ok {
@@ -1413,6 +1496,7 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 		}
 	}
 	b.storeCachedLines(cached)
+	b.storeCachedLineInfos(infos)
 	b.storeCachedLineEndings(endings)
 	return nil
 }
@@ -1753,6 +1837,7 @@ func (b *HugeFileBuffer) populateCachesFromPageData(row int) {
 	}
 	b.restoreSpanCacheFromPageData(page)
 	cached := make([]hugeFileCachedLineEntry, 0, page.endRow-page.startRow+1)
+	infos := make([]hugeFileCachedLineInfoEntry, 0, page.endRow-page.startRow+1)
 	endings := make([]hugeFileCachedLineEndingEntry, 0, page.endRow-page.startRow)
 	for currentRow := page.startRow; currentRow <= page.endRow; currentRow++ {
 		span, ok := page.spanForRow(currentRow)
@@ -1773,6 +1858,10 @@ func (b *HugeFileBuffer) populateCachesFromPageData(row int) {
 			row:  currentRow,
 			line: []rune(string(lineData)),
 		})
+		infos = append(infos, hugeFileCachedLineInfoEntry{
+			row:  currentRow,
+			info: analyzeHugeFileLineData(lineData),
+		})
 		if nextSpan, ok := page.spanForRow(currentRow + 1); ok {
 			delimStart := span.end - page.startOffset
 			delimEnd := nextSpan.start - page.startOffset
@@ -1789,6 +1878,7 @@ func (b *HugeFileBuffer) populateCachesFromPageData(row int) {
 		}
 	}
 	b.storeCachedLines(cached)
+	b.storeCachedLineInfos(infos)
 	b.storeCachedLineEndings(endings)
 }
 
@@ -1883,6 +1973,68 @@ func (b *HugeFileBuffer) storeCachedLines(entries []hugeFileCachedLineEntry) {
 		}
 		b.lineCache[entry.row] = entry.line
 		b.cacheOrder = append(b.cacheOrder, entry.row)
+	}
+}
+
+func (b *HugeFileBuffer) touchInfoCacheLocked(row int) {
+	for i, cached := range b.infoOrder {
+		if cached != row {
+			continue
+		}
+		copy(b.infoOrder[i:], b.infoOrder[i+1:])
+		b.infoOrder[len(b.infoOrder)-1] = row
+		return
+	}
+}
+
+func (b *HugeFileBuffer) storeCachedLineInfo(row int, info hugeFileLineInfo) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	if b.lineInfo == nil {
+		b.lineInfo = make(map[int]hugeFileLineInfo)
+	}
+	if _, ok := b.lineInfo[row]; ok {
+		b.lineInfo[row] = info
+		b.touchInfoCacheLocked(row)
+		return
+	}
+	if len(b.infoOrder) >= hugeFileLineCacheSize {
+		evict := b.infoOrder[0]
+		delete(b.lineInfo, evict)
+		b.infoOrder = b.infoOrder[1:]
+	}
+	b.lineInfo[row] = info
+	b.infoOrder = append(b.infoOrder, row)
+}
+
+func (b *HugeFileBuffer) storeCachedLineInfos(entries []hugeFileCachedLineInfoEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
+	}
+	if b.lineInfo == nil {
+		b.lineInfo = make(map[int]hugeFileLineInfo)
+	}
+	for _, entry := range entries {
+		if _, ok := b.lineInfo[entry.row]; ok {
+			b.lineInfo[entry.row] = entry.info
+			b.touchInfoCacheLocked(entry.row)
+			continue
+		}
+		if len(b.infoOrder) >= hugeFileLineCacheSize {
+			evict := b.infoOrder[0]
+			delete(b.lineInfo, evict)
+			b.infoOrder = b.infoOrder[1:]
+		}
+		b.lineInfo[entry.row] = entry.info
+		b.infoOrder = append(b.infoOrder, entry.row)
 	}
 }
 
@@ -2082,6 +2234,20 @@ func (b *HugeFileBuffer) cachedLineEnding(row int) (string, bool) {
 	return eol, true
 }
 
+func (b *HugeFileBuffer) cachedLineInfo(row int) (hugeFileLineInfo, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.lineInfo == nil {
+		return hugeFileLineInfo{}, false
+	}
+	info, ok := b.lineInfo[row]
+	if !ok {
+		return hugeFileLineInfo{}, false
+	}
+	b.touchInfoCacheLocked(row)
+	return info, true
+}
+
 func (b *HugeFileBuffer) cachedPageData(row int) (hugeFileCachedPageData, bool) {
 	start := b.nearestPageAnchor(row).row
 	b.mu.Lock()
@@ -2126,7 +2292,27 @@ func (b *HugeFileBuffer) cachedPageLine(row int, span hugeFileLineSpan) ([]rune,
 	}
 	line := []rune(string(lineData))
 	b.storeCachedLine(row, line)
+	b.storeCachedLineInfo(row, analyzeHugeFileLineData(lineData))
 	return line, true
+}
+
+func (b *HugeFileBuffer) cachedPageLineInfo(row int, span hugeFileLineSpan) (hugeFileLineInfo, bool) {
+	page, ok := b.cachedPageData(row)
+	if !ok || row < page.startRow || row > page.endRow {
+		return hugeFileLineInfo{}, false
+	}
+	relStart := span.start - page.startOffset
+	relEnd := span.end - page.startOffset
+	if relStart < 0 || relEnd < relStart || relEnd > int64(len(page.data)) {
+		return hugeFileLineInfo{}, false
+	}
+	lineData := page.data[relStart:relEnd]
+	if len(lineData) > 0 && lineData[len(lineData)-1] == '\r' {
+		lineData = lineData[:len(lineData)-1]
+	}
+	info := analyzeHugeFileLineData(lineData)
+	b.storeCachedLineInfo(row, info)
+	return info, true
 }
 
 func (b *HugeFileBuffer) cachedPageLineEnding(row int, span, nextSpan hugeFileLineSpan) (string, bool) {
@@ -2145,6 +2331,30 @@ func (b *HugeFileBuffer) cachedPageLineEnding(row int, span, nextSpan hugeFileLi
 	}
 	b.storeCachedLineEnding(row, eol)
 	return eol, true
+}
+
+func analyzeHugeFileLineData(data []byte) hugeFileLineInfo {
+	info := hugeFileLineInfo{
+		asciiOnly: true,
+	}
+	for len(data) > 0 {
+		if data[0] < utf8.RuneSelf {
+			if data[0] == '\t' {
+				info.hasTabs = true
+			}
+			info.runeLen++
+			data = data[1:]
+			continue
+		}
+		info.asciiOnly = false
+		_, size := utf8.DecodeRune(data)
+		if size < 1 {
+			size = 1
+		}
+		info.runeLen++
+		data = data[size:]
+	}
+	return info
 }
 
 func (b *HugeFileBuffer) collectCachedPageSpans(startRow, endRow int) []hugeFileLineSpan {

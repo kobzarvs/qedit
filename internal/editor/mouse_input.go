@@ -191,8 +191,13 @@ func (e *Editor) maxVisibleLineWidth() int {
 	}
 	maxWidth := 0
 	for i := startLine; i < endLine; i++ {
-		line := e.lineForDisplay(i)
-		w := visualCol(line, len(line), e.display.tabWidth)
+		w := 0
+		if vc, ok := e.hugeVisualCol(i, 1<<30); ok {
+			w = vc
+		} else {
+			line := e.lineForDisplay(i)
+			w = visualCol(line, len(line), e.display.tabWidth)
+		}
 		if w > maxWidth {
 			maxWidth = w
 		}

@@ -1227,6 +1227,59 @@ func TestHugeFileUIPathsAvoidBlockingOnFarUnindexedRows(t *testing.T) {
 	}
 }
 
+func TestHugeFileLongLineHorizontalHelpersAvoidFullDecode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge-long-line.txt")
+	content := strings.Repeat("a", 300000) + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+	defer e.closeHugeFileBuffer()
+
+	e.cursor.Row = 0
+	e.cursor.Col = 300000
+	e.viewport.width = 120
+	e.viewport.height = 20
+	e.viewport.scroll = 0
+	e.viewport.scrollX = 0
+
+	e.huge.buffer.mu.Lock()
+	e.huge.buffer.lineCache = map[int][]rune{}
+	e.huge.buffer.cacheOrder = nil
+	e.huge.buffer.mu.Unlock()
+
+	e.clampCursorCol()
+	e.ensureCursorVisibleHorizontal(120, e.gutterWidth())
+	if e.viewport.scrollX <= 0 {
+		t.Fatalf("expected scrollX to move right for long line, got %d", e.viewport.scrollX)
+	}
+	if e.huge.buffer.hasCachedLine(0) {
+		t.Fatalf("expected horizontal helpers to avoid decoding full huge line")
+	}
+
+	e.cursor.Col = 0
+	e.ensureCursorVisibleHorizontal(120, e.gutterWidth())
+	if e.viewport.scrollX != 0 {
+		t.Fatalf("expected scrollX to return to 0, got %d", e.viewport.scrollX)
+	}
+	if e.huge.buffer.hasCachedLine(0) {
+		t.Fatalf("expected returning to column 0 to avoid decoding full huge line")
+	}
+}
+
 func TestLoadHugeFilePrimesRestoredViewport(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 64
