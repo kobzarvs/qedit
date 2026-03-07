@@ -3,15 +3,32 @@ package editor
 import (
 	"fmt"
 	"io"
+	"sort"
 )
 
 const hugeFileLineCacheSize = 256
+const hugeFileSpanCacheSize = 4096
+const hugeFileCheckpointSpacing = 1024
+const hugeFileLinePrefetch = 64
+
+type hugeFileCheckpoint struct {
+	row    int
+	offset int64
+}
+
+type hugeFileLineSpan struct {
+	start int64
+	end   int64
+}
 
 type HugeFileBuffer struct {
 	path        string
 	sizeBytes   int64
 	reader      io.ReadSeekCloser
-	lineOffsets []int64
+	lineCount   int
+	checkpoints []hugeFileCheckpoint
+	lineSpans   map[int]hugeFileLineSpan
+	spanOrder   []int
 	lineCache   map[int][]rune
 	cacheOrder  []int
 }
@@ -24,7 +41,7 @@ func OpenHugeFileBuffer(path string, sizeBytes int64, fs FileStore) (*HugeFileBu
 	if err != nil {
 		return nil, err
 	}
-	offsets, err := buildHugeFileLineIndex(reader)
+	checkpoints, lineCount, err := buildHugeFileLineIndex(reader)
 	if err != nil {
 		_ = reader.Close()
 		return nil, err
@@ -33,24 +50,33 @@ func OpenHugeFileBuffer(path string, sizeBytes int64, fs FileStore) (*HugeFileBu
 		path:        path,
 		sizeBytes:   sizeBytes,
 		reader:      reader,
-		lineOffsets: offsets,
+		lineCount:   lineCount,
+		checkpoints: checkpoints,
+		lineSpans:   make(map[int]hugeFileLineSpan),
 		lineCache:   make(map[int][]rune),
 	}, nil
 }
 
-func buildHugeFileLineIndex(reader io.ReadSeeker) ([]int64, error) {
+func buildHugeFileLineIndex(reader io.ReadSeeker) ([]hugeFileCheckpoint, int, error) {
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	offsets := []int64{0}
+	checkpoints := []hugeFileCheckpoint{{row: 0, offset: 0}}
 	buf := make([]byte, 1<<20)
 	var offset int64
+	lineCount := 1
 	for {
 		n, err := reader.Read(buf)
 		if n > 0 {
 			for i, b := range buf[:n] {
 				if b == '\n' {
-					offsets = append(offsets, offset+int64(i)+1)
+					lineCount++
+					if (lineCount-1)%hugeFileCheckpointSpacing == 0 {
+						checkpoints = append(checkpoints, hugeFileCheckpoint{
+							row:    lineCount - 1,
+							offset: offset + int64(i) + 1,
+						})
+					}
 				}
 			}
 			offset += int64(n)
@@ -59,13 +85,13 @@ func buildHugeFileLineIndex(reader io.ReadSeeker) ([]int64, error) {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return offsets, nil
+	return checkpoints, lineCount, nil
 }
 
 func (b *HugeFileBuffer) Close() error {
@@ -74,6 +100,8 @@ func (b *HugeFileBuffer) Close() error {
 	}
 	err := b.reader.Close()
 	b.reader = nil
+	b.lineSpans = nil
+	b.spanOrder = nil
 	b.lineCache = nil
 	b.cacheOrder = nil
 	return err
@@ -94,10 +122,10 @@ func (b *HugeFileBuffer) SizeBytes() int64 {
 }
 
 func (b *HugeFileBuffer) LineCount() int {
-	if b == nil || len(b.lineOffsets) == 0 {
+	if b == nil || b.lineCount <= 0 {
 		return 1
 	}
-	return len(b.lineOffsets)
+	return b.lineCount
 }
 
 func (b *HugeFileBuffer) LineLen(row int) int {
@@ -105,33 +133,29 @@ func (b *HugeFileBuffer) LineLen(row int) int {
 }
 
 func (b *HugeFileBuffer) Line(row int) []rune {
-	if b == nil || len(b.lineOffsets) == 0 {
+	if b == nil || b.lineCount <= 0 {
 		return nil
 	}
 	if row < 0 {
 		row = 0
 	}
-	if row >= len(b.lineOffsets) {
-		row = len(b.lineOffsets) - 1
+	if row >= b.lineCount {
+		row = b.lineCount - 1
 	}
 	if cached, ok := b.lineCache[row]; ok {
 		b.touchCache(row)
 		return cached
 	}
 
-	start := b.lineOffsets[row]
-	end := b.sizeBytes
-	if row+1 < len(b.lineOffsets) {
-		end = b.lineOffsets[row+1] - 1
+	span, err := b.resolveLineSpan(row)
+	if err != nil {
+		return []rune(fmt.Sprintf("[read error: %v]", err))
 	}
-	if end < start {
-		end = start
-	}
-	length := end - start
+	length := span.end - span.start
 	if length < 0 {
 		length = 0
 	}
-	if _, err := b.reader.Seek(start, io.SeekStart); err != nil {
+	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
 		return []rune(fmt.Sprintf("[read error: %v]", err))
 	}
 	data := make([]byte, length)
@@ -144,6 +168,87 @@ func (b *HugeFileBuffer) Line(row int) []rune {
 	line := []rune(string(data))
 	b.storeCachedLine(row, line)
 	return line
+}
+
+func (b *HugeFileBuffer) resolveLineSpan(row int) (hugeFileLineSpan, error) {
+	if cached, ok := b.lineSpans[row]; ok {
+		b.touchSpanCache(row)
+		return cached, nil
+	}
+
+	checkpoint := b.nearestCheckpoint(row)
+	if _, err := b.reader.Seek(checkpoint.offset, io.SeekStart); err != nil {
+		return hugeFileLineSpan{}, err
+	}
+
+	currentRow := checkpoint.row
+	lineStart := checkpoint.offset
+	fileOffset := checkpoint.offset
+	targetRow := row + hugeFileLinePrefetch
+	if targetRow >= b.lineCount {
+		targetRow = b.lineCount - 1
+	}
+
+	buf := make([]byte, 64<<10)
+	var targetSpan hugeFileLineSpan
+	foundTarget := false
+
+	for {
+		n, err := b.reader.Read(buf)
+		if n > 0 {
+			for i, ch := range buf[:n] {
+				if ch != '\n' {
+					continue
+				}
+				lineEnd := fileOffset + int64(i)
+				span := hugeFileLineSpan{start: lineStart, end: lineEnd}
+				b.storeLineSpan(currentRow, span)
+				if currentRow == row {
+					targetSpan = span
+					foundTarget = true
+				}
+				if currentRow >= targetRow {
+					return targetSpan, nil
+				}
+				currentRow++
+				lineStart = fileOffset + int64(i) + 1
+			}
+			fileOffset += int64(n)
+		}
+		if err == io.EOF {
+			span := hugeFileLineSpan{start: lineStart, end: b.sizeBytes}
+			b.storeLineSpan(currentRow, span)
+			if currentRow == row {
+				targetSpan = span
+				foundTarget = true
+			}
+			if foundTarget {
+				return targetSpan, nil
+			}
+			break
+		}
+		if err != nil {
+			return hugeFileLineSpan{}, err
+		}
+	}
+
+	if foundTarget {
+		return targetSpan, nil
+	}
+	return hugeFileLineSpan{}, fmt.Errorf("line %d out of range", row)
+}
+
+func (b *HugeFileBuffer) nearestCheckpoint(row int) hugeFileCheckpoint {
+	if len(b.checkpoints) == 0 {
+		return hugeFileCheckpoint{row: 0, offset: 0}
+	}
+	idx := sort.Search(len(b.checkpoints), func(i int) bool {
+		return b.checkpoints[i].row > row
+	})
+	if idx == 0 {
+		return b.checkpoints[0]
+	}
+	return b.checkpoints[idx-1]
 }
 
 func (b *HugeFileBuffer) touchCache(row int) {
@@ -173,4 +278,33 @@ func (b *HugeFileBuffer) storeCachedLine(row int, line []rune) {
 	}
 	b.lineCache[row] = line
 	b.cacheOrder = append(b.cacheOrder, row)
+}
+
+func (b *HugeFileBuffer) touchSpanCache(row int) {
+	for i, cached := range b.spanOrder {
+		if cached != row {
+			continue
+		}
+		copy(b.spanOrder[i:], b.spanOrder[i+1:])
+		b.spanOrder[len(b.spanOrder)-1] = row
+		return
+	}
+}
+
+func (b *HugeFileBuffer) storeLineSpan(row int, span hugeFileLineSpan) {
+	if b.lineSpans == nil {
+		b.lineSpans = make(map[int]hugeFileLineSpan)
+	}
+	if _, ok := b.lineSpans[row]; ok {
+		b.lineSpans[row] = span
+		b.touchSpanCache(row)
+		return
+	}
+	if len(b.spanOrder) >= hugeFileSpanCacheSize {
+		evict := b.spanOrder[0]
+		delete(b.lineSpans, evict)
+		b.spanOrder = b.spanOrder[1:]
+	}
+	b.lineSpans[row] = span
+	b.spanOrder = append(b.spanOrder, row)
 }
