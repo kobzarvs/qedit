@@ -110,6 +110,8 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 	mergeLocal := style(colors["foreground"], colors["merge-local-background"])
 	mergeRemote := style(colors["foreground"], colors["merge-remote-background"])
 	mergeHeader := style(colors["merge-header-foreground"], colors["merge-header-background"])
+	diffInlineLocal := style(colors["foreground"], blendColor(colors["merge-local-background"], colors["foreground"], 0.18))
+	diffInlineRemote := style(colors["foreground"], blendColor(colors["merge-remote-background"], colors["foreground"], 0.18))
 	command := style(colors["commandline-foreground"], colors["commandline-background"])
 	lineNumber := style(colors["line-number-foreground"], colors["background"])
 	lineNumberActive := style(colors["line-number-active-foreground"], colors["background"])
@@ -175,6 +177,8 @@ func StylesFromConfig(cfg config.Config) editor.EditorStyles {
 		MergeLocal:              mergeLocal,
 		MergeRemote:             mergeRemote,
 		MergeHeader:             mergeHeader,
+		DiffInlineLocal:         diffInlineLocal,
+		DiffInlineRemote:        diffInlineRemote,
 		Command:                 command,
 		CommandCheckmark:        command,
 		LineNumber:              lineNumber,

@@ -30,6 +30,7 @@ type conflictBlock struct {
 func (e *Editor) resetConflictBlocks() {
 	e.conflicts.blocks = nil
 	e.conflicts.dirty = true
+	e.deactivateMergeReview()
 }
 
 func (e *Editor) hasConflictBlocks() bool {
@@ -80,6 +81,7 @@ func (e *Editor) adjustConflictBlocksForEdit(startRow, oldEndRow, newEndRow int)
 	}
 	e.conflicts.blocks = updated
 	if len(e.conflicts.blocks) == 0 && e.mode == ModeMerge {
+		e.deactivateMergeReview()
 		e.mode = ModeNormal
 	}
 }
@@ -161,6 +163,9 @@ func (e *Editor) ensureConflictBlocks() {
 	}
 	e.conflicts.blocks = blocks
 	e.conflicts.dirty = false
+	if len(blocks) == 0 {
+		e.deactivateMergeReview()
+	}
 }
 
 func (e *Editor) conflictLineInfo(lineIdx int) (conflictLineKind, *conflictBlock) {

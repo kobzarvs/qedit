@@ -259,9 +259,11 @@ func (e *Editor) ApplyExternalMergePlan(plan ExternalMergePlan, merged string, c
 			e.replaceBuffer(cleaned, true)
 			e.conflicts.blocks = blocks
 			e.conflicts.dirty = false
+			e.activateMergeReview()
 			if e.mode == ModeNormal {
 				e.mode = ModeMerge
 			}
+			e.setStatus("merge review: Left/Right select pane, Enter apply")
 		} else {
 			e.replaceBuffer(merged, true)
 			e.resetConflictBlocks()

@@ -153,6 +153,9 @@ func (e *Editor) PeekLastEdit() (TextEdit, bool) {
 	return e.change.lastEdit, true
 }
 func (e *Editor) LineCount() int {
+	if e.gitDiffPreviewActive() {
+		return len(e.git.diffPreview.lines)
+	}
 	if e.text == nil {
 		return 1
 	}

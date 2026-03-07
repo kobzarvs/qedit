@@ -10,6 +10,7 @@ type editorGitState struct {
 	changes         []GitFileChange
 	changeHunks     []GitChangeHunk
 	diffHighlight   *GitChangeHunk
+	diffPreview     gitDiffPreviewState
 	pendingDiffJump bool
 	changesUpdated  time.Time
 	changesVersion  uint64

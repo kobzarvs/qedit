@@ -89,11 +89,15 @@ func (e *Editor) handleSidebarKey(ev EventKey) bool {
 				e.Notify("Files: binary preview only")
 				return false
 			}
+			line, col := -1, -1
+			if action.HasLocation {
+				line, col = action.Line, action.Col
+			}
 			e.enqueueRuntimeRequest(RuntimeRequest{
 				Kind: RuntimeRequestOpenFile,
 				Path: action.Path,
-				Line: -1,
-				Col:  -1,
+				Line: line,
+				Col:  col,
 			})
 			e.clearFileTreePreview()
 			if e.sidebar.CloseOnSelect {

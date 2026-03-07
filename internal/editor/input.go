@@ -38,7 +38,8 @@ func (e *Editor) handleGlobalFocusHotkeys(ev EventKey) (bool, bool) {
 		actionFocusPrevPane,
 		actionFocusNextPane,
 		actionFocusSidebar,
-		actionFocusCommandLine:
+		actionFocusCommandLine,
+		actionMergeMode:
 		return true, e.execAction(action)
 	default:
 		return false, false

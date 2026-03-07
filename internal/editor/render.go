@@ -27,10 +27,23 @@ func (e *Editor) Render(s Screen) {
 	e.viewport.height = viewHeight
 	e.viewport.width = w
 	e.ensureConflictBlocks()
+	e.syncGitDiffPreview()
+	mergeReviewActive := e.mergeReviewActive()
+	mergeReviewLayout := mergeReviewLayout{}
+	contentViewHeight := viewHeight
+	if mergeReviewActive && contentViewHeight > 0 {
+		contentViewHeight--
+	}
+	if contentViewHeight < 0 {
+		contentViewHeight = 0
+	}
+	e.viewport.height = contentViewHeight
 
 	// Calculate sidebar width (refs picker or new sidebar, mutually exclusive)
 	sidebarWidth := 0
-	if e.sidebar != nil && e.sidebar.Visible {
+	if mergeReviewActive {
+		sidebarWidth = 0
+	} else if e.sidebar != nil && e.sidebar.Visible {
 		sidebarWidth = e.sidebar.CalculateWidth(w)
 	} else if e.refsPicker.active && len(e.refsPicker.items) > 0 {
 		sidebarWidth = w / 4
@@ -44,10 +57,15 @@ func (e *Editor) Render(s Screen) {
 
 	editorX := sidebarWidth
 	editorWidth := w - sidebarWidth
+	if mergeReviewActive {
+		mergeReviewLayout = e.computeMergeReviewLayout(w)
+		editorX = mergeReviewLayout.centerX
+		editorWidth = mergeReviewLayout.centerW
+	}
 
 	gutterWidth := e.gutterWidth()
 	if !e.interaction.freeScroll {
-		e.ensureCursorVisible(viewHeight)
+		e.ensureCursorVisible(contentViewHeight)
 		e.ensureCursorVisibleHorizontal(editorWidth, gutterWidth)
 	}
 
@@ -58,6 +76,10 @@ func (e *Editor) Render(s Screen) {
 	if editorWidth > 0 {
 		if e.fileTreePreviewVisible() {
 			e.renderFileTreePreview(s, editorX, viewHeight, editorWidth)
+		} else if e.gitDiffPreviewActive() {
+			e.renderGitDiffPreview(s, editorX, viewHeight, editorWidth)
+		} else if mergeReviewActive {
+			e.renderMergeReview(s, viewHeight, w)
 		} else {
 			for y := 0; y < viewHeight; y++ {
 				lineIdx := e.viewport.scroll + y
@@ -71,14 +93,18 @@ func (e *Editor) Render(s Screen) {
 	}
 
 	// Draw sidebar (new sidebar takes priority over refs picker)
-	if e.sidebar != nil && e.sidebar.Visible && sidebarWidth > 0 {
+	if mergeReviewActive {
+		// merge review uses the full width, so sidebar is intentionally suppressed
+	} else if e.sidebar != nil && e.sidebar.Visible && sidebarWidth > 0 {
 		e.sidebar.Render(s, e.sidebarStyles, 0, 0, sidebarWidth, viewHeight)
 	} else if e.refsPicker.active && sidebarWidth > 0 {
 		e.renderRefsSidebar(s, sidebarWidth, viewHeight)
 	}
 
 	// Draw scroll indicator if recently scrolled
-	e.renderScrollIndicator(s, w, viewHeight)
+	if !mergeReviewActive {
+		e.renderScrollIndicator(s, w, viewHeight)
+	}
 
 	var cx, cy int
 	if statusY >= 0 && !e.zoom.pendingRestore {
@@ -97,11 +123,14 @@ func (e *Editor) Render(s Screen) {
 	cursorVisible := true
 	if e.mode != ModeCommand && e.mode != ModeSearch && e.mode != ModeBranchPicker {
 		cy = e.cursor.Row - e.viewport.scroll
+		if mergeReviewActive {
+			cy++
+		}
 		if cy < 0 || cy >= viewHeight {
 			cursorVisible = false
 		}
 		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-			cx = editorX + gutterWidth + visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
+			cx = editorX + gutterWidth + visualCol(e.line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
 		}
 		if cx < editorX+gutterWidth {
 			cx = editorX + gutterWidth
@@ -146,7 +175,7 @@ func (e *Editor) Render(s Screen) {
 			e.renderTopStatusMessage(s, w)
 		}
 	}
-	sidebarFocused := e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
+	sidebarFocused := !mergeReviewActive && e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
 	if e.mode == ModeBranchPicker || e.modal.spaceMenuActive || e.keybindingsHelp.active || sidebarFocused || !cursorVisible {
 		s.HideCursor()
 		s.Show()
@@ -280,6 +309,21 @@ func (e *Editor) drawLine(s Screen, y, w, startX int, line []rune, tabWidth int,
 		if conflictActive {
 			fg, _, _ := activeStyle.Decompose()
 			activeStyle = activeStyle.Foreground(fg).Background(conflictBg)
+		}
+		if e.gitDiffWordHighlighted(lineIdx, idx) {
+			fg, _, _ := activeStyle.Decompose()
+			switch conflictKind {
+			case conflictLocal:
+				if e.styleDiffInlineLocal != nil {
+					_, diffBg, _ := e.styleDiffInlineLocal.Decompose()
+					activeStyle = activeStyle.Foreground(fg).Background(diffBg)
+				}
+			case conflictRemote:
+				if e.styleDiffInlineRemote != nil {
+					_, diffBg, _ := e.styleDiffInlineRemote.Decompose()
+					activeStyle = activeStyle.Foreground(fg).Background(diffBg)
+				}
+			}
 		}
 
 		// Check for search match highlight

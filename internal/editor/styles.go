@@ -8,6 +8,8 @@ type EditorStyles struct {
 	MergeLocal              Style
 	MergeRemote             Style
 	MergeHeader             Style
+	DiffInlineLocal         Style
+	DiffInlineRemote        Style
 	Command                 Style
 	CommandCheckmark        Style
 	LineNumber              Style
@@ -58,6 +60,8 @@ func (e *Editor) SetStyles(s EditorStyles) {
 	e.styleMergeLocal = s.MergeLocal
 	e.styleMergeRemote = s.MergeRemote
 	e.styleMergeHeader = s.MergeHeader
+	e.styleDiffInlineLocal = s.DiffInlineLocal
+	e.styleDiffInlineRemote = s.DiffInlineRemote
 	e.styleCommand = s.Command
 	e.styleCommandCheckmark = s.CommandCheckmark
 	e.styleLineNumber = s.LineNumber

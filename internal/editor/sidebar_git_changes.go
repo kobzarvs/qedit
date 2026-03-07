@@ -97,7 +97,17 @@ func (c *SidebarGitChangesContent) OnEnter() SidebarActionData {
 	if item.Path == "" || item.IsDir || !item.Available {
 		return SidebarActionData{Action: SidebarActionNone}
 	}
-	return SidebarActionData{Action: SidebarActionOpenFile, Path: item.Path}
+	line, col, ok := c.editor.prepareGitChangeOpen(item.Path)
+	if !ok {
+		return SidebarActionData{Action: SidebarActionOpenFile, Path: item.Path}
+	}
+	return SidebarActionData{
+		Action:      SidebarActionOpenFile,
+		Path:        item.Path,
+		Line:        line,
+		Col:         col,
+		HasLocation: true,
+	}
 }
 
 func (c *SidebarGitChangesContent) Available() bool {

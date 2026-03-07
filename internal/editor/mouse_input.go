@@ -191,7 +191,7 @@ func (e *Editor) maxVisibleLineWidth() int {
 	}
 	maxWidth := 0
 	for i := startLine; i < endLine; i++ {
-		line := e.text.Line(i)
+		line := e.line(i)
 		w := visualCol(line, len(line), e.display.tabWidth)
 		if w > maxWidth {
 			maxWidth = w
@@ -202,6 +202,9 @@ func (e *Editor) maxVisibleLineWidth() int {
 
 func (e *Editor) handleMouseClick(ev EventMouse) {
 	x, y := ev.Position()
+	if e.mergeReviewActive() && e.handleMergeReviewMouseClick(x, y) {
+		return
+	}
 	if e.sidebar != nil && e.sidebar.Visible {
 		sidebarWidth := e.sidebar.CalculateWidth(e.viewport.width)
 		if x < sidebarWidth {
@@ -232,7 +235,7 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 	}
 
 	// Convert visual column to logical column
-	col := visualToLogicalCol(e.text.Line(row), visualX, e.display.tabWidth)
+	col := visualToLogicalCol(e.line(row), visualX, e.display.tabWidth)
 
 	// Set cursor position
 	e.cursor.Row = row
@@ -240,6 +243,102 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 	e.clampCursorCol()
 
 	// Clear selection and free scroll mode
+	e.selectionActive = false
+	e.interaction.freeScroll = false
+}
+
+func (e *Editor) handleMergeReviewMouseClick(x, y int) bool {
+	layout := e.computeMergeReviewLayout(e.viewport.width)
+	fullHeight := e.viewport.height + layout.headerH
+	if x < 0 || x >= e.viewport.width || y < 0 || y >= fullHeight {
+		return false
+	}
+	if y >= layout.headerH {
+		row := e.viewport.scroll + (y - layout.headerH)
+		if row >= 0 && row < e.LineCount() && e.mergeReviewHandleSeparatorClick(x, row, layout) {
+			return true
+		}
+	}
+
+	pane, ok := layout.paneAt(x)
+	if !ok {
+		return true
+	}
+	if pane == mergeReviewPaneLocal || pane == mergeReviewPaneRemote {
+		e.setMergeReviewPane(pane)
+	}
+
+	if y < layout.headerH {
+		return true
+	}
+
+	row := e.viewport.scroll + (y - layout.headerH)
+	if row < 0 || row >= e.LineCount() {
+		return true
+	}
+
+	switch pane {
+	case mergeReviewPaneLocal, mergeReviewPaneRemote:
+		if e.mergeReviewBlockContainsRow(row) {
+			e.applyMergeReviewPane(pane)
+			return true
+		}
+		e.cursor.Row = row
+		e.cursor.Col = 0
+		e.clampCursorCol()
+		e.ensureCursorVisible(e.viewHeightCached())
+		e.selectionActive = false
+		e.interaction.freeScroll = false
+		return true
+	case mergeReviewPaneResult:
+		e.setCursorFromEditorClick(x, y-layout.headerH, layout.centerX)
+		return true
+	default:
+		return true
+	}
+}
+
+func (e *Editor) mergeReviewHandleSeparatorClick(x, row int, layout mergeReviewLayout) bool {
+	if !e.mergeReviewBlockContainsRow(row) {
+		return false
+	}
+	switch x {
+	case layout.sepLeftX:
+		e.setMergeReviewPane(mergeReviewPaneLocal)
+		e.applyMergeReviewPane(mergeReviewPaneLocal)
+		return true
+	case layout.sepMidX:
+		e.setMergeReviewPane(mergeReviewPaneRemote)
+		e.applyMergeReviewPane(mergeReviewPaneRemote)
+		return true
+	default:
+		return false
+	}
+}
+
+func (e *Editor) setCursorFromEditorClick(screenX, contentY, editorX int) {
+	row := contentY + e.viewport.scroll
+	if row < 0 {
+		row = 0
+	}
+	lineCount := e.LineCount()
+	if row >= lineCount {
+		row = lineCount - 1
+	}
+	if row < 0 {
+		return
+	}
+
+	gutterW := e.gutterWidth()
+	visualX := screenX - editorX - gutterW + e.viewport.scrollX
+	if visualX < 0 {
+		visualX = 0
+	}
+	col := visualToLogicalCol(e.line(row), visualX, e.display.tabWidth)
+
+	e.cursor.Row = row
+	e.cursor.Col = col
+	e.clampCursorCol()
 	e.selectionActive = false
 	e.interaction.freeScroll = false
 }

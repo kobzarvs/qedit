@@ -42,6 +42,9 @@ const (
 type SidebarActionData struct {
 	Action      SidebarAction
 	Path        string      // for OpenFile
+	Line        int         // optional line for OpenFile
+	Col         int         // optional col for OpenFile
+	HasLocation bool        // whether Line/Col are meaningful
 	Branch      string      // for CheckoutBranch
 	Mode        SidebarMode // for SwitchMode
 	Worktree    string      // for worktree selection (path)

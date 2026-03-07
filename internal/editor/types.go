@@ -360,6 +360,8 @@ type Editor struct {
 	styleMergeLocal              Style
 	styleMergeRemote             Style
 	styleMergeHeader             Style
+	styleDiffInlineLocal         Style
+	styleDiffInlineRemote        Style
 	styleCommand                 Style
 	styleLineNumber              Style
 	styleLineNumberActive        Style

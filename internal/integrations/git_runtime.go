@@ -81,3 +81,7 @@ func (GitInfoRuntime) Changes(root string) ([]editor.GitFileChange, []editor.Git
 	}
 	return editorChanges, editorHunks, nil
 }
+
+func (GitInfoRuntime) Diff(root, path string) (string, error) {
+	return gitinfo.Diff(root, path)
+}

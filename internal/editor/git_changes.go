@@ -32,6 +32,7 @@ func (e *Editor) SetGitRoot(root string) {
 	if root == e.git.root {
 		return
 	}
+	e.clearGitDiffPreview()
 	e.git.root = root
 	e.git.changes = nil
 	e.git.changeHunks = nil
@@ -139,10 +140,41 @@ func (e *Editor) gotoGitChange(forward bool) {
 	e.highlightGitChangeInSidebar(target.AbsPath)
 	if currentPath != "" && target.AbsPath == currentPath {
 		e.JumpToLocation(target.StartLine, 0)
+		e.activateGitDiffPreview()
 		e.git.pendingDiffJump = false
 		return
 	}
 	e.requestOpenLocation(target.AbsPath, target.StartLine, 0)
+}
+
+func (e *Editor) prepareGitChangeOpen(path string) (int, int, bool) {
+	if path == "" {
+		e.git.pendingDiffJump = false
+		e.git.diffHighlight = nil
+		return 0, 0, false
+	}
+	if err := e.refreshGitChangesIfStale(2 * time.Second); err != nil {
+		e.setStatus(err.Error())
+		e.git.pendingDiffJump = false
+		e.git.diffHighlight = nil
+		return 0, 0, false
+	}
+	targetPath := e.normalizedPath(path)
+	if targetPath == "" {
+		targetPath = path
+	}
+	for i := range e.git.changeHunks {
+		h := &e.git.changeHunks[i]
+		if h.AbsPath != targetPath {
+			continue
+		}
+		e.setGitDiffHighlight(h)
+		e.git.pendingDiffJump = true
+		return h.StartLine, 0, true
+	}
+	e.git.pendingDiffJump = false
+	e.git.diffHighlight = nil
+	return 0, 0, false
 }
 
 func (e *Editor) setGitDiffHighlight(hunk *GitChangeHunk) {
@@ -231,6 +263,7 @@ func (e *Editor) applyPendingGitDiffJump() {
 	}
 	e.git.pendingDiffJump = false
 	e.mode = ModeMerge
+	e.activateGitDiffPreview()
 }
 
 // ApplyPendingGitDiffJump applies deferred diff mode after opening a file.

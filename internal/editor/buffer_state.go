@@ -43,6 +43,7 @@ func (e *Editor) LoadFileContent(path string, data []byte) error {
 	}
 
 	e.text = NewTextBufferFromBytes(data)
+	e.clearGitDiffPreview()
 	e.cursor = Cursor{}
 	e.file.diskContent = e.Content()
 	e.resetConflictBlocks()

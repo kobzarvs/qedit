@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-qedit is a terminal-based text editor written in Go that combines vim/Helix-style modal editing with modern IDE features (LSP, tree-sitter syntax highlighting, git integration).
+qedit is a terminal-based text editor written in Go with first-class behavior
+profiles for `basic`, `helix`, and `vim`, plus modern IDE features (LSP,
+tree-sitter syntax highlighting, git integration). AI integration has been
+removed from the product surface.
 
 ## Build & Development Commands
 
@@ -29,34 +32,38 @@ QEDIT_DEBUG=1 ./qedit <file>
 
 ## Architecture
 
-```
+```text
 cmd/qedit/main.go          # Entry point: initializes logger, config, app
 internal/
-  app/app.go               # Main event loop, coordinates editor + UI + integrations
-  editor/                  # Core editor (largest module, ~13K LOC)
+  app/                     # Runtime orchestration, file/watch/git/LSP wiring
+  editor/                  # Editor state machine and capability registries
+    behavior_profile.go    # Profile registry and mode/cursor presentation
+    basic_profile.go       # Non-modal basic profile input engine
+    vim_profile.go         # Vim profile MVP input engine
     types.go               # Mode enum, action constants, Editor struct, Cursor
     state.go               # Constructor (New), open/close, getters/setters
-    input.go               # HandleKey, HandleMouse, key routing
-    render.go              # Render, statusline, commandline, popups
+    input.go               # Top-level key dispatch into active profile
     edit.go                # Insert/delete/join/split, selection helpers
-    undo.go                # Undo/redo stacks, changelog persistence
-    search.go              # Search state, fuzzy/regex matching
-    move.go                # Cursor motion commands
-    actions.go             # execAction, execCommand
-    sidebar.go             # Sidebar rendering and navigation
+    command_registry.go    # Command capability registry
+    sidebar_registry.go    # Sidebar mode capability registry
+    formatter_registry.go  # Formatter capability registry
+    language_feature_registry.go
+    git_feature_registry.go
   ui/                      # tcell abstraction (styles, events, screen wrapper)
   config/                  # TOML config loading, language definitions
   lsp/                     # Language Server Protocol manager
   treesitter/              # Syntax highlighting engine
   gitinfo/                 # Git branch operations
   integrations/            # Clipboard, formatter, session store, terminal zoom
+  plugins/                 # In-process Go plugin registry + example plugins
 ```
 
 ### Key Design Patterns
 
 - **Single-threaded state ownership**: Main goroutine owns all editor state. Background workers (LSP, git) marshal results as events
-- **Modal editing**: ModeNormal, ModeInsert, ModeCommand, ModeBranchPicker, ModeSearch
-- **Action dispatch**: Key bindings map to action strings (e.g., "move_left"), dispatched through `execAction`
+- **Behavior profiles**: `basic`, `helix`, and `vim` each own their own input semantics
+- **Capability registries**: commands, sidebar modes, formatters, language features, git features, and behavior profiles are registered instead of hardcoded into one switch
+- **Runtime request/effect boundary**: editor enqueues runtime requests; `app` executes side effects
 - **Embedded components**: Editor struct embeds Buffer, Selection, UndoManager, SearchState
 
 ### Dependencies
@@ -72,6 +79,7 @@ internal/
 - Test helpers in `internal/editor/test_helpers_test.go` for creating test editors
 - Snapshot tests in `render_snapshot_test.go` for rendering verification
 - Hotkey coverage tests in `hotkeys_*_test.go`
+- Plugin integration tests live under `internal/plugins/`
 
 ## Configuration
 
@@ -82,6 +90,10 @@ Files:
 - `theme/<name>.toml` - Theme definitions
 - `history`, `search_history` - Command/search history
 
+Important runtime settings:
+- `editor.profile = "basic" | "helix" | "vim"`
+- `:profile basic|helix|vim` switches and persists the active profile
+
 When adding new theme color keys, update both `config/theme/ayu.toml` and
 `~/.config/qedit/theme/ayu.toml`.
 When adding new commands or shortcuts, update both `config/config.toml` and
@@ -91,9 +103,11 @@ When adding support for new file types, update both `config/languages.toml` and
 
 ## Ongoing Refactoring
 
-The editor module is being refactored per `docs/refactoring/editor.md`:
-- **Phase 1** (mostly complete): Split monolith into focused files
-- **Phase 2** (planned): Separate UI layer from core logic with interfaces
-- **Phase 3** (planned): Extract internal components (Buffer, UndoManager, etc.)
+The earlier editor-monolith split is largely complete. Current architectural
+direction is documented in `docs/architecture.md` and `docs/plugins.md`.
 
-When modifying editor code, maintain the file organization and avoid re-coupling split concerns.
+When modifying editor code:
+- avoid re-coupling profile-specific behavior back into shared input handlers
+- prefer extending existing capability registries over adding new global dispatch
+- use `internal/plugins/` for new in-process extensions when the feature should
+  be pluggable rather than built directly into bootstrap

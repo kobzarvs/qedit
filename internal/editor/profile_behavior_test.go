@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -56,5 +57,46 @@ func TestVimProfileLinewiseYankPaste(t *testing.T) {
 
 	if got := e.Content(); got != "one\none\ntwo" {
 		t.Fatalf("content = %q, want %q", got, "one\\none\\ntwo")
+	}
+}
+
+func TestBasicProfileAltXOpensCommandLine(t *testing.T) {
+	e := newTestEditor("one")
+	e.SetBehaviorProfile(BehaviorProfileBasic)
+
+	e.HandleKey(eventForKeyString(t, "alt+x"))
+
+	if e.mode != ModeCommand {
+		t.Fatalf("mode = %v, want %v", e.mode, ModeCommand)
+	}
+}
+
+func TestBasicProfileAltMEntersMergeReview(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.SetBehaviorProfile(BehaviorProfileBasic)
+	e.replaceBuffer(cleaned, true)
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
+	e.mode = ModeInsert
+
+	e.HandleKey(eventForKeyString(t, "alt+m"))
+
+	if e.mode != ModeMerge {
+		t.Fatalf("mode = %v, want %v", e.mode, ModeMerge)
+	}
+	if !e.mergeReviewActive() {
+		t.Fatalf("expected merge review active")
 	}
 }

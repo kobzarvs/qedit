@@ -74,6 +74,7 @@ type GitRuntime interface {
 	AddWorktree(root, name string) (string, error)
 	RemoveWorktree(root, path string) error
 	Changes(root string) ([]GitFileChange, []GitChangeHunk, error)
+	Diff(root, path string) (string, error)
 }
 
 // WorkspaceRuntime provides file, merge, and formatting operations.

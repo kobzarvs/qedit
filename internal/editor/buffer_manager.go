@@ -47,6 +47,7 @@ type BufferState struct {
 	// Merge conflicts
 	conflictBlocks      []conflictBlock
 	conflictBlocksDirty bool
+	conflictReview      editorMergeReviewState
 
 	// Per-buffer yank clipboard
 	clipboard         [][]rune
@@ -233,6 +234,7 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		lastEdit:            e.change.lastEdit,
 		conflictBlocks:      e.conflicts.blocks,
 		conflictBlocksDirty: e.conflicts.dirty,
+		conflictReview:      e.conflicts.review,
 		clipboard:           e.clipboard.lines,
 		clipboardLinewise:   e.clipboard.linewise,
 		selectionScope:      e.selectionScope,
@@ -267,6 +269,7 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.conflicts = editorConflictState{
 		blocks: bs.conflictBlocks,
 		dirty:  bs.conflictBlocksDirty,
+		review: bs.conflictReview,
 	}
 	e.clipboard.lines = bs.clipboard
 	e.clipboard.linewise = bs.clipboardLinewise

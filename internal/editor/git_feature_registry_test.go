@@ -29,6 +29,7 @@ func (r testGitRuntime) RemoveWorktree(root, path string) error { return nil }
 func (r testGitRuntime) Changes(root string) ([]GitFileChange, []GitChangeHunk, error) {
 	return append([]GitFileChange(nil), r.changes...), append([]GitChangeHunk(nil), r.hunks...), nil
 }
+func (r testGitRuntime) Diff(root, path string) (string, error) { return "", nil }
 
 func TestBuiltInGitFeatureUsesRuntimeForWorktrees(t *testing.T) {
 	e := New(Options{})

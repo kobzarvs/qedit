@@ -14,6 +14,7 @@ type GitFeatureProvider struct {
 	AddWorktree    func(*Editor, string, string) (string, error)
 	RemoveWorktree func(*Editor, string, string) error
 	Changes        func(*Editor, string) ([]GitFileChange, []GitChangeHunk, error)
+	Diff           func(*Editor, string, string) (string, error)
 }
 
 type gitFeatureRegistry struct {
@@ -113,6 +114,14 @@ func (r *gitFeatureRegistry) Changes(e *Editor, root string) ([]GitFileChange, [
 	return provider.Changes(e, root)
 }
 
+func (r *gitFeatureRegistry) Diff(e *Editor, root, path string) (string, error) {
+	provider, ok := r.availableProvider(e, func(p GitFeatureProvider) bool { return p.Diff != nil })
+	if !ok {
+		return "", errors.New("git runtime unavailable")
+	}
+	return provider.Diff(e, root, path)
+}
+
 func (e *Editor) RegisterGitFeature(provider GitFeatureProvider) {
 	e.gitFeatures.Register(provider)
 }
@@ -149,6 +158,9 @@ func (e *Editor) registerBuiltInGitFeatures() {
 		},
 		Changes: func(ed *Editor, root string) ([]GitFileChange, []GitChangeHunk, error) {
 			return ed.runtime.gitRuntime.Changes(root)
+		},
+		Diff: func(ed *Editor, root, path string) (string, error) {
+			return ed.runtime.gitRuntime.Diff(root, path)
 		},
 	})
 }
@@ -187,4 +199,8 @@ func (e *Editor) gitRemoveWorktree(root, path string) error {
 
 func (e *Editor) gitChanges(root string) ([]GitFileChange, []GitChangeHunk, error) {
 	return e.gitFeatures.Changes(e, root)
+}
+
+func (e *Editor) gitDiffPatch(root, path string) (string, error) {
+	return e.gitFeatures.Diff(e, root, path)
 }

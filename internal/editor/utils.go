@@ -11,12 +11,18 @@ func (e *Editor) setStatus(msg string) {
 	e.ui.statusMessage = msg
 }
 func (e *Editor) line(row int) []rune {
+	if line, ok := e.gitDiffPreviewLine(row); ok {
+		return line.text
+	}
 	if e.text == nil {
 		return nil
 	}
 	return e.text.Line(row)
 }
 func (e *Editor) lineLen(row int) int {
+	if line, ok := e.gitDiffPreviewLine(row); ok {
+		return len(line.text)
+	}
 	if e.text == nil {
 		return 0
 	}
@@ -31,7 +37,7 @@ func (e *Editor) clampCursorCol() {
 	if e.cursor.Row < 0 || e.cursor.Row >= lineCount {
 		return
 	}
-	lineLen := e.text.LineLen(e.cursor.Row)
+	lineLen := e.lineLen(e.cursor.Row)
 	if e.cursor.Col > lineLen {
 		e.cursor.Col = lineLen
 	}
@@ -81,7 +87,7 @@ func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
 
 	var visualCursorCol int
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-		visualCursorCol = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.display.tabWidth)
+		visualCursorCol = visualCol(e.line(e.cursor.Row), e.cursor.Col, e.display.tabWidth)
 	}
 
 	// Cursor position relative to scrollX
@@ -421,6 +427,9 @@ func (e *Editor) toggleLineNumbers() {
 	}
 }
 func (e *Editor) gutterWidth() int {
+	if e.gitDiffPreviewActive() {
+		return e.gitDiffPreviewGutterWidth()
+	}
 	diffWidth := 0
 	if e.hasConflictBlocks() || e.gitDiffGutterActive() {
 		diffWidth = 1

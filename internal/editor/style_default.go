@@ -30,6 +30,8 @@ func defaultEditorStyles() EditorStyles {
 		MergeLocal:              base,
 		MergeRemote:             base,
 		MergeHeader:             base,
+		DiffInlineLocal:         base,
+		DiffInlineRemote:        base,
 		Command:                 base,
 		CommandCheckmark:        base,
 		LineNumber:              base,

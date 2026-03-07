@@ -12,6 +12,10 @@ func (e *Editor) execAction(action string) bool {
 	if e.bindings.actionHook != nil {
 		e.bindings.actionHook(action)
 	}
+	if e.gitDiffPreviewActive() && !e.gitDiffPreviewAllowsAction(action) {
+		e.setStatus("diff preview is read-only")
+		return false
+	}
 	switch action {
 	case actionMoveLeft:
 		e.moveLeft()
@@ -262,8 +266,14 @@ func (e *Editor) execAction(action string) bool {
 
 	// Git
 	case actionGitNextChange:
+		if e.mergeReviewActive() {
+			return e.gotoMergeReviewConflict(true)
+		}
 		e.gotoGitChange(true)
 	case actionGitPrevChange:
+		if e.mergeReviewActive() {
+			return e.gotoMergeReviewConflict(false)
+		}
 		e.gotoGitChange(false)
 
 	// Special

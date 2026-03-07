@@ -44,6 +44,9 @@ func (r testAppGitRuntime) RemoveWorktree(root, path string) error {
 func (r testAppGitRuntime) Changes(root string) ([]editor.GitFileChange, []editor.GitChangeHunk, error) {
 	return nil, nil, nil
 }
+func (r testAppGitRuntime) Diff(root, path string) (string, error) {
+	return "", nil
+}
 
 func (s testAppFileStore) Abs(path string) (string, error) {
 	if abs, ok := s.absPaths[path]; ok {

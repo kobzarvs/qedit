@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 `cmd/qedit/` contains the main entry point for the CLI/TUI binary. Core
 implementation lives in `internal/` (notable areas: `editor/`, `ui/`,
-`lsp/`, `treesitter/`, `config/`, `session/`, and `logger/`). Runtime
+`lsp/`, `treesitter/`, `config/`, `session/`, `plugins/`, and `logger/`). Runtime
 configuration is stored in `config/` (TOML files and themes under
 `config/theme/`). Static assets (logos) are in `assets/`. Design notes and
 planning docs live under `docs/`. Vendored dependencies are in `vendor/`.
@@ -24,11 +24,21 @@ unexported are lower camel case, and package names are short, lower-case
 words (matching existing `internal/*` package names). Tests must live in
 `*_test.go` files alongside the package they cover.
 
+For editor architecture changes:
+- add new commands, sidebar modes, formatters, language/git integrations, and
+  behavior profiles through the existing registries instead of new central
+  `switch` blocks
+- put profile-specific editing semantics into the behavior profile layer
+  (`basic`, `helix`, `vim`) instead of branching in shared input handlers
+- prefer extending the in-process plugin layer in `internal/plugins/` when the
+  feature is meant to be pluggable rather than hardwired into bootstrap
+
 ## Testing Guidelines
 Tests use the Go `testing` package and live next to source in `internal/*`.
 Name tests `TestXxx` and keep them deterministic (avoid external services or
 environment coupling). Run the full suite with `make test` before opening a
-PR; target specific packages with `go test ./internal/editor` when iterating.
+PR; target specific packages with `go test ./internal/editor` or
+`go test ./internal/plugins` when iterating.
 
 ## Commit & Pull Request Guidelines
 Commit messages follow Conventional Commits with optional scopes, as seen in
@@ -49,3 +59,5 @@ When adding new commands or shortcuts, update both `config/config.toml` and
 `~/.config/qedit/config.toml`.
 When adding support for new file types, update both `config/languages.toml` and
 `~/.config/qedit/languages.toml`.
+When changing profile behavior, plugin APIs, or capability registration rules,
+update `docs/architecture.md` and `docs/plugins.md` too.

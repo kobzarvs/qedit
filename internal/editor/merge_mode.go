@@ -1,21 +1,74 @@
 package editor
 
+import "time"
+
 func (e *Editor) handleMerge(ev EventKey) bool {
+	if e.gitDiffPreviewActive() {
+		if ev.Key() == KeyEscape {
+			e.deactivateGitDiffPreview()
+			e.mode = ModeNormal
+			return false
+		}
+		if ev.Key() == KeyRune && ev.Rune() == 'i' {
+			e.deactivateGitDiffPreview()
+			e.mode = ModeInsert
+			return false
+		}
+	}
 	if ev.Key() == KeyEscape {
+		e.deactivateMergeReview()
 		e.mode = ModeNormal
 		return false
 	}
+	if e.mergeReviewActive() {
+		switch ev.Key() {
+		case KeyLeft:
+			e.setMergeReviewPane(mergeReviewPaneLocal)
+			return false
+		case KeyRight:
+			e.setMergeReviewPane(mergeReviewPaneRemote)
+			return false
+		case KeyTab:
+			e.cycleMergeReviewPane()
+			return false
+		case KeyEnter:
+			e.applySelectedMergeReviewPane()
+			return false
+		}
+	}
 	if ev.Key() == KeyRune {
 		switch ev.Rune() {
+		case '[':
+			if e.mergeReviewActive() {
+				e.setMergeReviewPane(mergeReviewPaneLocal)
+				return false
+			}
+		case ']':
+			if e.mergeReviewActive() {
+				e.setMergeReviewPane(mergeReviewPaneRemote)
+				return false
+			}
 		case 'i':
 			e.mode = ModeInsert
 			return false
 		case 'y', 'a':
+			if e.mergeReviewActive() {
+				if !e.applyMergeReviewPane(mergeReviewPaneLocal) {
+					e.setStatus("no conflict at cursor")
+				}
+				return false
+			}
 			if !e.resolveConflictAtCursor(true) {
 				e.setStatus("no conflict at cursor")
 			}
 			return false
 		case 'r', 'n':
+			if e.mergeReviewActive() {
+				if !e.applyMergeReviewPane(mergeReviewPaneRemote) {
+					e.setStatus("no conflict at cursor")
+				}
+				return false
+			}
 			if !e.resolveConflictAtCursor(false) {
 				e.setStatus("no conflict at cursor")
 			}
@@ -27,11 +80,31 @@ func (e *Editor) handleMerge(ev EventKey) bool {
 
 func (e *Editor) enterMergeMode() bool {
 	e.ensureConflictBlocks()
-	if !e.hasConflictBlocks() {
-		e.setStatus("no conflicts")
+	if e.hasConflictBlocks() {
+		e.mode = ModeMerge
+		e.activateMergeReview()
+		return false
+	}
+
+	if err := e.refreshGitChangesIfStale(2 * time.Second); err != nil {
+		e.setStatus(err.Error())
+		return false
+	}
+	if e.document.dirty {
+		e.setStatus("save or reload file before diff merge review")
+		return false
+	}
+	if !e.gitDiffHasCurrentFileHunks() {
+		e.setStatus("no conflicts or git changes for current file")
 		return false
 	}
 	e.mode = ModeMerge
+	if !e.activateGitDiffPreview() {
+		e.mode = ModeNormal
+		e.setStatus("unable to build diff preview")
+		return false
+	}
+	e.setStatus("diff review")
 	return false
 }
 
@@ -40,38 +113,12 @@ func (e *Editor) resolveConflictAtCursor(accept bool) bool {
 	if idx < 0 {
 		return false
 	}
-	block := e.conflicts.blocks[idx]
-	deleteStart := -1
-	deleteEnd := -1
 	if kind == conflictLocal {
-		if accept {
-			deleteStart = block.remoteStart
-			deleteEnd = block.remoteEnd
-		} else {
-			deleteStart = block.localStart
-			deleteEnd = block.localEnd
-		}
+		return e.resolveConflictBlock(idx, accept)
 	} else if kind == conflictRemote {
-		if accept {
-			deleteStart = block.localStart
-			deleteEnd = block.localEnd
-		} else {
-			deleteStart = block.remoteStart
-			deleteEnd = block.remoteEnd
-		}
-	} else {
-		return false
+		return e.resolveConflictBlock(idx, !accept)
 	}
-	deletedLines := 0
-	if deleteStart >= 0 && deleteEnd >= deleteStart {
-		deletedLines = e.deleteConflictLines(deleteStart, deleteEnd)
-	}
-	e.removeConflictBlock(idx, deleteEnd, deletedLines)
-	e.conflicts.dirty = false
-	if len(e.conflicts.blocks) == 0 && e.mode == ModeMerge {
-		e.mode = ModeNormal
-	}
-	return true
+	return false
 }
 
 func (e *Editor) deleteConflictLines(startLine, endLine int) int {

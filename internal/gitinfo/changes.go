@@ -31,6 +31,47 @@ type Hunk struct {
 	EndLine   int
 }
 
+// Diff returns the unified diff for a single file relative to HEAD.
+func Diff(root, path string) (string, error) {
+	root = strings.TrimSpace(root)
+	path = strings.TrimSpace(path)
+	if root == "" {
+		return "", errors.New("not a git repository")
+	}
+	if path == "" {
+		return "", errors.New("path required")
+	}
+	pathspec := path
+	if filepath.IsAbs(path) {
+		if rel, err := filepath.Rel(root, path); err == nil && rel != "" && rel != "." && !strings.HasPrefix(rel, "..") {
+			pathspec = filepath.ToSlash(rel)
+		}
+	}
+	out, err := exec.Command(
+		"git",
+		"-C",
+		root,
+		"diff",
+		"--no-color",
+		"--no-ext-diff",
+		"--unified=3",
+		"HEAD",
+		"--",
+		pathspec,
+	).CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if isMissingHead(msg) {
+			return "", nil
+		}
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", errors.New(msg)
+	}
+	return string(out), nil
+}
+
 // Changes returns the current git changes and hunk locations for the repo root.
 func Changes(root string) ([]FileChange, []Hunk, error) {
 	root = strings.TrimSpace(root)
@@ -253,6 +294,15 @@ func diffHunks(root string) ([]Hunk, error) {
 			}
 		}
 		if count == 0 {
+			anchor := startLine - 1
+			if anchor < 0 {
+				anchor = 0
+			}
+			hunks = append(hunks, Hunk{
+				Path:      currentPath,
+				StartLine: anchor,
+				EndLine:   anchor,
+			})
 			continue
 		}
 		hunks = append(hunks, Hunk{

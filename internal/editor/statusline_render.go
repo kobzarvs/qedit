@@ -90,6 +90,9 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	if showTopMessage {
 		msg = ""
 	}
+	if msg == "" && e.mergeReviewActive() {
+		msg = e.mergeReviewStatus()
+	}
 	namePart := name
 	if bufIndicator != "" {
 		namePart = bufIndicator + " " + name
@@ -101,11 +104,22 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	row := e.cursor.Row + 1
 	col := 1
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-		col = visualCol(e.text.Line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) + 1
+		col = visualCol(e.line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) + 1
 	}
 
 	// Build right part, tracking branch position for styling
 	rightParts := []string{fmt.Sprintf(" Ln %d, Col %d", row, col)}
+	if line, ok := e.gitDiffPreviewLine(e.cursor.Row); ok {
+		oldText := "-"
+		if line.oldLine > 0 {
+			oldText = fmt.Sprintf("-%d", line.oldLine)
+		}
+		newText := "+"
+		if line.newLine > 0 {
+			newText = fmt.Sprintf("+%d", line.newLine)
+		}
+		rightParts[0] = fmt.Sprintf(" %s %s, Col %d", oldText, newText, col)
+	}
 	branchText := ""
 	if e.git.branch != "" {
 		branchText = formatGitBranch(e.git.branchSymbol, e.git.branch)

@@ -13,6 +13,7 @@ func (e *Editor) prepareSave(path string) (string, []byte, error) {
 }
 
 func (e *Editor) ApplySavedFile(path string) {
+	e.clearGitDiffPreview()
 	e.document.filename = path
 	e.savePoint = len(e.undo)
 	e.file.externalChange = ExternalChangeNone
@@ -52,6 +53,7 @@ func (e *Editor) prepareReload(force bool) (string, error) {
 }
 
 func (e *Editor) ApplyReloadedContent(data []byte) {
+	e.clearGitDiffPreview()
 	e.file.externalChange = ExternalChangeNone
 	e.replaceBuffer(string(data), false)
 	e.selectionActive = false

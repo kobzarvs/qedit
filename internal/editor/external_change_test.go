@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 func TestExternalChangeDetection(t *testing.T) {
@@ -132,6 +134,9 @@ func TestMergeExternalContentConflict(t *testing.T) {
 	if kind, _ := e.conflictLineInfo(2); kind != conflictRemote {
 		t.Fatalf("line2 kind=%v, want remote", kind)
 	}
+	if !e.mergeReviewActive() {
+		t.Fatalf("expected merge review to become active")
+	}
 }
 
 func TestMergeExternalContentNoConflict(t *testing.T) {
@@ -223,5 +228,239 @@ func TestResolveConflictRejectLocal(t *testing.T) {
 	}
 	if len(e.conflicts.blocks) != 0 {
 		t.Fatalf("expected conflict blocks cleared")
+	}
+}
+
+func TestApplyMergeReviewPaneRemote(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
+	e.mode = ModeMerge
+	e.activateMergeReview()
+	e.cursor = Cursor{Row: 1, Col: 0}
+	e.setMergeReviewPane(mergeReviewPaneRemote)
+
+	if !e.applySelectedMergeReviewPane() {
+		t.Fatalf("expected merge review apply")
+	}
+	if got := e.Content(); got != "alpha\nremote\ncharlie\n" {
+		t.Fatalf("content=%q", got)
+	}
+	if len(e.conflicts.blocks) != 0 {
+		t.Fatalf("expected conflict blocks cleared")
+	}
+	if e.mergeReviewActive() {
+		t.Fatalf("expected merge review to be inactive after resolving all conflicts")
+	}
+}
+
+func TestRenderSnapshotMergeReviewShowsThreePanes(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
+	e.mode = ModeMerge
+	e.activateMergeReview()
+	e.cursor = Cursor{Row: 1, Col: 0}
+
+	got := renderSnapshot(t, e, 90, 10)
+	if !strings.Contains(got, "CURRENT") || !strings.Contains(got, "RESULT") || !strings.Contains(got, "LATEST") {
+		t.Fatalf("snapshot does not show merge review pane headers:\n%s", got)
+	}
+	if strings.Count(got, "alpha") < 3 {
+		t.Fatalf("snapshot does not show full-file context for alpha across panes:\n%s", got)
+	}
+	if strings.Count(got, "charlie") < 3 {
+		t.Fatalf("snapshot does not show full-file context for charlie across panes:\n%s", got)
+	}
+}
+
+func TestGotoMergeReviewConflictWraps(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local-one",
+		"=======",
+		"remote-one",
+		">>>>>>> remote",
+		"middle",
+		"<<<<<<< local",
+		"local-two",
+		"=======",
+		"remote-two",
+		">>>>>>> remote",
+		"omega",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
+	e.mode = ModeMerge
+	e.activateMergeReview()
+	e.cursor = Cursor{Row: blocks[0].start, Col: 0}
+
+	e.gotoMergeReviewConflict(true)
+	if e.cursor.Row != blocks[1].start {
+		t.Fatalf("after next conflict cursor row=%d, want %d", e.cursor.Row, blocks[1].start)
+	}
+
+	e.gotoMergeReviewConflict(true)
+	if e.cursor.Row != blocks[0].start {
+		t.Fatalf("after wrap next conflict cursor row=%d, want %d", e.cursor.Row, blocks[0].start)
+	}
+
+	e.gotoMergeReviewConflict(false)
+	if e.cursor.Row != blocks[1].start {
+		t.Fatalf("after prev conflict wrap cursor row=%d, want %d", e.cursor.Row, blocks[1].start)
+	}
+}
+
+func TestMergeReviewMouseHeaderSelectsPane(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
+	e.mode = ModeMerge
+	e.activateMergeReview()
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(90, 10)
+	e.Render(wrapScreen(s))
+
+	layout := e.computeMergeReviewLayout(90)
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(layout.leftX+2, 0, tcell.Button1, 0)))
+	if e.conflicts.review.pane != mergeReviewPaneLocal {
+		t.Fatalf("selected pane = %v, want local", e.conflicts.review.pane)
+	}
+
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(layout.rightX+2, 0, tcell.Button1, 0)))
+	if e.conflicts.review.pane != mergeReviewPaneRemote {
+		t.Fatalf("selected pane = %v, want remote", e.conflicts.review.pane)
+	}
+}
+
+func TestMergeReviewMouseClickAppliesPaneForActiveBlock(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
+	e.mode = ModeMerge
+	e.activateMergeReview()
+	e.cursor = Cursor{Row: blocks[0].start, Col: 0}
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(90, 10)
+	e.Render(wrapScreen(s))
+
+	layout := e.computeMergeReviewLayout(90)
+	screenY := layout.headerH + (blocks[0].start - e.viewport.scroll)
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(layout.rightX+2, screenY, tcell.Button1, 0)))
+
+	if got := e.Content(); got != "alpha\nremote\ncharlie\n" {
+		t.Fatalf("content=%q", got)
+	}
+	if e.mergeReviewActive() {
+		t.Fatalf("expected merge review inactive after resolving final conflict")
+	}
+}
+
+func TestMergeReviewMouseClickApplyHandleAppliesLocalPane(t *testing.T) {
+	merged := strings.Join([]string{
+		"alpha",
+		"<<<<<<< local",
+		"local",
+		"=======",
+		"remote",
+		">>>>>>> remote",
+		"charlie",
+		"",
+	}, "\n")
+	cleaned, blocks := buildConflictView(merged)
+
+	e := newTestEditor()
+	e.replaceBuffer(cleaned, true)
+	e.conflicts.blocks = blocks
+	e.conflicts.dirty = false
+	e.mode = ModeMerge
+	e.activateMergeReview()
+	e.cursor = Cursor{Row: blocks[0].start, Col: 0}
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(90, 10)
+	e.Render(wrapScreen(s))
+
+	layout := e.computeMergeReviewLayout(90)
+	screenY := layout.headerH + (blocks[0].start - e.viewport.scroll)
+	e.HandleMouse(wrapMouse(tcell.NewEventMouse(layout.sepLeftX, screenY, tcell.Button1, 0)))
+
+	if got := e.Content(); got != "alpha\nlocal\ncharlie\n" {
+		t.Fatalf("content=%q", got)
+	}
+	if e.mergeReviewActive() {
+		t.Fatalf("expected merge review inactive after resolving final conflict")
 	}
 }

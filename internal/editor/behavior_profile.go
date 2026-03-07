@@ -151,6 +151,12 @@ func (e *Editor) currentModeLabel() string {
 	case ModeSearch:
 		return "SEARCH"
 	case ModeMerge:
+		if e.gitDiffPreviewActive() {
+			return "DIFF"
+		}
+		if e.mergeReviewActive() {
+			return "REVIEW"
+		}
 		return "MERGE"
 	}
 
