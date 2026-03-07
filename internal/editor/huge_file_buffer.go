@@ -849,6 +849,13 @@ func (b *HugeFileBuffer) resolveLineSpan(row int) (hugeFileLineSpan, error) {
 	if cached, ok := b.cachedLineSpan(row); ok {
 		return cached, nil
 	}
+	if err := b.cachePageLineSpansFromReader(b.reader, row); err == nil {
+		if span, ok := b.cachedLineSpan(row); ok {
+			return span, nil
+		}
+	} else if !errors.Is(err, errHugeFileLineOutOfRange) {
+		return hugeFileLineSpan{}, err
+	}
 	if err := b.cacheLineSpansFromReader(b.reader, row, row+hugeFileLinePrefetch); err != nil {
 		return hugeFileLineSpan{}, err
 	}
@@ -904,6 +911,22 @@ func (b *HugeFileBuffer) nearestPageAnchor(row int) hugeFilePageAnchor {
 		return b.pageAnchors[0]
 	}
 	return b.pageAnchors[idx-1]
+}
+
+func (b *HugeFileBuffer) nextPageAnchor(row int) (hugeFilePageAnchor, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if len(b.pageAnchors) < 2 {
+		return hugeFilePageAnchor{}, false
+	}
+	idx := sort.Search(len(b.pageAnchors), func(i int) bool {
+		return b.pageAnchors[i].row > row
+	})
+	if idx >= len(b.pageAnchors) {
+		return hugeFilePageAnchor{}, false
+	}
+	return b.pageAnchors[idx], true
 }
 
 type hugeFileScanAnchor struct {
@@ -1230,6 +1253,96 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 			return err
 		}
 		flushPending()
+	}
+}
+
+func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row int) error {
+	if b == nil || reader == nil {
+		return nil
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 || row < 0 || row >= lineCount {
+		return errHugeFileLineOutOfRange
+	}
+	if b.hasCachedLineSpan(row) {
+		return nil
+	}
+
+	start := b.nearestPageAnchor(row)
+	end, hasEnd := b.nextPageAnchor(row)
+	if !hasEnd {
+		return b.cacheLineSpansFromReader(reader, row, row+hugeFileLinePrefetch)
+	}
+	if start.offset == end.offset && start.row == end.row && start.lineStart == end.lineStart {
+		return b.cacheLineSpansFromReader(reader, row, row+hugeFileLinePrefetch)
+	}
+	if _, err := reader.Seek(start.offset, io.SeekStart); err != nil {
+		return err
+	}
+
+	currentRow := start.row
+	lineStart := start.lineStart
+	fileOffset := start.offset
+	buf := make([]byte, 64<<10)
+	pending := make([]hugeFileLineSpanEntry, 0, 256)
+
+	flushPending := func() {
+		if len(pending) == 0 {
+			return
+		}
+		b.storeLineSpansBatch(pending)
+		pending = pending[:0]
+	}
+
+	for {
+		if b.isCanceled() {
+			flushPending()
+			return nil
+		}
+		n, err := reader.Read(buf)
+		if n > 0 {
+			for i, ch := range buf[:n] {
+				if ch != '\n' {
+					continue
+				}
+				pending = append(pending, hugeFileLineSpanEntry{
+					row: currentRow,
+					span: hugeFileLineSpan{
+						start: lineStart,
+						end:   fileOffset + int64(i),
+					},
+				})
+				currentRow++
+				lineStart = fileOffset + int64(i) + 1
+				if len(pending) >= 256 {
+					flushPending()
+				}
+				if fileOffset+int64(i)+1 >= end.offset && currentRow > end.row {
+					flushPending()
+					return nil
+				}
+			}
+			fileOffset += int64(n)
+		}
+		if err == io.EOF {
+			pending = append(pending, hugeFileLineSpanEntry{
+				row: currentRow,
+				span: hugeFileLineSpan{
+					start: lineStart,
+					end:   b.sizeBytes,
+				},
+			})
+			flushPending()
+			return nil
+		}
+		if err != nil {
+			flushPending()
+			return err
+		}
+		if fileOffset >= end.offset && currentRow > end.row {
+			flushPending()
+			return nil
+		}
 	}
 }
 
