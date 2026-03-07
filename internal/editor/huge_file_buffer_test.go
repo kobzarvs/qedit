@@ -1333,6 +1333,16 @@ func TestHugeFilePageDataSurvivesLineCacheEviction(t *testing.T) {
 	if got := string(buf.Line(targetRow)); got != "row-25" {
 		t.Fatalf("line(%d) after line cache eviction = %q, want %q", targetRow, got, "row-25")
 	}
+	start := buf.nearestPageAnchor(targetRow)
+	end, ok := buf.nextPageAnchor(targetRow)
+	if !ok {
+		t.Fatalf("expected next page anchor for row %d", targetRow)
+	}
+	for row := start.row; row <= end.row; row++ {
+		if !buf.hasCachedLine(row) {
+			t.Fatalf("expected repopulated cached line for row %d in page window %d..%d", row, start.row, end.row)
+		}
+	}
 }
 
 func TestHugeFileCachesLineEndingsByPageWindow(t *testing.T) {
@@ -1427,6 +1437,79 @@ func TestHugeFilePageDataSurvivesLineEndingCacheEviction(t *testing.T) {
 
 	if got := buf.LineEnding(1); got != "\r\n" {
 		t.Fatalf("LineEnding(1) after ending cache eviction = %q, want CRLF", got)
+	}
+	if got, ok := buf.cachedLineEnding(0); !ok || got != "\r\n" {
+		t.Fatalf("expected repopulated cached LineEnding(0) = CRLF/true, got %q ok=%v", got, ok)
+	}
+	if got, ok := buf.cachedLineEnding(1); !ok || got != "\r\n" {
+		t.Fatalf("expected repopulated cached LineEnding(1) = CRLF/true, got %q ok=%v", got, ok)
+	}
+	if got, ok := buf.cachedLineEnding(2); !ok || got != "\n" {
+		t.Fatalf("expected repopulated cached LineEnding(2) = LF/true, got %q ok=%v", got, ok)
+	}
+}
+
+func TestHugeFilePageDataSurvivesSpanCacheEviction(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	prevAnchorSpacing := hugeFileByteAnchorSpacingOverride
+	hugeFileInitialSampleBytes = 0
+	hugeFileByteAnchorSpacingOverride = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+		hugeFileByteAnchorSpacingOverride = prevAnchorSpacing
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 80; i++ {
+		content.WriteString("row-")
+		content.WriteString(strconv.Itoa(i))
+		content.WriteByte('\n')
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	targetRow := 25
+	if got := string(buf.Line(targetRow)); got != "row-25" {
+		t.Fatalf("line(%d) = %q, want %q", targetRow, got, "row-25")
+	}
+	if _, ok := buf.cachedPageData(targetRow); !ok {
+		t.Fatalf("expected cached page data for row %d", targetRow)
+	}
+
+	buf.mu.Lock()
+	buf.lineSpans = map[int]hugeFileLineSpan{}
+	buf.spanOrder = nil
+	buf.mu.Unlock()
+
+	span, err := buf.resolveLineSpan(targetRow)
+	if err != nil {
+		t.Fatalf("resolveLineSpan(%d) after span cache eviction: %v", targetRow, err)
+	}
+	if span.end <= span.start {
+		t.Fatalf("resolveLineSpan(%d) returned invalid span: %#v", targetRow, span)
+	}
+	if got := string(buf.Line(targetRow)); got != "row-25" {
+		t.Fatalf("line(%d) after span cache eviction = %q, want %q", targetRow, got, "row-25")
+	}
+	if !buf.hasCachedLineSpan(targetRow) {
+		t.Fatalf("expected restored cached span for row %d", targetRow)
 	}
 }
 
