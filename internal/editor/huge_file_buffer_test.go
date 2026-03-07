@@ -1315,6 +1315,22 @@ func TestRenderHugeLongLineUsesVisibleSegment(t *testing.T) {
 	e.huge.buffer.cacheOrder = nil
 	e.huge.buffer.mu.Unlock()
 
+	if _, ok := e.hugeLinePrefix(0, conflictMarkerProbeBytes); !ok {
+		t.Fatalf("expected hugeLinePrefix to succeed for long huge line")
+	}
+	if e.huge.buffer.hasCachedLine(0) {
+		t.Fatalf("expected hugeLinePrefix to avoid decoding full huge line")
+	}
+	if _, _, _, ok := e.hugeLineSegment(0, e.viewport.scrollX, 20); !ok {
+		t.Fatalf("expected hugeLineSegment to succeed for long huge line")
+	}
+	if e.huge.buffer.hasCachedLine(0) {
+		t.Fatalf("expected hugeLineSegment to avoid decoding full huge line")
+	}
+	if !e.shouldSkipHugeViewportWarm(0, 2) {
+		t.Fatalf("expected viewport warm to skip huge long line")
+	}
+
 	s := tcell.NewSimulationScreen("UTF-8")
 	if err := s.Init(); err != nil {
 		t.Fatalf("init screen: %v", err)
@@ -1326,6 +1342,9 @@ func TestRenderHugeLongLineUsesVisibleSegment(t *testing.T) {
 
 	if e.huge.buffer.hasCachedLine(0) {
 		t.Fatalf("expected render to avoid decoding full huge line")
+	}
+	if _, ok := e.huge.buffer.cachedPageData(0); ok {
+		t.Fatalf("expected render to avoid caching full page data for huge long line")
 	}
 
 	cells, w, _ := s.GetContents()

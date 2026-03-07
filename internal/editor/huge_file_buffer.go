@@ -17,6 +17,7 @@ const hugeFilePageDataCacheSize = 8
 const hugeFileCheckpointSpacing = 1024
 const hugeFileLinePrefetch = 64
 const hugeFileIndexCheckpointBatch = 64
+const hugeFileDirectReadThreshold int64 = 128 << 10
 
 var hugeFileInitialSampleBytes int64 = 2 << 20
 var hugeFileMinByteAnchorSpacing int64 = 64 << 10
@@ -921,30 +922,23 @@ func (b *HugeFileBuffer) LineInfo(row int) (hugeFileLineInfo, bool) {
 	if err != nil {
 		return hugeFileLineInfo{}, false
 	}
+	if span.end <= span.start {
+		info := hugeFileLineInfo{asciiOnly: true}
+		b.storeCachedLineInfo(row, info)
+		return info, true
+	}
 	if info, ok := b.cachedPageLineInfo(row, span); ok {
 		return info, true
 	}
-	if err := b.cachePageDataFromReader(b.reader, row); err == nil {
+	if span.end-span.start <= hugeFileDirectReadThreshold && b.cachePageDataFromReader(b.reader, row) == nil {
 		if info, ok := b.cachedPageLineInfo(row, span); ok {
 			return info, true
 		}
 	}
-
-	length := span.end - span.start
-	if length < 0 {
-		length = 0
-	}
-	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
+	info, err := b.analyzeLineSpan(row, span)
+	if err != nil {
 		return hugeFileLineInfo{}, false
 	}
-	data := make([]byte, length)
-	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return hugeFileLineInfo{}, false
-	}
-	if len(data) > 0 && data[len(data)-1] == '\r' {
-		data = data[:len(data)-1]
-	}
-	info := analyzeHugeFileLineData(data)
 	b.storeCachedLineInfo(row, info)
 	return info, true
 }
@@ -1005,7 +999,7 @@ func (b *HugeFileBuffer) LineSegment(row, startCol, maxCols int) ([]rune, bool) 
 	if err != nil {
 		return nil, false
 	}
-	if err := b.cachePageDataFromReader(b.reader, row); err == nil {
+	if span.end-span.start <= hugeFileDirectReadThreshold && b.cachePageDataFromReader(b.reader, row) == nil {
 		if page, ok := b.cachedPageData(row); ok {
 			if segment, ok := b.cachedPageLineSegment(row, page, startCol, endCol); ok {
 				return segment, true
@@ -1068,7 +1062,10 @@ func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
 	if err != nil {
 		return nil, false
 	}
-	if err := b.cachePageDataFromReader(b.reader, row); err == nil {
+	if span.end <= span.start {
+		return []rune{}, true
+	}
+	if span.end-span.start <= hugeFileDirectReadThreshold && b.cachePageDataFromReader(b.reader, row) == nil {
 		if page, ok := b.cachedPageData(row); ok {
 			if prefix, ok := b.cachedPageLinePrefix(row, page, maxBytes); ok {
 				return prefix, true
@@ -1091,6 +1088,98 @@ func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
 		return nil, false
 	}
 	return []rune(string(data)), true
+}
+
+func (b *HugeFileBuffer) analyzeLineSpan(row int, span hugeFileLineSpan) (hugeFileLineInfo, error) {
+	if b == nil || b.reader == nil {
+		return hugeFileLineInfo{}, errHugeFileUnavailable
+	}
+	if span.end < span.start {
+		span.end = span.start
+	}
+	length := span.end - span.start
+	if length == 0 {
+		return hugeFileLineInfo{asciiOnly: true}, nil
+	}
+	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
+		return hugeFileLineInfo{}, err
+	}
+
+	buf := make([]byte, 64<<10)
+	pending := make([]byte, 0, utf8.UTFMax)
+	info := hugeFileLineInfo{asciiOnly: true}
+	var read int64
+
+	for read < length {
+		chunkSize := len(buf)
+		remaining := length - read
+		if remaining < int64(chunkSize) {
+			chunkSize = int(remaining)
+		}
+		n, err := io.ReadFull(b.reader, buf[:chunkSize])
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return hugeFileLineInfo{}, err
+		}
+		if n == 0 {
+			break
+		}
+		read += int64(n)
+		chunk := buf[:n]
+		if read == length && len(chunk) > 0 && chunk[len(chunk)-1] == '\r' {
+			chunk = chunk[:len(chunk)-1]
+		}
+
+		data := chunk
+		if len(pending) > 0 {
+			combined := make([]byte, 0, len(pending)+len(chunk))
+			combined = append(combined, pending...)
+			combined = append(combined, chunk...)
+			data = combined
+			pending = pending[:0]
+		}
+		for len(data) > 0 {
+			if data[0] < utf8.RuneSelf {
+				if data[0] == '\t' {
+					info.hasTabs = true
+				}
+				info.runeLen++
+				data = data[1:]
+				continue
+			}
+			if !utf8.FullRune(data) && read < length {
+				pending = append(pending[:0], data...)
+				break
+			}
+			info.asciiOnly = false
+			_, size := utf8.DecodeRune(data)
+			if size < 1 {
+				size = 1
+			}
+			info.runeLen++
+			data = data[size:]
+		}
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			break
+		}
+	}
+	for len(pending) > 0 {
+		if pending[0] < utf8.RuneSelf {
+			if pending[0] == '\t' {
+				info.hasTabs = true
+			}
+			info.runeLen++
+			pending = pending[1:]
+			continue
+		}
+		info.asciiOnly = false
+		_, size := utf8.DecodeRune(pending)
+		if size < 1 {
+			size = 1
+		}
+		info.runeLen++
+		pending = pending[size:]
+	}
+	return info, nil
 }
 
 func (b *HugeFileBuffer) LineEnding(row int) string {
