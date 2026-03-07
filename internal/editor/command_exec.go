@@ -308,6 +308,7 @@ func (e *Editor) gotoLineNumber(lineNum int) {
 	e.selectionActive = false
 	e.interaction.freeScroll = false
 	e.viewport.scrollX = 0
+	e.primeHugeRowsAround(e.cursor.Row)
 	e.setStatus(fmt.Sprintf("line %d", lineNum))
 }
 

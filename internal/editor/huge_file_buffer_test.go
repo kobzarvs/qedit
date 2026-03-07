@@ -1229,6 +1229,57 @@ func TestHugeFileResolveLineSpanCachesWholePageWindow(t *testing.T) {
 	}
 }
 
+func TestHugeFileGotoLinePrimesTargetRegion(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 200000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, slowTestFileStore{maxRead: 128, delay: 2 * time.Millisecond}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+	defer e.closeHugeFileBuffer()
+
+	e.gotoLineNumber(7001)
+	if e.cursor.Row != 7000 {
+		t.Fatalf("cursor row after goto = %d, want 7000", e.cursor.Row)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		line, ok := e.huge.buffer.TryLine(7000)
+		if ok && e.huge.buffer.CanPrefetchQuick(7000, hugeFilePrimeViewportLines) {
+			if got := string(line); got != "line" {
+				t.Fatalf("primed goto line = %q, want %q", got, "line")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for goto line prefetch")
+}
+
 func TestEffectiveHugeFileByteAnchorSpacingScalesWithFileSize(t *testing.T) {
 	prevOverride := hugeFileByteAnchorSpacingOverride
 	prevMin := hugeFileMinByteAnchorSpacing

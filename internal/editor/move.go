@@ -625,12 +625,14 @@ func (e *Editor) gotoLastLine() {
 	}
 	e.cursor.Row = e.LineCount() - 1
 	e.cursor.Col = 0
+	e.primeHugeRowsAround(e.cursor.Row)
 }
 
 // Helix-style goto first line (gg)
 func (e *Editor) gotoFirstLine() {
 	e.cursor.Row = 0
 	e.cursor.Col = 0
+	e.primeHugeRowsAround(e.cursor.Row)
 }
 
 // Helix-style goto file end (ge) - go to end of file
@@ -642,6 +644,7 @@ func (e *Editor) gotoFileEnd() {
 	}
 	e.cursor.Row = e.LineCount() - 1
 	e.cursor.Col = e.lineLen(e.cursor.Row)
+	e.primeHugeRowsAround(e.cursor.Row)
 }
 
 // findCharForward finds next occurrence of char on current line

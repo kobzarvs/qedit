@@ -65,6 +65,17 @@ func (e *Editor) primeHugeViewport() {
 	}
 }
 
+func (e *Editor) primeHugeRowsAround(row int) {
+	if !e.hugeFileActive() {
+		return
+	}
+	count := e.viewport.height
+	if count < hugeFilePrimeViewportLines {
+		count = hugeFilePrimeViewportLines
+	}
+	e.prefetchHugeRows(row, count)
+}
+
 func (e *Editor) closeHugeFileBuffer() {
 	if e.huge.buffer != nil {
 		_ = e.huge.buffer.Close()
