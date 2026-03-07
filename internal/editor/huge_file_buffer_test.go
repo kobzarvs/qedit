@@ -1053,6 +1053,32 @@ func TestHugeFileScanStartAnchorUsesCachedPageData(t *testing.T) {
 	}
 }
 
+func TestHugeFileScanStartAnchorUsesCachedSpan(t *testing.T) {
+	buf := &HugeFileBuffer{
+		checkpoints: []hugeFileCheckpoint{
+			{row: 0, offset: 0},
+			{row: 1024, offset: 8192},
+		},
+		byteAnchors: []hugeFileCheckpoint{
+			{row: 0, offset: 0},
+			{row: 1500, offset: 16384},
+		},
+		pageAnchors: []hugeFilePageAnchor{
+			{row: 0, offset: 0, lineStart: 0},
+			{row: 1400, offset: 12288, lineStart: 12240},
+		},
+		lineSpans: map[int]hugeFileLineSpan{
+			1598: {start: 24000, end: 24004},
+			1599: {start: 24005, end: 24009},
+		},
+	}
+
+	anchor := buf.scanStartAnchor(1700)
+	if anchor.row != 1599 || anchor.offset != 24005 || anchor.lineStart != 24005 {
+		t.Fatalf("scanStartAnchor picked %#v, want cached-span-backed start", anchor)
+	}
+}
+
 func TestHugeFileBufferWarmLinesPopulatesFarViewportBeforeFullIndex(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 64
