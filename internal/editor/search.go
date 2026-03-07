@@ -262,6 +262,7 @@ func (e *Editor) updateSearchMatches() {
 	}
 	matchLimit := e.searchMatchLimit()
 	truncated := false
+	searchLineCount, partial := e.searchLineCount()
 
 	// Regex search mode
 	if e.searchRegex {
@@ -271,7 +272,7 @@ func (e *Editor) updateSearchMatches() {
 			e.setStatus("regex error: " + err.Error())
 			return
 		}
-		for row := 0; row < e.LineCount(); row++ {
+		for row := 0; row < searchLineCount; row++ {
 			line := e.line(row)
 			lineStr := string(line)
 			matches := re.FindAllStringIndex(lineStr, -1)
@@ -298,7 +299,7 @@ func (e *Editor) updateSearchMatches() {
 		queryLower := strings.ToLower(query)
 
 		// Search through all lines
-		for row := 0; row < e.LineCount(); row++ {
+		for row := 0; row < searchLineCount; row++ {
 			line := e.line(row)
 			lineStr := string(line)
 			lineLower := strings.ToLower(lineStr)
@@ -372,6 +373,8 @@ func (e *Editor) updateSearchMatches() {
 
 	if truncated {
 		e.setStatus(fmt.Sprintf("search truncated to first %d matches in huge file mode", matchLimit))
+	} else if partial {
+		e.setStatus("search limited to indexed portion while huge file is still indexing")
 	}
 
 	// Sort by row, then by column
@@ -395,6 +398,16 @@ func (e *Editor) searchMatchLimit() int {
 		return hugeFileSearchMatchLimit
 	}
 	return 0
+}
+
+func (e *Editor) searchLineCount() (int, bool) {
+	if !e.hugeFileActive() {
+		return e.LineCount(), false
+	}
+	if e.huge.buffer.IndexingComplete() {
+		return e.LineCount(), false
+	}
+	return e.huge.buffer.IndexedLineCount(), true
 }
 
 // sequentialMatch checks if all query chars appear in word in order

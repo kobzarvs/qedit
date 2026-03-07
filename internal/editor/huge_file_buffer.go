@@ -400,6 +400,18 @@ func (b *HugeFileBuffer) IndexingComplete() bool {
 	return b.fullyIndexed
 }
 
+func (b *HugeFileBuffer) IndexedLineCount() int {
+	if b == nil {
+		return 1
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.lineCount <= 0 {
+		return 1
+	}
+	return b.lineCount
+}
+
 func (b *HugeFileBuffer) TryLine(row int) ([]rune, bool) {
 	if b == nil || b.reader == nil {
 		return nil, false
