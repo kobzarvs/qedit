@@ -7,6 +7,16 @@ type editorHugeFileState struct {
 	edits      map[int][]rune
 	patches    []hugeFileRowPatch
 	defaultEOL string
+	resolve    hugeFileResolveCache
+}
+
+type hugeFileResolveCache struct {
+	valid        bool
+	logicalStart int
+	logicalEnd   int
+	baseStart    int
+	baseDelete   int
+	patchIndex   int
 }
 
 const hugeFilePrimeViewportLines = 64

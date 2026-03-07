@@ -96,9 +96,31 @@ func (e *Editor) hugeLineCount() int {
 	return count
 }
 
+func (e *Editor) invalidateHugeResolveCache() {
+	e.huge.resolve = hugeFileResolveCache{}
+}
+
 func (e *Editor) hugeResolveLogicalRow(row int) (hugeFileLogicalRowRef, bool) {
 	if !e.hugeFileActive() || e.huge.buffer == nil || row < 0 {
 		return hugeFileLogicalRowRef{}, false
+	}
+	if cache := e.huge.resolve; cache.valid && row >= cache.logicalStart && row <= cache.logicalEnd {
+		if cache.patchIndex >= 0 {
+			return hugeFileLogicalRowRef{
+				logicalStart: cache.logicalStart,
+				rowOffset:    row - cache.logicalStart,
+				baseStart:    cache.baseStart,
+				baseDelete:   cache.baseDelete,
+				patchIndex:   cache.patchIndex,
+			}, true
+		}
+		return hugeFileLogicalRowRef{
+			logicalStart: row,
+			rowOffset:    0,
+			baseStart:    cache.baseStart + (row - cache.logicalStart),
+			baseDelete:   1,
+			patchIndex:   -1,
+		}, true
 	}
 	baseLineCount := e.huge.buffer.LineCount()
 	logicalRow := 0
@@ -107,6 +129,14 @@ func (e *Editor) hugeResolveLogicalRow(row int) (hugeFileLogicalRowRef, bool) {
 		unchanged := patch.baseStart - baseRow
 		if row < logicalRow+unchanged {
 			targetBaseRow := baseRow + (row - logicalRow)
+			e.huge.resolve = hugeFileResolveCache{
+				valid:        true,
+				logicalStart: logicalRow,
+				logicalEnd:   logicalRow + unchanged - 1,
+				baseStart:    baseRow,
+				baseDelete:   1,
+				patchIndex:   -1,
+			}
 			return hugeFileLogicalRowRef{
 				logicalStart: row,
 				rowOffset:    0,
@@ -117,6 +147,14 @@ func (e *Editor) hugeResolveLogicalRow(row int) (hugeFileLogicalRowRef, bool) {
 		}
 		logicalRow += unchanged
 		if row < logicalRow+len(patch.rows) {
+			e.huge.resolve = hugeFileResolveCache{
+				valid:        true,
+				logicalStart: logicalRow,
+				logicalEnd:   logicalRow + len(patch.rows) - 1,
+				baseStart:    patch.baseStart,
+				baseDelete:   patch.baseDelete,
+				patchIndex:   i,
+			}
 			return hugeFileLogicalRowRef{
 				logicalStart: logicalRow,
 				rowOffset:    row - logicalRow,
@@ -132,6 +170,14 @@ func (e *Editor) hugeResolveLogicalRow(row int) (hugeFileLogicalRowRef, bool) {
 		return hugeFileLogicalRowRef{}, false
 	}
 	targetBaseRow := baseRow + (row - logicalRow)
+	e.huge.resolve = hugeFileResolveCache{
+		valid:        true,
+		logicalStart: logicalRow,
+		logicalEnd:   logicalRow + (baseLineCount - baseRow) - 1,
+		baseStart:    baseRow,
+		baseDelete:   1,
+		patchIndex:   -1,
+	}
 	return hugeFileLogicalRowRef{
 		logicalStart: row,
 		rowOffset:    0,
@@ -226,6 +272,7 @@ func (e *Editor) hugeApplyBaseInterval(baseStart, baseDelete int, rows []hugeFil
 	if replacementNeeded && !inserted {
 		e.huge.patches = append(e.huge.patches, replacement)
 	}
+	e.invalidateHugeResolveCache()
 }
 
 func (e *Editor) hugeDefaultLineEnding() string {
@@ -544,6 +591,7 @@ func (e *Editor) clearHugeEdits() {
 	e.huge.edits = nil
 	e.huge.patches = nil
 	e.huge.defaultEOL = ""
+	e.invalidateHugeResolveCache()
 }
 
 func (e *Editor) copyHugeBaseRows(reader io.ReadSeeker, w io.Writer, startRow, endRow int) error {

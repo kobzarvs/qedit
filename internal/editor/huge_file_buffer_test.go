@@ -537,6 +537,48 @@ func TestHugeFileAppendActionsStayAvailable(t *testing.T) {
 	}
 }
 
+func TestHugeFileResolveCacheStaysCorrectAcrossSeparatedPatches(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "zero\none\ntwo\nthree\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.cursor = Cursor{Row: 1, Col: 1}
+	e.insertNewline()
+	e.cursor = Cursor{Row: 4, Col: 2}
+	e.insertNewline()
+
+	want := []string{"zero", "o", "ne", "two", "th", "ree", ""}
+	if got := e.LineCount(); got != len(want) {
+		t.Fatalf("line count after separated patches = %d, want %d", got, len(want))
+	}
+	for row, expected := range want {
+		if got := string(e.line(row)); got != expected {
+			t.Fatalf("line %d = %q, want %q", row, got, expected)
+		}
+	}
+	for row, expected := range want {
+		if got := string(e.line(row)); got != expected {
+			t.Fatalf("cached line %d = %q, want %q", row, got, expected)
+		}
+	}
+}
+
 func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")
