@@ -1618,12 +1618,33 @@ func (b *HugeFileBuffer) populateCachesFromPageData(row int) {
 }
 
 func (b *HugeFileBuffer) hasCachedLineSpans(startRow, endRow int) bool {
+	if b.hasCachedPageRange(startRow, endRow) {
+		return true
+	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for row := startRow; row <= endRow; row++ {
 		if _, ok := b.lineSpans[row]; !ok {
 			return false
 		}
+	}
+	return true
+}
+
+func (b *HugeFileBuffer) hasCachedPageRange(startRow, endRow int) bool {
+	if b == nil || startRow > endRow {
+		return false
+	}
+	currentRow := startRow
+	for currentRow <= endRow {
+		page, ok := b.cachedPageData(currentRow)
+		if !ok || currentRow < page.startRow || currentRow > page.endRow {
+			return false
+		}
+		if page.endRow < currentRow {
+			return false
+		}
+		currentRow = page.endRow + 1
 	}
 	return true
 }

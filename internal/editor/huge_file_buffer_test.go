@@ -1511,6 +1511,15 @@ func TestHugeFilePageDataSurvivesSpanCacheEviction(t *testing.T) {
 	if !buf.hasCachedLineSpan(targetRow) {
 		t.Fatalf("expected restored cached span for row %d", targetRow)
 	}
+
+	start := buf.nearestPageAnchor(targetRow)
+	end, ok := buf.nextPageAnchor(targetRow)
+	if !ok {
+		t.Fatalf("expected next page anchor for row %d", targetRow)
+	}
+	if !buf.hasCachedLineSpans(start.row, end.row) {
+		t.Fatalf("expected page cache to satisfy span coverage for rows %d..%d", start.row, end.row)
+	}
 }
 
 func TestHugeFileGotoLinePrimesTargetRegion(t *testing.T) {
