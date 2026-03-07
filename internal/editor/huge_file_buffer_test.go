@@ -1282,6 +1282,54 @@ func TestHugeFileLineCachesWholePageWindow(t *testing.T) {
 	}
 }
 
+func TestHugeFileCachesLineEndingsByPageWindow(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	prevAnchorSpacing := hugeFileByteAnchorSpacingOverride
+	hugeFileInitialSampleBytes = 0
+	hugeFileByteAnchorSpacingOverride = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+		hugeFileByteAnchorSpacingOverride = prevAnchorSpacing
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\r\nbeta\r\ngamma\nomega\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	if got := string(buf.Line(1)); got != "beta" {
+		t.Fatalf("line(1) = %q, want %q", got, "beta")
+	}
+	if got := buf.LineEnding(0); got != "\r\n" {
+		t.Fatalf("LineEnding(0) = %q, want CRLF", got)
+	}
+	if got := buf.LineEnding(1); got != "\r\n" {
+		t.Fatalf("LineEnding(1) = %q, want CRLF", got)
+	}
+	if got := buf.LineEnding(2); got != "\n" {
+		t.Fatalf("LineEnding(2) = %q, want LF", got)
+	}
+	if got, ok := buf.cachedLineEnding(1); !ok || got != "\r\n" {
+		t.Fatalf("cached LineEnding(1) = %q ok=%v, want CRLF/true", got, ok)
+	}
+}
+
 func TestHugeFileGotoLinePrimesTargetRegion(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 64
