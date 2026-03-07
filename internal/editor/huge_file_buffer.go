@@ -1204,7 +1204,11 @@ func (b *HugeFileBuffer) prefetchLinesFromReader(reader io.ReadSeeker, startRow,
 	if err := b.cacheLineSpansFromReader(reader, startRow, endRow); err != nil {
 		return err
 	}
-	return b.cacheLinesFromCachedSpans(reader, startRow, endRow)
+	if err := b.cacheLinesFromCachedSpans(reader, startRow, endRow); err != nil {
+		return err
+	}
+	b.primePageDataForRange(reader, startRow, endRow)
+	return nil
 }
 
 func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRow, endRow int) error {
@@ -1478,6 +1482,14 @@ func (b *HugeFileBuffer) cachePageLinesFromReader(reader io.ReadSeeker, row int)
 	if err := b.cachePageLineSpansFromReader(reader, row); err != nil && !errors.Is(err, errHugeFileLineOutOfRange) {
 		return err
 	}
+	if err := b.cachePageDataFromReader(reader, row); err == nil {
+		b.populateCachesFromPageData(row)
+		if _, ok := b.cachedLine(row); ok {
+			return nil
+		}
+	} else if !errors.Is(err, errHugeFileLineOutOfRange) {
+		return err
+	}
 
 	start := b.nearestPageAnchor(row)
 	end, hasEnd := b.nextPageAnchor(row)
@@ -1500,6 +1512,27 @@ func (b *HugeFileBuffer) cachePageLinesFromReader(reader io.ReadSeeker, row int)
 		endRow = lineCount - 1
 	}
 	return b.cacheLinesFromCachedSpans(reader, start.row, endRow)
+}
+
+func (b *HugeFileBuffer) primePageDataForRange(reader io.ReadSeeker, startRow, endRow int) {
+	if b == nil || reader == nil || startRow > endRow {
+		return
+	}
+	currentRow := startRow
+	for currentRow <= endRow {
+		if err := b.cachePageDataFromReader(reader, currentRow); err != nil {
+			if errors.Is(err, errHugeFileLineOutOfRange) {
+				return
+			}
+			return
+		}
+		b.populateCachesFromPageData(currentRow)
+		page, ok := b.cachedPageData(currentRow)
+		if !ok || page.endRow < currentRow {
+			return
+		}
+		currentRow = page.endRow + 1
+	}
 }
 
 func (b *HugeFileBuffer) cachePageDataFromReader(reader io.ReadSeeker, row int) error {

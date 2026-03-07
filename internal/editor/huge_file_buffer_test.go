@@ -689,6 +689,22 @@ func TestHugeFileBufferPrefetchLinesCachesViewport(t *testing.T) {
 			t.Fatalf("cached line %d = %q, want %q", row, got, "line")
 		}
 	}
+	if _, ok := buf.cachedPageData(50); !ok {
+		t.Fatalf("expected PrefetchLines to warm page data for row 50")
+	}
+
+	buf.mu.Lock()
+	buf.lineCache = map[int][]rune{}
+	buf.cacheOrder = nil
+	buf.lineEndings = map[int]string{}
+	buf.endingOrder = nil
+	buf.lineSpans = map[int]hugeFileLineSpan{}
+	buf.spanOrder = nil
+	buf.mu.Unlock()
+
+	if got := string(buf.Line(50)); got != "line" {
+		t.Fatalf("line(50) after cache eviction = %q, want %q", got, "line")
+	}
 }
 
 func TestOpenHugeFileBufferBuildsLargeIndexInBackground(t *testing.T) {
