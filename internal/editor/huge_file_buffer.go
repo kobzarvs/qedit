@@ -1031,11 +1031,19 @@ type hugeFileScanAnchor struct {
 
 func (b *HugeFileBuffer) scanStartAnchor(row int) hugeFileScanAnchor {
 	checkpoint := b.nearestCheckpoint(row)
+	byteAnchor := b.nearestByteAnchor(row)
 	pageAnchor := b.nearestPageAnchor(row)
 	best := hugeFileScanAnchor{
 		row:       checkpoint.row,
 		offset:    checkpoint.offset,
 		lineStart: checkpoint.offset,
+	}
+	if byteAnchor.offset > best.offset {
+		best = hugeFileScanAnchor{
+			row:       byteAnchor.row,
+			offset:    byteAnchor.offset,
+			lineStart: byteAnchor.offset,
+		}
 	}
 	if pageAnchor.offset > best.offset {
 		best = hugeFileScanAnchor{

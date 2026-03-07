@@ -989,6 +989,28 @@ func TestHugeFileOnDemandScanDensifiesAnchors(t *testing.T) {
 	}
 }
 
+func TestHugeFileScanStartAnchorUsesBestAnchor(t *testing.T) {
+	buf := &HugeFileBuffer{
+		checkpoints: []hugeFileCheckpoint{
+			{row: 0, offset: 0},
+			{row: 1024, offset: 8192},
+		},
+		byteAnchors: []hugeFileCheckpoint{
+			{row: 0, offset: 0},
+			{row: 1500, offset: 16384},
+		},
+		pageAnchors: []hugeFilePageAnchor{
+			{row: 0, offset: 0, lineStart: 0},
+			{row: 1400, offset: 12288, lineStart: 12240},
+		},
+	}
+
+	anchor := buf.scanStartAnchor(1600)
+	if anchor.row != 1500 || anchor.offset != 16384 || anchor.lineStart != 16384 {
+		t.Fatalf("scanStartAnchor picked %#v, want byte-anchor-backed start", anchor)
+	}
+}
+
 func TestHugeFileBufferWarmLinesPopulatesFarViewportBeforeFullIndex(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 64
