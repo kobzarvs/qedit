@@ -13,7 +13,7 @@ import (
 const hugeFileLineCacheSize = 256
 const hugeFileSpanCacheSize = 4096
 const hugeFileCheckpointSpacing = 1024
-const hugeFileByteAnchorSpacingDefault int64 = 4 << 20
+const hugeFileByteAnchorSpacingDefault int64 = 256 << 10
 const hugeFileLinePrefetch = 64
 const hugeFileIndexCheckpointBatch = 64
 
