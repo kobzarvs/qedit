@@ -40,6 +40,7 @@ type hugeFileInitialIndex struct {
 type HugeFileBuffer struct {
 	path      string
 	sizeBytes int64
+	meta      FileMetadata
 	reader    io.ReadSeekCloser
 
 	mu                 sync.RWMutex
@@ -57,7 +58,7 @@ type HugeFileBuffer struct {
 	cacheOrder []int
 }
 
-func OpenHugeFileBuffer(path string, sizeBytes int64, fs FileStore) (*HugeFileBuffer, error) {
+func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFileBuffer, error) {
 	if fs == nil {
 		return nil, errFileStoreUnavailable()
 	}
@@ -65,7 +66,27 @@ func OpenHugeFileBuffer(path string, sizeBytes int64, fs FileStore) (*HugeFileBu
 	if err != nil {
 		return nil, err
 	}
-	initial, err := buildInitialHugeFileIndex(reader, sizeBytes)
+
+	if checkpoints, lineCount, ok := loadHugeFileIndexCache(path, meta); ok {
+		b := &HugeFileBuffer{
+			path:               path,
+			sizeBytes:          meta.Size,
+			meta:               meta,
+			reader:             reader,
+			lineCount:          lineCount,
+			estimatedLineCount: lineCount,
+			checkpoints:        checkpoints,
+			fullyIndexed:       true,
+			cancelIndex:        make(chan struct{}),
+			indexDone:          make(chan struct{}),
+			lineSpans:          make(map[int]hugeFileLineSpan),
+			lineCache:          make(map[int][]rune),
+		}
+		close(b.indexDone)
+		return b, nil
+	}
+
+	initial, err := buildInitialHugeFileIndex(reader, meta.Size)
 	if err != nil {
 		_ = reader.Close()
 		return nil, err
@@ -73,7 +94,8 @@ func OpenHugeFileBuffer(path string, sizeBytes int64, fs FileStore) (*HugeFileBu
 
 	b := &HugeFileBuffer{
 		path:               path,
-		sizeBytes:          sizeBytes,
+		sizeBytes:          meta.Size,
+		meta:               meta,
 		reader:             reader,
 		lineCount:          initial.lineCount,
 		estimatedLineCount: initial.estimatedLineCount,
@@ -86,6 +108,7 @@ func OpenHugeFileBuffer(path string, sizeBytes int64, fs FileStore) (*HugeFileBu
 	}
 
 	if initial.fullyIndexed {
+		_ = b.persistIndexCache()
 		close(b.indexDone)
 		return b, nil
 	}
@@ -101,6 +124,7 @@ func OpenHugeFileBuffer(path string, sizeBytes int64, fs FileStore) (*HugeFileBu
 		b.lineCount = lineCount
 		b.estimatedLineCount = lineCount
 		b.fullyIndexed = true
+		_ = b.persistIndexCache()
 		close(b.indexDone)
 		return b, nil
 	}
@@ -285,17 +309,33 @@ func (b *HugeFileBuffer) appendCheckpoints(checkpoints []hugeFileCheckpoint, lin
 
 func (b *HugeFileBuffer) completeIndex(lineCount int) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	b.lineCount = lineCount
 	b.estimatedLineCount = lineCount
 	b.fullyIndexed = true
+	checkpoints := append([]hugeFileCheckpoint(nil), b.checkpoints...)
+	meta := b.meta
+	path := b.path
+	b.mu.Unlock()
+	_ = saveHugeFileIndexCache(path, meta, checkpoints, lineCount)
 }
 
 func (b *HugeFileBuffer) recordIndexError(err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.indexErr = err
+}
+
+func (b *HugeFileBuffer) persistIndexCache() error {
+	if b == nil {
+		return nil
+	}
+	b.mu.RLock()
+	checkpoints := append([]hugeFileCheckpoint(nil), b.checkpoints...)
+	lineCount := b.lineCount
+	meta := b.meta
+	path := b.path
+	b.mu.RUnlock()
+	return saveHugeFileIndexCache(path, meta, checkpoints, lineCount)
 }
 
 func (b *HugeFileBuffer) Close() error {

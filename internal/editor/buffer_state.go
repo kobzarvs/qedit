@@ -100,7 +100,7 @@ func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) e
 		e.buffers.UpdateActive(bs)
 	}
 
-	buffer, err := OpenHugeFileBuffer(path, meta.Size, store)
+	buffer, err := OpenHugeFileBuffer(path, meta, store)
 	if err != nil {
 		return err
 	}

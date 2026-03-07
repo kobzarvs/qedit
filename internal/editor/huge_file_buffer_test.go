@@ -21,7 +21,11 @@ func TestOpenHugeFileBufferIndexesLines(t *testing.T) {
 		t.Fatalf("stat file: %v", err)
 	}
 
-	buf, err := OpenHugeFileBuffer(path, info.Size(), realTestFileStore{})
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
 	if err != nil {
 		t.Fatalf("open huge file buffer: %v", err)
 	}
@@ -100,7 +104,11 @@ func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 		t.Fatalf("stat file: %v", err)
 	}
 
-	buf, err := OpenHugeFileBuffer(path, info.Size(), realTestFileStore{})
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
 	if err != nil {
 		t.Fatalf("open huge file buffer: %v", err)
 	}
@@ -135,7 +143,11 @@ func TestHugeFileBufferPrefetchLinesCachesViewport(t *testing.T) {
 		t.Fatalf("stat file: %v", err)
 	}
 
-	buf, err := OpenHugeFileBuffer(path, info.Size(), realTestFileStore{})
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
 	if err != nil {
 		t.Fatalf("open huge file buffer: %v", err)
 	}
@@ -172,7 +184,11 @@ func TestOpenHugeFileBufferBuildsLargeIndexInBackground(t *testing.T) {
 		t.Fatalf("stat file: %v", err)
 	}
 
-	buf, err := OpenHugeFileBuffer(path, info.Size(), realTestFileStore{})
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
 	if err != nil {
 		t.Fatalf("open huge file buffer: %v", err)
 	}
@@ -256,7 +272,11 @@ func TestHugeFileBufferTryLineDefersFarRowsUntilIndexed(t *testing.T) {
 		t.Fatalf("stat file: %v", err)
 	}
 
-	buf, err := OpenHugeFileBuffer(path, info.Size(), slowTestFileStore{maxRead: 128, delay: time.Millisecond})
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, slowTestFileStore{maxRead: 128, delay: time.Millisecond})
 	if err != nil {
 		t.Fatalf("open huge file buffer: %v", err)
 	}
@@ -273,5 +293,68 @@ func TestHugeFileBufferTryLineDefersFarRowsUntilIndexed(t *testing.T) {
 
 	if line, ok := buf.TryLine(7000); !ok || string(line) != "line" {
 		t.Fatalf("line 7000 after indexing = %q, ready=%v; want ready line", string(line), ok)
+	}
+}
+
+func TestHugeFileBufferLoadsPersistentIndexCache(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 32
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 12000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+	meta := FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}
+
+	first, err := OpenHugeFileBuffer(path, meta, realTestFileStore{})
+	if err != nil {
+		t.Fatalf("first open huge file buffer: %v", err)
+	}
+	first.WaitForIndexing()
+	if !first.IndexingComplete() {
+		t.Fatalf("expected first buffer to finish indexing")
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("close first buffer: %v", err)
+	}
+
+	cachePath := hugeFileIndexCachePath(path)
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("cache file not written: %v", err)
+	}
+
+	second, err := OpenHugeFileBuffer(path, meta, slowTestFileStore{maxRead: 128, delay: time.Millisecond})
+	if err != nil {
+		t.Fatalf("second open huge file buffer: %v", err)
+	}
+	defer second.Close()
+
+	if !second.IndexingComplete() {
+		t.Fatalf("expected cached open to skip background indexing")
+	}
+	if got := second.LineCount(); got != 12001 {
+		t.Fatalf("cached line count = %d, want %d", got, 12001)
+	}
+	if got := string(second.Line(9000)); got != "line" {
+		t.Fatalf("cached line 9000 = %q, want %q", got, "line")
 	}
 }
