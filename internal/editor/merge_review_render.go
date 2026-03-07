@@ -192,19 +192,19 @@ func (e *Editor) mergeReviewPaneContentAt(resultRow int, pane mergeReviewPane) (
 	switch kind {
 	case conflictLocal:
 		if pane == mergeReviewPaneLocal {
-			return e.text.Line(resultRow), localNum, conflictLocal, resultRow
+			return e.line(resultRow), localNum, conflictLocal, resultRow
 		}
 		return nil, 0, conflictRemote, -1
 	case conflictRemote:
 		if pane == mergeReviewPaneRemote {
-			return e.text.Line(resultRow), remoteNum, conflictRemote, resultRow
+			return e.line(resultRow), remoteNum, conflictRemote, resultRow
 		}
 		return nil, 0, conflictLocal, -1
 	default:
 		if pane == mergeReviewPaneRemote {
-			return e.text.Line(resultRow), remoteNum, conflictNone, resultRow
+			return e.line(resultRow), remoteNum, conflictNone, resultRow
 		}
-		return e.text.Line(resultRow), localNum, conflictNone, resultRow
+		return e.line(resultRow), localNum, conflictNone, resultRow
 	}
 }
 

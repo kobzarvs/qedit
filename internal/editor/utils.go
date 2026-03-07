@@ -20,7 +20,7 @@ func (e *Editor) line(row int) []rune {
 	if e.text == nil {
 		return nil
 	}
-	return e.text.Line(row)
+	return e.docLine(row)
 }
 func (e *Editor) lineLen(row int) int {
 	if line, ok := e.gitDiffPreviewLine(row); ok {
@@ -32,7 +32,7 @@ func (e *Editor) lineLen(row int) int {
 	if e.text == nil {
 		return 0
 	}
-	return e.text.LineLen(row)
+	return e.docLineLen(row)
 }
 func (e *Editor) clampCursorCol() {
 	lineCount := e.LineCount()
@@ -286,10 +286,10 @@ func (e *Editor) swapLines(a, b int) bool {
 	if a == b {
 		return true
 	}
-	lineA := e.text.Line(a)
-	lineB := e.text.Line(b)
-	_ = e.text.ReplaceLine(a, lineB)
-	_ = e.text.ReplaceLine(b, lineA)
+	lineA := e.line(a)
+	lineB := e.line(b)
+	_ = e.docReplaceLine(a, lineB)
+	_ = e.docReplaceLine(b, lineA)
 	e.change.lastEdit.Valid = false
 	return true
 }
@@ -317,11 +317,11 @@ func (e *Editor) byteOffset(pos Cursor) (int, int) {
 		row = lineCount
 	}
 	if row == lineCount {
-		endIndex := e.text.RuneCount()
-		return e.text.ByteOffset(endIndex), 0
+		endIndex := e.docRuneCount()
+		return e.docByteOffset(endIndex), 0
 	}
-	lineStart := e.text.LineStartIndex(row)
-	lineLen := e.text.LineLen(row)
+	lineStart := e.docLineStartIndex(row)
+	lineLen := e.lineLen(row)
 	col := pos.Col
 	if col < 0 {
 		col = 0
@@ -330,8 +330,8 @@ func (e *Editor) byteOffset(pos Cursor) (int, int) {
 		col = lineLen
 	}
 	index := lineStart + col
-	byteOffset := e.text.ByteOffset(index)
-	lineStartBytes := e.text.ByteOffset(lineStart)
+	byteOffset := e.docByteOffset(index)
+	lineStartBytes := e.docByteOffset(lineStart)
 	return byteOffset, byteOffset - lineStartBytes
 }
 func (e *Editor) recordTextEdit(start, oldEnd, newEnd Cursor, insertedBytes int) {

@@ -87,10 +87,7 @@ func (e *Editor) Content() string {
 	if e.hugeFileActive() {
 		return ""
 	}
-	if e.text == nil {
-		return ""
-	}
-	return e.text.String()
+	return e.docString()
 }
 func (e *Editor) SetKeyboardLayout(name string) {
 	e.ui.layoutName = strings.TrimSpace(name)
@@ -162,10 +159,7 @@ func (e *Editor) LineCount() int {
 	if e.hugeFileActive() {
 		return e.huge.buffer.LineCount()
 	}
-	if e.text == nil {
-		return 1
-	}
-	return e.text.LineCount()
+	return e.docLineCount()
 }
 func (e *Editor) VisibleRange() (int, int) {
 	lineCount := e.LineCount()

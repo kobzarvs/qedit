@@ -103,7 +103,7 @@ func (e *Editor) ensureConflictBlocks() {
 	remoteLabel := ""
 	inBlock := false
 	for i := 0; i < lineCount; i++ {
-		line := e.text.Line(i)
+		line := e.line(i)
 		kind, label := parseConflictMarker(line)
 		switch kind {
 		case conflictMarkerStart:

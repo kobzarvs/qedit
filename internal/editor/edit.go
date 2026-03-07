@@ -28,8 +28,8 @@ func (e *Editor) insertRuneAt(pos Cursor, r rune) bool {
 		pos.Col = lineLen
 	}
 	e.recordTextEdit(pos, pos, Cursor{Row: pos.Row, Col: pos.Col + 1}, runeByteLen(r))
-	index := e.text.LineStartIndex(pos.Row) + pos.Col
-	e.text.Insert(index, []rune{r})
+	index := e.docLineStartIndex(pos.Row) + pos.Col
+	e.docInsert(index, []rune{r})
 	e.cursor = Cursor{Row: pos.Row, Col: pos.Col + 1}
 	return true
 }
@@ -48,8 +48,8 @@ func (e *Editor) insertTextAt(pos Cursor, text [][]rune) Cursor {
 		pos.Col = lineLen
 	}
 	runes := joinText(text)
-	index := e.text.LineStartIndex(pos.Row) + pos.Col
-	e.text.Insert(index, runes)
+	index := e.docLineStartIndex(pos.Row) + pos.Col
+	e.docInsert(index, runes)
 	return Cursor{Row: pos.Row + len(text) - 1, Col: len(text[len(text)-1])}
 }
 
@@ -67,9 +67,9 @@ func (e *Editor) deleteTextRange(start, end Cursor) [][]rune {
 	if start.Row == end.Row && start.Col >= end.Col {
 		return nil
 	}
-	startIndex := e.text.LineStartIndex(start.Row) + start.Col
-	endIndex := e.text.LineStartIndex(end.Row) + end.Col
-	deleted := e.text.DeleteRange(startIndex, endIndex)
+	startIndex := e.docLineStartIndex(start.Row) + start.Col
+	endIndex := e.docLineStartIndex(end.Row) + end.Col
+	deleted := e.docDeleteRange(startIndex, endIndex)
 	e.cursor = start
 	return splitRunesByNewline(deleted)
 }
@@ -92,8 +92,8 @@ func (e *Editor) splitLineAt(pos Cursor) bool {
 		pos.Col = lineLen
 	}
 	e.recordTextEdit(pos, pos, Cursor{Row: pos.Row + 1, Col: 0}, 1)
-	index := e.text.LineStartIndex(pos.Row) + pos.Col
-	e.text.Insert(index, []rune{'\n'})
+	index := e.docLineStartIndex(pos.Row) + pos.Col
+	e.docInsert(index, []rune{'\n'})
 
 	e.cursor = Cursor{Row: pos.Row + 1, Col: 0}
 	return true
@@ -256,9 +256,9 @@ func (e *Editor) deleteSelection(start, end Cursor, restoreSelectionOnUndo bool)
 		NewEndColBytes: startColBytes,
 	}
 
-	startIndex := e.text.LineStartIndex(start.Row) + start.Col
-	endIndex := e.text.LineStartIndex(end.Row) + end.Col
-	e.text.DeleteRange(startIndex, endIndex)
+	startIndex := e.docLineStartIndex(start.Row) + start.Col
+	endIndex := e.docLineStartIndex(end.Row) + end.Col
+	e.docDeleteRange(startIndex, endIndex)
 
 	e.cursor = start
 	e.clearSelection()
@@ -272,12 +272,12 @@ func (e *Editor) collectDeletedText(start, end Cursor) [][]rune {
 	endLen := e.lineLen(end.Row)
 	start.Col = clampRange(start.Col, 0, startLen)
 	end.Col = clampRange(end.Col, 0, endLen)
-	startIndex := e.text.LineStartIndex(start.Row) + start.Col
-	endIndex := e.text.LineStartIndex(end.Row) + end.Col
+	startIndex := e.docLineStartIndex(start.Row) + start.Col
+	endIndex := e.docLineStartIndex(end.Row) + end.Col
 	if startIndex >= endIndex {
 		return nil
 	}
-	deleted := e.text.Slice(startIndex, endIndex)
+	deleted := e.docSlice(startIndex, endIndex)
 	return splitRunesByNewline(deleted)
 }
 func (e *Editor) deleteWordLeft() {
@@ -375,7 +375,7 @@ func (e *Editor) deleteWordLeft() {
 	// Actually delete the range
 	newLine := append([]rune(nil), line[:startCol]...)
 	newLine = append(newLine, line[endCol:]...)
-	_ = e.text.ReplaceLine(e.cursor.Row, newLine)
+	_ = e.docReplaceLine(e.cursor.Row, newLine)
 
 	e.cursor.Col = startCol
 }
@@ -469,7 +469,7 @@ func (e *Editor) deleteWordRight() {
 	// Actually delete the range
 	newLine := append([]rune(nil), line[:startCol]...)
 	newLine = append(newLine, line[endCol:]...)
-	_ = e.text.ReplaceLine(e.cursor.Row, newLine)
+	_ = e.docReplaceLine(e.cursor.Row, newLine)
 }
 func (e *Editor) insertLineBelow() {
 	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
@@ -538,7 +538,7 @@ func (e *Editor) indentSelection() {
 		newLine := make([]rune, len(line)+1)
 		newLine[0] = '\t'
 		copy(newLine[1:], line)
-		_ = e.text.ReplaceLine(row, newLine)
+		_ = e.docReplaceLine(row, newLine)
 		e.appendUndo(action{kind: actionDeleteRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
 	}
 	e.finishUndoGroup()
@@ -566,7 +566,7 @@ func (e *Editor) indentCurrentLine() {
 	newLine := make([]rune, len(line)+1)
 	newLine[0] = '\t'
 	copy(newLine[1:], line)
-	_ = e.text.ReplaceLine(row, newLine)
+	_ = e.docReplaceLine(row, newLine)
 	e.recordUndo(action{kind: actionDeleteRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
 	e.cursor.Col++
 	e.change.lastEdit.Valid = false
@@ -605,7 +605,7 @@ func (e *Editor) unindentSelection() {
 		// Remove leading tab or spaces (up to tabWidth)
 		if line[0] == '\t' {
 			e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: 0}, r: '\t'})
-			_ = e.text.ReplaceLine(row, line[1:])
+			_ = e.docReplaceLine(row, line[1:])
 			removed = 1
 		} else if line[0] == ' ' {
 			// Count spaces to remove (up to tabWidth)
@@ -616,7 +616,7 @@ func (e *Editor) unindentSelection() {
 			for i := removed - 1; i >= 0; i-- {
 				e.appendUndo(action{kind: actionInsertRune, pos: Cursor{Row: row, Col: i}, r: ' '})
 			}
-			_ = e.text.ReplaceLine(row, line[removed:])
+			_ = e.docReplaceLine(row, line[removed:])
 		}
 
 		if row == e.cursor.Row {
@@ -666,8 +666,8 @@ func (e *Editor) deleteRuneAt(pos Cursor) bool {
 		return false
 	}
 	e.recordTextEdit(pos, Cursor{Row: pos.Row, Col: pos.Col + 1}, pos, 0)
-	index := e.text.LineStartIndex(pos.Row) + pos.Col
-	e.text.DeleteRange(index, index+1)
+	index := e.docLineStartIndex(pos.Row) + pos.Col
+	e.docDeleteRange(index, index+1)
 	e.cursor = Cursor{Row: pos.Row, Col: pos.Col}
 	return true
 }
@@ -683,8 +683,8 @@ func (e *Editor) joinLineAt(pos Cursor) bool {
 		pos.Col = lineLen
 	}
 	e.recordTextEdit(pos, Cursor{Row: pos.Row + 1, Col: 0}, pos, 0)
-	newlineIndex := e.text.LineEndIndex(pos.Row)
-	e.text.DeleteRange(newlineIndex, newlineIndex+1)
+	newlineIndex := e.docLineEndIndex(pos.Row)
+	e.docDeleteRange(newlineIndex, newlineIndex+1)
 
 	e.cursor = Cursor{Row: pos.Row, Col: pos.Col}
 	return true
@@ -797,8 +797,8 @@ func (e *Editor) pasteAfter() {
 	} else {
 		// Multi-line - paste lines below
 		insert := append([]rune{'\n'}, joinText(e.clipboard.lines)...)
-		index := e.text.LineStartIndex(e.cursor.Row) + e.lineLen(e.cursor.Row)
-		e.text.Insert(index, insert)
+		index := e.docLineStartIndex(e.cursor.Row) + e.lineLen(e.cursor.Row)
+		e.docInsert(index, insert)
 		e.cursor.Row++
 		e.cursor.Col = 0
 		e.change.lastEdit.Valid = false
@@ -827,8 +827,8 @@ func (e *Editor) pasteBefore() {
 	} else {
 		// Multi-line - paste lines above
 		insert := append(joinText(e.clipboard.lines), '\n')
-		index := e.text.LineStartIndex(e.cursor.Row)
-		e.text.Insert(index, insert)
+		index := e.docLineStartIndex(e.cursor.Row)
+		e.docInsert(index, insert)
 		e.cursor.Col = 0
 		e.change.lastEdit.Valid = false
 	}
@@ -861,8 +861,8 @@ func (e *Editor) openAbove() {
 	// Insert new line above
 	insert := append([]rune(nil), indent...)
 	insert = append(insert, '\n')
-	index := e.text.LineStartIndex(e.cursor.Row)
-	e.text.Insert(index, insert)
+	index := e.docLineStartIndex(e.cursor.Row)
+	e.docInsert(index, insert)
 
 	e.cursor.Col = len(indent)
 	e.mode = ModeInsert
@@ -903,8 +903,8 @@ func (e *Editor) insertLineAboveCursor() {
 	// Insert new line at cursor position, push current line down
 	insert := append([]rune(nil), indent...)
 	insert = append(insert, '\n')
-	index := e.text.LineStartIndex(e.cursor.Row)
-	e.text.Insert(index, insert)
+	index := e.docLineStartIndex(e.cursor.Row)
+	e.docInsert(index, insert)
 
 	// Record undo: to undo this, we need to join the line we created
 	// The position is at the end of the new line (which has the indent)
@@ -1306,7 +1306,7 @@ func (e *Editor) toggleLineComment() {
 				if suffix != "" && strings.HasSuffix(newLine, suffix) {
 					newLine = newLine[:len(newLine)-len(suffix)]
 				}
-				_ = e.text.ReplaceLine(row, []rune(newLine))
+				_ = e.docReplaceLine(row, []rune(newLine))
 			}
 		} else {
 			// Add comment at minIndent position
@@ -1315,7 +1315,7 @@ func (e *Editor) toggleLineComment() {
 				insertAt = len(lineStr)
 			}
 			newLine := lineStr[:insertAt] + prefix + " " + lineStr[insertAt:] + suffix
-			_ = e.text.ReplaceLine(row, []rune(newLine))
+			_ = e.docReplaceLine(row, []rune(newLine))
 		}
 	}
 
