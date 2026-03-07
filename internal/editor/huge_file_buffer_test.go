@@ -402,6 +402,70 @@ func TestHugeFileUIPathsAvoidBlockingOnFarUnindexedRows(t *testing.T) {
 	}
 }
 
+func TestLoadHugeFilePrimesRestoredViewport(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 200000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	e.SetSessionStore(&testSessionStore{
+		states: map[string]FileState{
+			path: {
+				CursorRow: 7000,
+				CursorCol: 0,
+				ScrollY:   7000,
+				ScrollX:   0,
+				Mode:      "normal",
+			},
+		},
+	})
+	if err := e.LoadHugeFile(path, slowTestFileStore{maxRead: 128, delay: 2 * time.Millisecond}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+	defer e.closeHugeFileBuffer()
+
+	if e.cursor.Row != 7000 || e.viewport.scroll != 7000 {
+		t.Fatalf("restored cursor/scroll = row %d scroll %d, want 7000/7000", e.cursor.Row, e.viewport.scroll)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		line, ok := e.huge.buffer.TryLine(7000)
+		if ok && e.huge.buffer.CanPrefetchQuick(7000, 20) {
+			if got := string(line); got != "line" {
+				t.Fatalf("primed restored line = %q, want %q", got, "line")
+			}
+			if e.huge.buffer.IndexingComplete() {
+				t.Fatalf("expected restored viewport warm to finish before full indexing")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for restored huge viewport warm")
+}
+
 func TestHugeFileBufferLoadsPersistentIndexCache(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 32

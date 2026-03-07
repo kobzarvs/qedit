@@ -6,6 +6,8 @@ type editorHugeFileState struct {
 	buffer    *HugeFileBuffer
 }
 
+const hugeFilePrimeViewportLines = 64
+
 func (e *Editor) hugeFileActive() bool {
 	return e.huge.active && e.huge.buffer != nil
 }
@@ -15,14 +17,39 @@ func (e *Editor) HugeFileMode() bool {
 }
 
 func (e *Editor) prefetchHugeViewport(viewHeight int) {
-	if !e.hugeFileActive() || viewHeight <= 0 {
+	e.prefetchHugeRows(e.viewport.scroll, viewHeight)
+}
+
+func (e *Editor) prefetchHugeRows(startRow, count int) {
+	if !e.hugeFileActive() || count <= 0 {
 		return
 	}
-	if !e.huge.buffer.CanPrefetchQuick(e.viewport.scroll, viewHeight) {
-		e.huge.buffer.WarmLines(e.viewport.scroll, viewHeight)
+	if startRow < 0 {
+		startRow = 0
+	}
+	if !e.huge.buffer.CanPrefetchQuick(startRow, count) {
+		e.huge.buffer.WarmLines(startRow, count)
 		return
 	}
-	_ = e.huge.buffer.PrefetchLines(e.viewport.scroll, viewHeight)
+	_ = e.huge.buffer.PrefetchLines(startRow, count)
+}
+
+func (e *Editor) primeHugeViewport() {
+	if !e.hugeFileActive() {
+		return
+	}
+	count := e.viewport.height
+	if count < hugeFilePrimeViewportLines {
+		count = hugeFilePrimeViewportLines
+	}
+	startRow := e.viewport.scroll
+	if startRow < 0 {
+		startRow = 0
+	}
+	e.prefetchHugeRows(startRow, count)
+	if e.cursor.Row < startRow || e.cursor.Row >= startRow+count {
+		e.prefetchHugeRows(e.cursor.Row, count)
+	}
 }
 
 func (e *Editor) closeHugeFileBuffer() {

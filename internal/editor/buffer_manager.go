@@ -277,4 +277,5 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.clipboard.lines = bs.clipboard
 	e.clipboard.linewise = bs.clipboardLinewise
 	e.selectionScope = bs.selectionScope
+	e.primeHugeViewport()
 }
