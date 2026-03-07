@@ -11,6 +11,7 @@ const (
 	RuntimeRequestOpenFile            RuntimeRequestKind = "open_file"
 	RuntimeRequestBufferSwitched      RuntimeRequestKind = "buffer_switched"
 	RuntimeRequestSaveFile            RuntimeRequestKind = "save_file"
+	RuntimeRequestSaveHugeFile        RuntimeRequestKind = "save_huge_file"
 	RuntimeRequestReloadFile          RuntimeRequestKind = "reload_file"
 	RuntimeRequestFormatBuffer        RuntimeRequestKind = "format_buffer"
 	RuntimeRequestWriteClipboard      RuntimeRequestKind = "write_clipboard"

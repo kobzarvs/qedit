@@ -48,7 +48,7 @@ func TestOpenHugeFileBufferIndexesLines(t *testing.T) {
 	}
 }
 
-func TestLoadHugeFileEntersReadOnlyMode(t *testing.T) {
+func TestLoadHugeFileEntersLimitedEditMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")
 	content := "alpha\nbeta\ngamma\n"
@@ -72,8 +72,8 @@ func TestLoadHugeFileEntersReadOnlyMode(t *testing.T) {
 	if !e.HugeFileMode() {
 		t.Fatalf("expected huge file mode to be active")
 	}
-	if !e.file.readOnly {
-		t.Fatalf("expected huge file to be read-only")
+	if e.file.readOnly {
+		t.Fatalf("expected huge file limited edit mode to be writable")
 	}
 	if got := e.LineCount(); got != 4 {
 		t.Fatalf("line count = %d, want 4", got)
@@ -84,8 +84,98 @@ func TestLoadHugeFileEntersReadOnlyMode(t *testing.T) {
 
 	e.SetBehaviorProfile(BehaviorProfileBasic)
 	e.HandleKey(keyRune('x'))
-	if e.mode != ModeNormal {
-		t.Fatalf("mode = %v, want %v", e.mode, ModeNormal)
+	if e.mode != ModeInsert {
+		t.Fatalf("mode = %v, want %v", e.mode, ModeInsert)
+	}
+	if got := string(e.line(0)); got != "xalpha" {
+		t.Fatalf("line 0 after edit = %q, want %q", got, "xalpha")
+	}
+	if !e.IsDirty() {
+		t.Fatalf("expected huge file edit to mark buffer dirty")
+	}
+}
+
+func TestHugeFileSaveWritesEditedLines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\ngamma\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.SetBehaviorProfile(BehaviorProfileBasic)
+	e.cursor = Cursor{Row: 1, Col: 4}
+	e.HandleKey(keyRune('!'))
+
+	if err := e.WriteHugeFile(path, realTestFileStore{}); err != nil {
+		t.Fatalf("WriteHugeFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if got := string(data); got != "alpha\nbeta!\ngamma\n" {
+		t.Fatalf("saved content = %q, want %q", got, "alpha\nbeta!\ngamma\n")
+	}
+	if got := string(e.line(1)); got != "beta!" {
+		t.Fatalf("line 1 after reload = %q, want %q", got, "beta!")
+	}
+	if e.IsDirty() {
+		t.Fatalf("expected huge file buffer to be clean after save")
+	}
+	if len(e.huge.edits) != 0 {
+		t.Fatalf("expected huge edit overlay to be cleared after save")
+	}
+}
+
+func TestHugeFileSavePreservesCRLFAndTrailingEmptyLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\r\nbeta\r\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	if !e.hugeSetLine(2, []rune("omega")) {
+		t.Fatalf("hugeSetLine returned false")
+	}
+	if err := e.WriteHugeFile(path, realTestFileStore{}); err != nil {
+		t.Fatalf("WriteHugeFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if got := string(data); got != "alpha\r\nbeta\r\nomega" {
+		t.Fatalf("saved content = %q, want %q", got, "alpha\r\nbeta\r\nomega")
 	}
 }
 
@@ -239,6 +329,13 @@ func (s slowTestFileStore) Open(path string) (io.ReadSeekCloser, error) {
 
 func (s slowTestFileStore) Read(path string) ([]byte, error) { return os.ReadFile(path) }
 func (s slowTestFileStore) Write(path string, data []byte) error {
+	return os.WriteFile(path, data, 0o644)
+}
+func (s slowTestFileStore) WriteFrom(path string, src io.Reader) error {
+	data, err := io.ReadAll(src)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(path, data, 0o644)
 }
 func (s slowTestFileStore) Stat(path string) (FileMetadata, error) {

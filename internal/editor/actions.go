@@ -13,7 +13,7 @@ func (e *Editor) execAction(action string) bool {
 		e.bindings.actionHook(action)
 	}
 	if e.hugeFileActive() && !e.hugeFileAllowsAction(action) {
-		e.setStatus("huge file mode is read-only")
+		e.setStatus("operation unavailable in huge file mode")
 		return false
 	}
 	if e.gitDiffPreviewActive() && !e.gitDiffPreviewAllowsAction(action) {
@@ -340,6 +340,9 @@ func (e *Editor) hugeFileAllowsAction(action string) bool {
 		actionWordLeft, actionWordRight, actionLineStart, actionLineEnd,
 		actionFileStart, actionFileEnd, actionPageUp, actionPageDown,
 		actionToggleLineNumbers,
+		actionEnterInsert, actionEnterNormal,
+		actionBackspace, actionNewline, actionDeleteChar,
+		actionUndo, actionRedo, actionSave,
 		actionBranchPicker, actionWorktreeMenu, actionWorktreeRefresh,
 		actionOpenFileTree, actionToggleSidebar, actionToggleSidebarFocus,
 		actionFocusSidebar, actionFocusPrevPane, actionFocusNextPane,
@@ -360,6 +363,9 @@ func (e *Editor) Save(path string) error {
 	}
 	if e.workspaceFileStore() == nil {
 		return errFileStoreUnavailable()
+	}
+	if e.hugeFileActive() {
+		return e.WriteHugeFile(path, e.workspaceFileStore())
 	}
 	if err := e.workspaceWrite(path, data); err != nil {
 		return err

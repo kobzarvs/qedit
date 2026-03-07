@@ -4,6 +4,7 @@ type editorHugeFileState struct {
 	active    bool
 	sizeBytes int64
 	buffer    *HugeFileBuffer
+	edits     map[int][]rune
 }
 
 const hugeFilePrimeViewportLines = 64

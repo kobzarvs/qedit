@@ -15,7 +15,10 @@ func (e *Editor) line(row int) []rune {
 		return line.text
 	}
 	if e.hugeFileActive() {
-		return e.huge.buffer.Line(row)
+		if line, ok := e.hugeLine(row); ok {
+			return line
+		}
+		return nil
 	}
 	if e.text == nil {
 		return nil
@@ -28,7 +31,7 @@ func (e *Editor) tryLine(row int) ([]rune, bool) {
 		return line.text, true
 	}
 	if e.hugeFileActive() {
-		return e.huge.buffer.TryLine(row)
+		return e.hugeTryLine(row)
 	}
 	return e.line(row), true
 }
@@ -48,7 +51,10 @@ func (e *Editor) lineLen(row int) int {
 		return len(line.text)
 	}
 	if e.hugeFileActive() {
-		return e.huge.buffer.LineLen(row)
+		if length, ok := e.hugeLineLen(row); ok {
+			return length
+		}
+		return 0
 	}
 	if e.text == nil {
 		return 0

@@ -2,15 +2,23 @@ package editor
 
 import "errors"
 
-func (e *Editor) prepareSave(path string) (string, []byte, error) {
-	if e.hugeFileActive() {
-		return "", nil, errors.New("save is unavailable in huge file mode")
-	}
+func (e *Editor) resolveSavePath(path string) (string, error) {
 	if path == "" {
 		if e.document.filename == "" {
-			return "", nil, errors.New("no file name")
+			return "", errors.New("no file name")
 		}
 		path = e.document.filename
+	}
+	return path, nil
+}
+
+func (e *Editor) prepareSave(path string) (string, []byte, error) {
+	path, err := e.resolveSavePath(path)
+	if err != nil {
+		return "", nil, err
+	}
+	if e.hugeFileActive() {
+		return path, nil, nil
 	}
 	return path, []byte(e.Content()), nil
 }
@@ -35,6 +43,14 @@ func (e *Editor) queueSaveRequest(path string, quitAfter bool) error {
 	targetPath, data, err := e.prepareSave(path)
 	if err != nil {
 		return err
+	}
+	if e.hugeFileActive() {
+		e.enqueueRuntimeRequest(RuntimeRequest{
+			Kind:      RuntimeRequestSaveHugeFile,
+			Path:      targetPath,
+			QuitAfter: quitAfter,
+		})
+		return nil
 	}
 	e.enqueueRuntimeRequest(RuntimeRequest{
 		Kind:      RuntimeRequestSaveFile,

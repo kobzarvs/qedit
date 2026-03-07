@@ -27,6 +27,22 @@ func (e *Editor) insertRuneAt(pos Cursor, r rune) bool {
 	if pos.Col > lineLen {
 		pos.Col = lineLen
 	}
+	if e.hugeFileActive() {
+		line, ok := e.hugeLine(pos.Row)
+		if !ok {
+			return false
+		}
+		newLine := make([]rune, 0, len(line)+1)
+		newLine = append(newLine, line[:pos.Col]...)
+		newLine = append(newLine, r)
+		newLine = append(newLine, line[pos.Col:]...)
+		if !e.hugeSetLine(pos.Row, newLine) {
+			return false
+		}
+		e.change.lastEdit.Valid = false
+		e.cursor = Cursor{Row: pos.Row, Col: pos.Col + 1}
+		return true
+	}
 	e.recordTextEdit(pos, pos, Cursor{Row: pos.Row, Col: pos.Col + 1}, runeByteLen(r))
 	index := e.docLineStartIndex(pos.Row) + pos.Col
 	e.docInsert(index, []rune{r})
@@ -81,6 +97,10 @@ func (e *Editor) insertNewline() {
 	e.recordUndo(action{kind: actionJoinLine, pos: pos})
 }
 func (e *Editor) splitLineAt(pos Cursor) bool {
+	if e.hugeFileActive() {
+		e.setStatus("multiline edits are unavailable in huge file mode")
+		return false
+	}
 	if pos.Row < 0 || pos.Row >= e.LineCount() {
 		return false
 	}
@@ -665,6 +685,21 @@ func (e *Editor) deleteRuneAt(pos Cursor) bool {
 	if pos.Col < 0 || pos.Col >= lineLen {
 		return false
 	}
+	if e.hugeFileActive() {
+		line, ok := e.hugeLine(pos.Row)
+		if !ok {
+			return false
+		}
+		newLine := make([]rune, 0, len(line)-1)
+		newLine = append(newLine, line[:pos.Col]...)
+		newLine = append(newLine, line[pos.Col+1:]...)
+		if !e.hugeSetLine(pos.Row, newLine) {
+			return false
+		}
+		e.change.lastEdit.Valid = false
+		e.cursor = Cursor{Row: pos.Row, Col: pos.Col}
+		return true
+	}
 	e.recordTextEdit(pos, Cursor{Row: pos.Row, Col: pos.Col + 1}, pos, 0)
 	index := e.docLineStartIndex(pos.Row) + pos.Col
 	e.docDeleteRange(index, index+1)
@@ -672,6 +707,10 @@ func (e *Editor) deleteRuneAt(pos Cursor) bool {
 	return true
 }
 func (e *Editor) joinLineAt(pos Cursor) bool {
+	if e.hugeFileActive() {
+		e.setStatus("multiline edits are unavailable in huge file mode")
+		return false
+	}
 	if pos.Row < 0 || pos.Row+1 >= e.LineCount() {
 		return false
 	}

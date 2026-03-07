@@ -59,6 +59,14 @@ func (s *testFileStore) Write(path string, data []byte) error {
 	return nil
 }
 
+func (s *testFileStore) WriteFrom(path string, src io.Reader) error {
+	data, err := io.ReadAll(src)
+	if err != nil {
+		return err
+	}
+	return s.Write(path, data)
+}
+
 func (s *testFileStore) Stat(path string) (FileMetadata, error) {
 	if meta, ok := s.stats[path]; ok {
 		return meta, nil

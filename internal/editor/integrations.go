@@ -90,6 +90,7 @@ type WorkspaceRuntime interface {
 	Read(path string) ([]byte, error)
 	ReadDir(path string) ([]DirEntry, error)
 	Write(path string, data []byte) error
+	WriteFrom(path string, src io.Reader) error
 	Stat(path string) (FileMetadata, error)
 	IsNotExist(err error) bool
 	FormatGo(src string) (string, error)
@@ -136,6 +137,7 @@ type FileStore interface {
 	Read(path string) ([]byte, error)
 	ReadDir(path string) ([]DirEntry, error)
 	Write(path string, data []byte) error
+	WriteFrom(path string, src io.Reader) error
 	Stat(path string) (FileMetadata, error)
 	IsNotExist(err error) bool
 }
@@ -234,6 +236,13 @@ func (r *storeBackedWorkspaceRuntime) Write(path string, data []byte) error {
 		return nil
 	}
 	return r.fileStore.Write(path, data)
+}
+
+func (r *storeBackedWorkspaceRuntime) WriteFrom(path string, src io.Reader) error {
+	if r == nil || r.fileStore == nil {
+		return nil
+	}
+	return r.fileStore.WriteFrom(path, src)
 }
 
 func (r *storeBackedWorkspaceRuntime) Stat(path string) (FileMetadata, error) {

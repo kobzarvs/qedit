@@ -79,7 +79,7 @@ func (e *Editor) SetBehaviorProfile(name string) bool {
 	}
 	e.profile.name = name
 	e.profile.vim = vimProfileState{}
-	if name == BehaviorProfileBasic && e.mode == ModeNormal && !e.hugeFileActive() {
+	if name == BehaviorProfileBasic && e.mode == ModeNormal {
 		e.mode = ModeInsert
 	}
 	if name == BehaviorProfileVim && e.mode == ModeInsert && e.document.filename == "" && e.Content() == "" {
@@ -118,9 +118,6 @@ func (e *Editor) handleBasicProfileKey(ev EventKey) bool {
 	case ModeMerge:
 		return e.handleMerge(ev)
 	default:
-		if e.hugeFileActive() {
-			return e.handleNormal(ev)
-		}
 		if e.mode != ModeInsert {
 			e.mode = ModeInsert
 		}

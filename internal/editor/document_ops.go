@@ -79,6 +79,9 @@ func (e *Editor) docDeleteRange(start, end int) []rune {
 }
 
 func (e *Editor) docReplaceLine(row int, line []rune) bool {
+	if e.hugeFileActive() {
+		return e.hugeSetLine(row, line)
+	}
 	if e.text == nil {
 		return false
 	}

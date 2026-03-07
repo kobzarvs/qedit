@@ -50,6 +50,14 @@ func (realTestFileStore) Write(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+func (realTestFileStore) WriteFrom(path string, src io.Reader) error {
+	data, err := io.ReadAll(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
 func (realTestFileStore) Stat(path string) (FileMetadata, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -254,6 +262,38 @@ func TestExecCommandWriteAndSave(t *testing.T) {
 	}
 	if req.Kind != RuntimeRequestSaveFile || req.Path != path || req.Content != "hello" || req.QuitAfter {
 		t.Fatalf("request = %#v, want save-file path=%q content=hello quitAfter=false", req, path)
+	}
+}
+
+func TestExecCommandWriteQueuesHugeFileSave(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	if err := os.WriteFile(path, []byte("alpha\nbeta\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	if quit := e.execCommand("w"); quit {
+		t.Fatalf("execCommand w returned true")
+	}
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected save request")
+	}
+	if req.Kind != RuntimeRequestSaveHugeFile || req.Path != path || req.QuitAfter {
+		t.Fatalf("request = %#v, want save-huge-file path=%q quitAfter=false", req, path)
 	}
 }
 

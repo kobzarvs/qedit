@@ -46,6 +46,46 @@ func (FileStore) Write(path string, data []byte) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
+func (FileStore) WriteFrom(path string, src io.Reader) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".qedit-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	keepTmp := false
+	defer func() {
+		if !keepTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	perm := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		perm = info.Mode().Perm()
+	}
+	if _, err := io.Copy(tmp, src); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	keepTmp = true
+	return nil
+}
+
 func (FileStore) Stat(path string) (editor.FileMetadata, error) {
 	info, err := os.Stat(path)
 	if err != nil {

@@ -33,6 +33,8 @@ func (c *editorRuntimeController) dispatchRuntimeRequest(req editor.RuntimeReque
 		c.handleBufferSwitchedRequest()
 	case editor.RuntimeRequestSaveFile:
 		c.handleSaveFileRequest(req)
+	case editor.RuntimeRequestSaveHugeFile:
+		c.handleSaveHugeFileRequest(req)
 	case editor.RuntimeRequestReloadFile:
 		c.handleReloadFileRequest(req)
 	case editor.RuntimeRequestFormatBuffer:
@@ -117,6 +119,30 @@ func (c *editorRuntimeController) handleSaveFileRequest(req editor.RuntimeReques
 	savedPath := normalizeAppPath(c.fileStore, req.Path)
 	c.ed.ApplySavedFile(savedPath)
 
+	if savedPath != prevPath {
+		c.activateCurrentEditorFile(savedPath, true)
+	} else {
+		c.state.openPath = savedPath
+		c.fileMonitor.Watch(savedPath)
+	}
+
+	c.ed.SetStatusMessage("written")
+	if req.QuitAfter {
+		c.state.quitRequested = true
+	}
+}
+
+func (c *editorRuntimeController) handleSaveHugeFileRequest(req editor.RuntimeRequest) {
+	if req.Path == "" {
+		return
+	}
+	if err := c.ed.WriteHugeFile(req.Path, c.fileStore); err != nil {
+		c.ed.SetStatusMessage(err.Error())
+		return
+	}
+
+	prevPath := normalizeAppPath(c.fileStore, c.state.openPath)
+	savedPath := normalizeAppPath(c.fileStore, req.Path)
 	if savedPath != prevPath {
 		c.activateCurrentEditorFile(savedPath, true)
 	} else {

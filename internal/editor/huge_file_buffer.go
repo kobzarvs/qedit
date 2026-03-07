@@ -596,6 +596,20 @@ func (b *HugeFileBuffer) Path() string {
 	return b.path
 }
 
+func (b *HugeFileBuffer) OpenReader() (io.ReadSeekCloser, error) {
+	if b == nil || b.openReader == nil {
+		return nil, errHugeFileUnavailable
+	}
+	b.mu.RLock()
+	closed := b.closed
+	openReader := b.openReader
+	b.mu.RUnlock()
+	if closed {
+		return nil, errHugeFileUnavailable
+	}
+	return openReader()
+}
+
 func (b *HugeFileBuffer) SizeBytes() int64 {
 	if b == nil {
 		return 0

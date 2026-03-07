@@ -1,10 +1,6 @@
 package editor
 
 func (e *Editor) handleInsert(ev EventKey) bool {
-	if e.hugeFileActive() {
-		e.setStatus("huge file mode is read-only")
-		return false
-	}
 	if e.handleSelectionMove(ev) {
 		return false
 	}

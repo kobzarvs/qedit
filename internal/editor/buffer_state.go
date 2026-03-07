@@ -114,7 +114,7 @@ func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) e
 	e.clearGitDiffPreview()
 	e.cursor = Cursor{}
 	e.file.diskContent = ""
-	e.file.readOnly = true
+	e.file.readOnly = false
 	e.resetConflictBlocks()
 	e.viewport.scroll = 0
 	e.viewport.scrollX = 0
@@ -142,7 +142,7 @@ func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) e
 		newIdx := e.buffers.Add(bs)
 		e.buffers.SetActive(newIdx)
 	}
-	status := fmt.Sprintf("huge file mode: read-only (%.1f MB)", float64(meta.Size)/(1024*1024))
+	status := fmt.Sprintf("huge file mode: limited edit (%.1f MB)", float64(meta.Size)/(1024*1024))
 	if !buffer.IndexingComplete() {
 		status += ", indexing..."
 	}
