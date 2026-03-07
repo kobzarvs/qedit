@@ -302,6 +302,64 @@ func TestHugeFileBufferTryLineDefersFarRowsUntilIndexed(t *testing.T) {
 	}
 }
 
+func TestHugeFileBufferWarmLinesPopulatesFarViewportBeforeFullIndex(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 200000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, slowTestFileStore{maxRead: 128, delay: 2 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	if line, ok := buf.TryLine(7000); ok {
+		t.Fatalf("expected far line to be deferred before warm, got %q", string(line))
+	}
+
+	buf.WarmLines(7000, 20)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		line, ok := buf.TryLine(7000)
+		if ok {
+			if got := string(line); got != "line" {
+				t.Fatalf("warmed line 7000 = %q, want %q", got, "line")
+			}
+			if !buf.CanPrefetchQuick(7000, 20) {
+				t.Fatalf("expected warmed viewport to become quickly prefetchable")
+			}
+			if buf.IndexingComplete() {
+				t.Fatalf("expected warm path to finish before full indexing")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for far viewport warm")
+}
+
 func TestHugeFileBufferLoadsPersistentIndexCache(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 32

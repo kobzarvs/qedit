@@ -19,6 +19,7 @@ func (e *Editor) prefetchHugeViewport(viewHeight int) {
 		return
 	}
 	if !e.huge.buffer.CanPrefetchQuick(e.viewport.scroll, viewHeight) {
+		e.huge.buffer.WarmLines(e.viewport.scroll, viewHeight)
 		return
 	}
 	_ = e.huge.buffer.PrefetchLines(e.viewport.scroll, viewHeight)
