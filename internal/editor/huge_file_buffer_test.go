@@ -117,3 +117,34 @@ func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 		t.Fatalf("last line = %q, want empty", got)
 	}
 }
+
+func TestHugeFileBufferPrefetchLinesCachesViewport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 200; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, info.Size(), realTestFileStore{})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	if err := buf.PrefetchLines(50, 12); err != nil {
+		t.Fatalf("PrefetchLines returned error: %v", err)
+	}
+	for row := 50; row < 62; row++ {
+		if got := string(buf.lineCache[row]); got != "line" {
+			t.Fatalf("cached line %d = %q, want %q", row, got, "line")
+		}
+	}
+}

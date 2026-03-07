@@ -81,6 +81,7 @@ func (e *Editor) Render(s Screen) {
 		} else if mergeReviewActive {
 			e.renderMergeReview(s, viewHeight, w)
 		} else {
+			e.prefetchHugeViewport(viewHeight)
 			for y := 0; y < viewHeight; y++ {
 				lineIdx := e.viewport.scroll + y
 				if lineIdx >= e.LineCount() {

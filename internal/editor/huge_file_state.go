@@ -14,6 +14,13 @@ func (e *Editor) HugeFileMode() bool {
 	return e.hugeFileActive()
 }
 
+func (e *Editor) prefetchHugeViewport(viewHeight int) {
+	if !e.hugeFileActive() || viewHeight <= 0 {
+		return
+	}
+	_ = e.huge.buffer.PrefetchLines(e.viewport.scroll, viewHeight)
+}
+
 func (e *Editor) closeHugeFileBuffer() {
 	if e.huge.buffer != nil {
 		_ = e.huge.buffer.Close()
