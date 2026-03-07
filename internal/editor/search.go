@@ -8,6 +8,8 @@ import (
 	"unicode/utf8"
 )
 
+const hugeFileSearchMatchLimit = 10000
+
 // LoadSearchHistory loads search history from file
 func (e *Editor) LoadSearchHistory() {
 	path := e.searchHistoryPath
@@ -258,6 +260,8 @@ func (e *Editor) updateSearchMatches() {
 	if query == "" {
 		return
 	}
+	matchLimit := e.searchMatchLimit()
+	truncated := false
 
 	// Regex search mode
 	if e.searchRegex {
@@ -281,6 +285,13 @@ func (e *Editor) updateSearchMatches() {
 					Length: length,
 					Score:  1000,
 				})
+				if matchLimit > 0 && len(e.searchMatches) >= matchLimit {
+					truncated = true
+					break
+				}
+			}
+			if truncated {
+				break
 			}
 		}
 	} else {
@@ -305,10 +316,17 @@ func (e *Editor) updateSearchMatches() {
 					Length: len(query),
 					Score:  1000, // Exact match gets high score
 				})
+				if matchLimit > 0 && len(e.searchMatches) >= matchLimit {
+					truncated = true
+					break
+				}
 				offset += col + 1
 				if offset >= len(lineLower) {
 					break
 				}
+			}
+			if truncated {
+				break
 			}
 
 			// In fuzzy mode, find words containing all query letters
@@ -336,10 +354,24 @@ func (e *Editor) updateSearchMatches() {
 							Score:       500, // Fuzzy match score
 							MatchedCols: matchedPositions,
 						})
+						if matchLimit > 0 && len(e.searchMatches) >= matchLimit {
+							truncated = true
+							break
+						}
 					}
 				}
+				if truncated {
+					break
+				}
+			}
+			if truncated {
+				break
 			}
 		}
+	}
+
+	if truncated {
+		e.setStatus(fmt.Sprintf("search truncated to first %d matches in huge file mode", matchLimit))
 	}
 
 	// Sort by row, then by column
@@ -356,6 +388,13 @@ func (e *Editor) updateSearchMatches() {
 		}
 		e.jumpToCurrentMatch()
 	}
+}
+
+func (e *Editor) searchMatchLimit() int {
+	if e.hugeFileActive() {
+		return hugeFileSearchMatchLimit
+	}
+	return 0
 }
 
 // sequentialMatch checks if all query chars appear in word in order
