@@ -13,12 +13,14 @@ import (
 const hugeFileLineCacheSize = 256
 const hugeFileSpanCacheSize = 4096
 const hugeFileCheckpointSpacing = 1024
-const hugeFileByteAnchorSpacingDefault int64 = 256 << 10
 const hugeFileLinePrefetch = 64
 const hugeFileIndexCheckpointBatch = 64
 
 var hugeFileInitialSampleBytes int64 = 2 << 20
-var hugeFileByteAnchorSpacing int64 = hugeFileByteAnchorSpacingDefault
+var hugeFileMinByteAnchorSpacing int64 = 64 << 10
+var hugeFileMaxByteAnchorSpacing int64 = 4 << 20
+var hugeFileTargetByteAnchors int64 = 16384
+var hugeFileByteAnchorSpacingOverride int64
 var hugeFileIndexPersistInterval = 250 * time.Millisecond
 
 var errHugeFileLineOutOfRange = errors.New("huge file line out of range")
@@ -54,6 +56,7 @@ type HugeFileBuffer struct {
 	estimatedLineCount int
 	checkpoints        []hugeFileCheckpoint
 	byteAnchors        []hugeFileCheckpoint
+	byteAnchorSpacing  int64
 	fullyIndexed       bool
 	indexErr           error
 	cancelIndex        chan struct{}
@@ -73,6 +76,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 	if fs == nil {
 		return nil, errFileStoreUnavailable()
 	}
+	byteAnchorSpacing := effectiveHugeFileByteAnchorSpacing(meta.Size)
 	reader, err := fs.Open(path)
 	if err != nil {
 		return nil, err
@@ -91,6 +95,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 			estimatedLineCount: cachedIndex.EstimatedLineCount,
 			checkpoints:        cachedIndex.Checkpoints,
 			byteAnchors:        cachedIndex.ByteAnchors,
+			byteAnchorSpacing:  byteAnchorSpacing,
 			fullyIndexed:       cachedIndex.FullyIndexed,
 			cancelIndex:        make(chan struct{}),
 			indexDone:          make(chan struct{}),
@@ -117,7 +122,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		return b, nil
 	}
 
-	initial, err := buildInitialHugeFileIndex(reader, meta.Size)
+	initial, err := buildInitialHugeFileIndex(reader, meta.Size, byteAnchorSpacing)
 	if err != nil {
 		_ = reader.Close()
 		return nil, err
@@ -135,6 +140,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		estimatedLineCount: initial.estimatedLineCount,
 		checkpoints:        initial.checkpoints,
 		byteAnchors:        initial.byteAnchors,
+		byteAnchorSpacing:  byteAnchorSpacing,
 		fullyIndexed:       initial.fullyIndexed,
 		cancelIndex:        make(chan struct{}),
 		indexDone:          make(chan struct{}),
@@ -151,12 +157,13 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 
 	indexReader, err := fs.Open(path)
 	if err != nil {
-		checkpoints, lineCount, fullErr := buildHugeFileLineIndex(reader)
+		checkpoints, byteAnchors, lineCount, fullErr := buildHugeFileLineIndex(reader, byteAnchorSpacing)
 		if fullErr != nil {
 			_ = reader.Close()
 			return nil, fullErr
 		}
 		b.checkpoints = checkpoints
+		b.byteAnchors = byteAnchors
 		b.lineCount = lineCount
 		b.estimatedLineCount = lineCount
 		b.fullyIndexed = true
@@ -173,7 +180,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 	return b, nil
 }
 
-func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes int64) (hugeFileInitialIndex, error) {
+func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes, byteAnchorSpacing int64) (hugeFileInitialIndex, error) {
 	if _, err := reader.Seek(0, io.SeekStart); err != nil {
 		return hugeFileInitialIndex{}, err
 	}
@@ -184,7 +191,7 @@ func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes int64) (hugeFileI
 	}
 	checkpoints := []hugeFileCheckpoint{{row: 0, offset: 0}}
 	byteAnchors := []hugeFileCheckpoint{{row: 0, offset: 0}}
-	nextByteAnchorOffset := hugeFileByteAnchorSpacing
+	nextByteAnchorOffset := byteAnchorSpacing
 	buf := make([]byte, 256<<10)
 	var offset int64
 	lineCount := 1
@@ -222,7 +229,7 @@ func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes int64) (hugeFileI
 						offset: nextLineOffset,
 					})
 					for nextByteAnchorOffset > 0 && nextLineOffset >= nextByteAnchorOffset {
-						nextByteAnchorOffset += hugeFileByteAnchorSpacing
+						nextByteAnchorOffset += byteAnchorSpacing
 					}
 				}
 			}
@@ -260,12 +267,46 @@ func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes int64) (hugeFileI
 	}, nil
 }
 
-func buildHugeFileLineIndex(reader io.ReadSeeker) ([]hugeFileCheckpoint, int, error) {
-	initial, err := buildInitialHugeFileIndex(reader, 0)
+func buildHugeFileLineIndex(reader io.ReadSeeker, byteAnchorSpacing int64) ([]hugeFileCheckpoint, []hugeFileCheckpoint, int, error) {
+	initial, err := buildInitialHugeFileIndex(reader, 0, byteAnchorSpacing)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
-	return initial.checkpoints, initial.lineCount, nil
+	return initial.checkpoints, initial.byteAnchors, initial.lineCount, nil
+}
+
+func effectiveHugeFileByteAnchorSpacing(sizeBytes int64) int64 {
+	if hugeFileByteAnchorSpacingOverride > 0 {
+		return hugeFileByteAnchorSpacingOverride
+	}
+	minSpacing := hugeFileMinByteAnchorSpacing
+	if minSpacing <= 0 {
+		minSpacing = 64 << 10
+	}
+	maxSpacing := hugeFileMaxByteAnchorSpacing
+	if maxSpacing > 0 && maxSpacing < minSpacing {
+		maxSpacing = minSpacing
+	}
+	if sizeBytes <= 0 || hugeFileTargetByteAnchors <= 0 {
+		if maxSpacing > 0 && minSpacing > maxSpacing {
+			return maxSpacing
+		}
+		return minSpacing
+	}
+	spacing := (sizeBytes + hugeFileTargetByteAnchors - 1) / hugeFileTargetByteAnchors
+	if spacing < minSpacing {
+		spacing = minSpacing
+	}
+	if maxSpacing > 0 && spacing > maxSpacing {
+		spacing = maxSpacing
+	}
+	if rem := spacing % minSpacing; rem != 0 {
+		spacing += minSpacing - rem
+	}
+	if maxSpacing > 0 && spacing > maxSpacing {
+		return maxSpacing
+	}
+	return spacing
 }
 
 func estimateHugeFileLineCount(sizeBytes, sampledBytes int64, sampledLines int) int {
@@ -331,7 +372,7 @@ func (b *HugeFileBuffer) buildFullIndex(reader io.ReadSeekCloser, startOffset in
 				if nextByteAnchorOffset > 0 && nextLineOffset >= nextByteAnchorOffset {
 					b.appendByteAnchor(nextLineRow, nextLineOffset)
 					for nextByteAnchorOffset > 0 && nextLineOffset >= nextByteAnchorOffset {
-						nextByteAnchorOffset += hugeFileByteAnchorSpacing
+						nextByteAnchorOffset += b.byteAnchorSpacing
 					}
 				}
 			}
@@ -385,7 +426,7 @@ func (b *HugeFileBuffer) appendCheckpoints(checkpoints []hugeFileCheckpoint, lin
 }
 
 func (b *HugeFileBuffer) appendByteAnchor(row int, offset int64) {
-	if hugeFileByteAnchorSpacing <= 0 {
+	if b == nil || b.byteAnchorSpacing <= 0 {
 		return
 	}
 	b.mu.Lock()
@@ -705,18 +746,18 @@ func (b *HugeFileBuffer) latestCachedAnchor() hugeFileCheckpoint {
 }
 
 func (b *HugeFileBuffer) nextByteAnchorOffset(startOffset int64) int64 {
-	if hugeFileByteAnchorSpacing <= 0 {
+	if b == nil || b.byteAnchorSpacing <= 0 {
 		return 0
 	}
-	aligned := hugeFileByteAnchorSpacing
+	aligned := b.byteAnchorSpacing
 	if startOffset > 0 {
-		aligned = ((startOffset / hugeFileByteAnchorSpacing) + 1) * hugeFileByteAnchorSpacing
+		aligned = ((startOffset / b.byteAnchorSpacing) + 1) * b.byteAnchorSpacing
 	}
 	b.mu.RLock()
 	if len(b.byteAnchors) > 0 {
 		last := b.byteAnchors[len(b.byteAnchors)-1].offset
 		b.mu.RUnlock()
-		next := last + hugeFileByteAnchorSpacing
+		next := last + b.byteAnchorSpacing
 		if aligned > next {
 			return aligned
 		}

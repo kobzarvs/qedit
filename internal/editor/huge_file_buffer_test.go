@@ -527,12 +527,12 @@ func TestHugeFileBufferLoadsPartialIndexCacheAndResumes(t *testing.T) {
 
 func TestHugeFileBufferPrefersByteAnchorsForLongLines(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
-	prevAnchorSpacing := hugeFileByteAnchorSpacing
+	prevAnchorSpacing := hugeFileByteAnchorSpacingOverride
 	hugeFileInitialSampleBytes = 0
-	hugeFileByteAnchorSpacing = 64
+	hugeFileByteAnchorSpacingOverride = 64
 	defer func() {
 		hugeFileInitialSampleBytes = prevSampleBytes
-		hugeFileByteAnchorSpacing = prevAnchorSpacing
+		hugeFileByteAnchorSpacingOverride = prevAnchorSpacing
 	}()
 
 	dir := t.TempDir()
@@ -572,5 +572,42 @@ func TestHugeFileBufferPrefersByteAnchorsForLongLines(t *testing.T) {
 	}
 	if scanAnchor.offset != byteAnchor.offset {
 		t.Fatalf("scan anchor offset = %d, want byte anchor offset %d", scanAnchor.offset, byteAnchor.offset)
+	}
+}
+
+func TestEffectiveHugeFileByteAnchorSpacingScalesWithFileSize(t *testing.T) {
+	prevOverride := hugeFileByteAnchorSpacingOverride
+	prevMin := hugeFileMinByteAnchorSpacing
+	prevMax := hugeFileMaxByteAnchorSpacing
+	prevTarget := hugeFileTargetByteAnchors
+	hugeFileByteAnchorSpacingOverride = 0
+	hugeFileMinByteAnchorSpacing = 64 << 10
+	hugeFileMaxByteAnchorSpacing = 4 << 20
+	hugeFileTargetByteAnchors = 16384
+	defer func() {
+		hugeFileByteAnchorSpacingOverride = prevOverride
+		hugeFileMinByteAnchorSpacing = prevMin
+		hugeFileMaxByteAnchorSpacing = prevMax
+		hugeFileTargetByteAnchors = prevTarget
+	}()
+
+	small := effectiveHugeFileByteAnchorSpacing(1 << 20)
+	medium := effectiveHugeFileByteAnchorSpacing(4 << 30)
+	huge := effectiveHugeFileByteAnchorSpacing(128 << 30)
+
+	if small != hugeFileMinByteAnchorSpacing {
+		t.Fatalf("small spacing = %d, want min spacing %d", small, hugeFileMinByteAnchorSpacing)
+	}
+	if medium < small {
+		t.Fatalf("medium spacing = %d, want >= small spacing %d", medium, small)
+	}
+	if huge < medium {
+		t.Fatalf("huge spacing = %d, want >= medium spacing %d", huge, medium)
+	}
+	if huge > hugeFileMaxByteAnchorSpacing {
+		t.Fatalf("huge spacing = %d, want <= max spacing %d", huge, hugeFileMaxByteAnchorSpacing)
+	}
+	if medium%hugeFileMinByteAnchorSpacing != 0 {
+		t.Fatalf("medium spacing = %d, want multiple of min spacing %d", medium, hugeFileMinByteAnchorSpacing)
 	}
 }
