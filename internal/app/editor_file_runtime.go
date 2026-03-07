@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -12,6 +13,8 @@ import (
 )
 
 var hugeFileThresholdBytes int64 = 64 << 20
+var hugeFileLongLineThresholdBytes = 128 << 10
+var hugeFileLongLineSampleBytes int64 = 1 << 20
 
 type activeFileState struct {
 	openPath           string
@@ -30,8 +33,8 @@ func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts
 		return activeFileState{}, nil
 	}
 	if !ed.OpenExistingBuffer(path) {
-		if fileStore != nil && hugeFileThresholdBytes > 0 {
-			if info, err := fileStore.Stat(path); err == nil && info.Size >= hugeFileThresholdBytes {
+		if fileStore != nil {
+			if info, err := fileStore.Stat(path); err == nil && shouldUseHugeFileMode(path, fileStore, info) {
 				if err := ed.LoadHugeFile(path, fileStore, info); err != nil {
 					return activeFileState{}, err
 				}
@@ -47,6 +50,66 @@ func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts
 		}
 	}
 	return activateEditorFile(ed, screen, ls, ts, langs, fileStore, path, highlightMaxBytes), nil
+}
+
+func shouldUseHugeFileMode(path string, fileStore editor.FileStore, info editor.FileMetadata) bool {
+	if hugeFileThresholdBytes > 0 && info.Size >= hugeFileThresholdBytes {
+		return true
+	}
+	if hugeFileLongLineThresholdBytes <= 0 || hugeFileLongLineSampleBytes == 0 || fileStore == nil {
+		return false
+	}
+	return fileHasLongLine(path, fileStore, hugeFileLongLineThresholdBytes, hugeFileLongLineSampleBytes)
+}
+
+func fileHasLongLine(path string, fileStore editor.FileStore, threshold int, sampleBytes int64) bool {
+	if threshold <= 0 || sampleBytes == 0 || fileStore == nil {
+		return false
+	}
+	reader, err := fileStore.Open(path)
+	if err != nil {
+		return false
+	}
+	defer reader.Close()
+
+	buf := make([]byte, 64<<10)
+	remaining := sampleBytes
+	currentLineLen := 0
+	for {
+		if remaining == 0 {
+			break
+		}
+		readSize := len(buf)
+		if remaining > 0 && int64(readSize) > remaining {
+			readSize = int(remaining)
+		}
+		n, err := reader.Read(buf[:readSize])
+		if n > 0 {
+			if remaining > 0 {
+				remaining -= int64(n)
+			}
+			for _, b := range buf[:n] {
+				if b == '\n' {
+					currentLineLen = 0
+					continue
+				}
+				currentLineLen++
+				if currentLineLen >= threshold {
+					return true
+				}
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return false
+		}
+		if n == 0 {
+			break
+		}
+	}
+	return currentLineLen >= threshold
 }
 
 func activateRuntimeFile(ed *editor.Editor, path string, data []byte) error {
