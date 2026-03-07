@@ -1,13 +1,30 @@
 package editor
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"io"
 )
 
 var errHugeFileUnavailable = errors.New("huge file buffer unavailable")
+
+type hugeFileOverlayRow struct {
+	text []rune
+	eol  string
+}
+
+type hugeFileRowPatch struct {
+	baseStart  int
+	baseDelete int
+	rows       []hugeFileOverlayRow
+}
+
+type hugeFileLogicalRowRef struct {
+	logicalStart int
+	rowOffset    int
+	baseStart    int
+	baseDelete   int
+	patchIndex   int
+}
 
 func copyRunes(src []rune) []rune {
 	if len(src) == 0 {
@@ -28,52 +45,335 @@ func equalRunes(a, b []rune) bool {
 	return true
 }
 
+func copyHugeOverlayRows(rows []hugeFileOverlayRow) []hugeFileOverlayRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([]hugeFileOverlayRow, len(rows))
+	for i, row := range rows {
+		out[i] = hugeFileOverlayRow{
+			text: copyRunes(row.text),
+			eol:  row.eol,
+		}
+	}
+	return out
+}
+
+func equalHugeOverlayRows(a, b []hugeFileOverlayRow) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].eol != b[i].eol || !equalRunes(a[i].text, b[i].text) {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Editor) hugeLineCount() int {
+	if !e.hugeFileActive() || e.huge.buffer == nil {
+		return 1
+	}
+	count := e.huge.buffer.LineCount()
+	for _, patch := range e.huge.patches {
+		count += len(patch.rows) - patch.baseDelete
+	}
+	if count < 1 {
+		return 1
+	}
+	return count
+}
+
+func (e *Editor) hugeResolveLogicalRow(row int) (hugeFileLogicalRowRef, bool) {
+	if !e.hugeFileActive() || e.huge.buffer == nil || row < 0 {
+		return hugeFileLogicalRowRef{}, false
+	}
+	baseLineCount := e.huge.buffer.LineCount()
+	logicalRow := 0
+	baseRow := 0
+	for i, patch := range e.huge.patches {
+		unchanged := patch.baseStart - baseRow
+		if row < logicalRow+unchanged {
+			targetBaseRow := baseRow + (row - logicalRow)
+			return hugeFileLogicalRowRef{
+				logicalStart: row,
+				rowOffset:    0,
+				baseStart:    targetBaseRow,
+				baseDelete:   1,
+				patchIndex:   -1,
+			}, true
+		}
+		logicalRow += unchanged
+		if row < logicalRow+len(patch.rows) {
+			return hugeFileLogicalRowRef{
+				logicalStart: logicalRow,
+				rowOffset:    row - logicalRow,
+				baseStart:    patch.baseStart,
+				baseDelete:   patch.baseDelete,
+				patchIndex:   i,
+			}, true
+		}
+		logicalRow += len(patch.rows)
+		baseRow = patch.baseStart + patch.baseDelete
+	}
+	if row >= logicalRow+(baseLineCount-baseRow) {
+		return hugeFileLogicalRowRef{}, false
+	}
+	targetBaseRow := baseRow + (row - logicalRow)
+	return hugeFileLogicalRowRef{
+		logicalStart: row,
+		rowOffset:    0,
+		baseStart:    targetBaseRow,
+		baseDelete:   1,
+		patchIndex:   -1,
+	}, true
+}
+
+func (e *Editor) hugeBaseRow(baseRow int) hugeFileOverlayRow {
+	row := hugeFileOverlayRow{
+		text: e.huge.buffer.Line(baseRow),
+		eol:  e.huge.buffer.LineEnding(baseRow),
+	}
+	if line, ok := e.huge.edits[baseRow]; ok {
+		row.text = copyRunes(line)
+	}
+	return row
+}
+
+func (e *Editor) hugeCurrentRowsForBaseInterval(baseStart, baseDelete int) []hugeFileOverlayRow {
+	baseEnd := baseStart + baseDelete
+	rows := make([]hugeFileOverlayRow, 0, baseDelete)
+	baseRow := baseStart
+	for _, patch := range e.huge.patches {
+		patchEnd := patch.baseStart + patch.baseDelete
+		if patchEnd <= baseStart {
+			continue
+		}
+		if patch.baseStart >= baseEnd {
+			break
+		}
+		for baseRow < patch.baseStart && baseRow < baseEnd {
+			rows = append(rows, e.hugeBaseRow(baseRow))
+			baseRow++
+		}
+		rows = append(rows, copyHugeOverlayRows(patch.rows)...)
+		if patchEnd > baseRow {
+			baseRow = patchEnd
+		}
+	}
+	for baseRow < baseEnd {
+		rows = append(rows, e.hugeBaseRow(baseRow))
+		baseRow++
+	}
+	return rows
+}
+
+func (e *Editor) hugeBaseIntervalMatchesOriginal(baseStart, baseDelete int, rows []hugeFileOverlayRow) bool {
+	if len(rows) != baseDelete {
+		return false
+	}
+	for i := 0; i < baseDelete; i++ {
+		baseRow := baseStart + i
+		if !equalRunes(rows[i].text, e.huge.buffer.Line(baseRow)) {
+			return false
+		}
+		if rows[i].eol != e.huge.buffer.LineEnding(baseRow) {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Editor) hugeApplyBaseInterval(baseStart, baseDelete int, rows []hugeFileOverlayRow) {
+	baseEnd := baseStart + baseDelete
+	for row := baseStart; row < baseEnd; row++ {
+		delete(e.huge.edits, row)
+	}
+
+	old := append([]hugeFileRowPatch(nil), e.huge.patches...)
+	replacementNeeded := !e.hugeBaseIntervalMatchesOriginal(baseStart, baseDelete, rows)
+	replacement := hugeFileRowPatch{
+		baseStart:  baseStart,
+		baseDelete: baseDelete,
+		rows:       copyHugeOverlayRows(rows),
+	}
+
+	e.huge.patches = e.huge.patches[:0]
+	inserted := false
+	for _, patch := range old {
+		patchEnd := patch.baseStart + patch.baseDelete
+		if patchEnd <= baseStart || patch.baseStart >= baseEnd {
+			if replacementNeeded && !inserted && patch.baseStart > baseStart {
+				e.huge.patches = append(e.huge.patches, replacement)
+				inserted = true
+			}
+			e.huge.patches = append(e.huge.patches, patch)
+			continue
+		}
+	}
+	if replacementNeeded && !inserted {
+		e.huge.patches = append(e.huge.patches, replacement)
+	}
+}
+
+func (e *Editor) hugeDefaultLineEnding() string {
+	if e.huge.defaultEOL != "" {
+		return e.huge.defaultEOL
+	}
+	if !e.hugeFileActive() || e.huge.buffer == nil {
+		return "\n"
+	}
+	limit := e.huge.buffer.IndexedLineCount()
+	if limit <= 0 {
+		limit = e.huge.buffer.LineCount()
+	}
+	if limit > 128 {
+		limit = 128
+	}
+	for row := 0; row < limit; row++ {
+		if eol := e.huge.buffer.LineEnding(row); eol != "" {
+			e.huge.defaultEOL = eol
+			return eol
+		}
+	}
+	e.huge.defaultEOL = "\n"
+	return e.huge.defaultEOL
+}
+
 func (e *Editor) hugeLine(row int) ([]rune, bool) {
 	if !e.hugeFileActive() || e.huge.buffer == nil {
 		return nil, false
 	}
-	if line, ok := e.huge.edits[row]; ok {
+	ref, ok := e.hugeResolveLogicalRow(row)
+	if !ok {
+		return nil, false
+	}
+	if ref.patchIndex >= 0 {
+		return copyRunes(e.huge.patches[ref.patchIndex].rows[ref.rowOffset].text), true
+	}
+	if line, ok := e.huge.edits[ref.baseStart]; ok {
 		return copyRunes(line), true
 	}
-	return e.huge.buffer.Line(row), true
+	return e.huge.buffer.Line(ref.baseStart), true
 }
 
 func (e *Editor) hugeTryLine(row int) ([]rune, bool) {
 	if !e.hugeFileActive() || e.huge.buffer == nil {
 		return nil, false
 	}
-	if line, ok := e.huge.edits[row]; ok {
+	ref, ok := e.hugeResolveLogicalRow(row)
+	if !ok {
+		return nil, false
+	}
+	if ref.patchIndex >= 0 {
+		return copyRunes(e.huge.patches[ref.patchIndex].rows[ref.rowOffset].text), true
+	}
+	if line, ok := e.huge.edits[ref.baseStart]; ok {
 		return copyRunes(line), true
 	}
-	return e.huge.buffer.TryLine(row)
+	return e.huge.buffer.TryLine(ref.baseStart)
 }
 
 func (e *Editor) hugeLineLen(row int) (int, bool) {
-	if !e.hugeFileActive() || e.huge.buffer == nil {
+	line, ok := e.hugeTryLine(row)
+	if !ok {
 		return 0, false
 	}
-	if line, ok := e.huge.edits[row]; ok {
-		return len(line), true
-	}
-	return e.huge.buffer.LineLen(row), true
+	return len(line), true
 }
 
 func (e *Editor) hugeSetLine(row int, line []rune) bool {
-	if !e.hugeFileActive() || e.huge.buffer == nil {
+	if !e.hugeFileActive() || e.huge.buffer == nil || row < 0 || row >= e.LineCount() {
 		return false
 	}
-	if row < 0 || row >= e.LineCount() {
+	ref, ok := e.hugeResolveLogicalRow(row)
+	if !ok {
 		return false
 	}
-	base := e.huge.buffer.Line(row)
+	if ref.patchIndex >= 0 {
+		patch := e.huge.patches[ref.patchIndex]
+		rows := copyHugeOverlayRows(patch.rows)
+		rows[ref.rowOffset].text = copyRunes(line)
+		e.hugeApplyBaseInterval(patch.baseStart, patch.baseDelete, rows)
+		return true
+	}
+
+	base := e.huge.buffer.Line(ref.baseStart)
 	if equalRunes(base, line) {
-		delete(e.huge.edits, row)
+		delete(e.huge.edits, ref.baseStart)
 		return true
 	}
 	if e.huge.edits == nil {
 		e.huge.edits = make(map[int][]rune)
 	}
-	e.huge.edits[row] = copyRunes(line)
+	e.huge.edits[ref.baseStart] = copyRunes(line)
+	return true
+}
+
+func (e *Editor) hugeSplitLineAt(pos Cursor) bool {
+	ref, ok := e.hugeResolveLogicalRow(pos.Row)
+	if !ok {
+		return false
+	}
+	rows := e.hugeCurrentRowsForBaseInterval(ref.baseStart, ref.baseDelete)
+	if ref.rowOffset < 0 || ref.rowOffset >= len(rows) {
+		return false
+	}
+	line := rows[ref.rowOffset].text
+	col := clampRange(pos.Col, 0, len(line))
+	newRows := make([]hugeFileOverlayRow, 0, len(rows)+1)
+	newRows = append(newRows, copyHugeOverlayRows(rows[:ref.rowOffset])...)
+	newRows = append(newRows, hugeFileOverlayRow{
+		text: copyRunes(line[:col]),
+		eol:  e.hugeDefaultLineEnding(),
+	})
+	newRows = append(newRows, hugeFileOverlayRow{
+		text: copyRunes(line[col:]),
+		eol:  rows[ref.rowOffset].eol,
+	})
+	newRows = append(newRows, copyHugeOverlayRows(rows[ref.rowOffset+1:])...)
+	e.hugeApplyBaseInterval(ref.baseStart, ref.baseDelete, newRows)
+	e.cursor = Cursor{Row: pos.Row + 1, Col: 0}
+	e.change.lastEdit.Valid = false
+	return true
+}
+
+func (e *Editor) hugeJoinLineAt(pos Cursor) bool {
+	if pos.Row < 0 || pos.Row+1 >= e.LineCount() {
+		return false
+	}
+	startRef, ok := e.hugeResolveLogicalRow(pos.Row)
+	if !ok {
+		return false
+	}
+	nextRef, ok := e.hugeResolveLogicalRow(pos.Row + 1)
+	if !ok {
+		return false
+	}
+
+	baseStart := startRef.baseStart
+	baseEnd := startRef.baseStart + startRef.baseDelete
+	nextEnd := nextRef.baseStart + nextRef.baseDelete
+	if nextEnd > baseEnd {
+		baseEnd = nextEnd
+	}
+	rows := e.hugeCurrentRowsForBaseInterval(baseStart, baseEnd-baseStart)
+	startIdx := pos.Row - startRef.logicalStart
+	if startIdx < 0 || startIdx+1 >= len(rows) {
+		return false
+	}
+	joined := hugeFileOverlayRow{
+		text: append(copyRunes(rows[startIdx].text), rows[startIdx+1].text...),
+		eol:  rows[startIdx+1].eol,
+	}
+	newRows := make([]hugeFileOverlayRow, 0, len(rows)-1)
+	newRows = append(newRows, copyHugeOverlayRows(rows[:startIdx])...)
+	newRows = append(newRows, joined)
+	newRows = append(newRows, copyHugeOverlayRows(rows[startIdx+2:])...)
+	e.hugeApplyBaseInterval(baseStart, baseEnd-baseStart, newRows)
+	e.cursor = Cursor{Row: pos.Row, Col: pos.Col}
+	e.change.lastEdit.Valid = false
 	return true
 }
 
@@ -82,6 +382,62 @@ func (e *Editor) clearHugeEdits() {
 		return
 	}
 	e.huge.edits = nil
+	e.huge.patches = nil
+	e.huge.defaultEOL = ""
+}
+
+func (e *Editor) copyHugeBaseRows(reader io.ReadSeeker, w io.Writer, startRow, endRow int) error {
+	if startRow >= endRow {
+		return nil
+	}
+	start, end, err := e.huge.buffer.RawSpanForRows(startRow, endRow)
+	if err != nil {
+		return err
+	}
+	if end <= start {
+		return nil
+	}
+	if _, err := reader.Seek(start, io.SeekStart); err != nil {
+		return err
+	}
+	_, err = io.CopyN(w, reader, end-start)
+	return err
+}
+
+func (e *Editor) writeHugeBaseRange(reader io.ReadSeeker, w io.Writer, startRow, endRow int, edits map[int]string) error {
+	if startRow >= endRow {
+		return nil
+	}
+	pendingStart := startRow
+	for row := startRow; row < endRow; row++ {
+		replacement, edited := edits[row]
+		if !edited {
+			continue
+		}
+		if err := e.copyHugeBaseRows(reader, w, pendingStart, row); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, replacement); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, e.huge.buffer.LineEnding(row)); err != nil {
+			return err
+		}
+		delete(edits, row)
+		pendingStart = row + 1
+	}
+	return e.copyHugeBaseRows(reader, w, pendingStart, endRow)
+}
+
+func writeHugeOverlayRow(w io.Writer, row hugeFileOverlayRow) error {
+	if _, err := io.WriteString(w, string(row.text)); err != nil {
+		return err
+	}
+	if row.eol == "" {
+		return nil
+	}
+	_, err := io.WriteString(w, row.eol)
+	return err
 }
 
 func (e *Editor) WriteHugeFileTo(w io.Writer) error {
@@ -98,82 +454,30 @@ func (e *Editor) WriteHugeFileTo(w io.Writer) error {
 	for row, line := range e.huge.edits {
 		edits[row] = string(line)
 	}
+	patches := append([]hugeFileRowPatch(nil), e.huge.patches...)
 
-	br := bufio.NewReaderSize(reader, 256<<10)
-	row := 0
-	for {
-		replacement, edited := edits[row]
-		lineBytes, err := readHugeFileLine(br, w, edited)
-		if len(lineBytes) > 0 || edited {
-			if edited {
-				if _, writeErr := io.WriteString(w, replacement); writeErr != nil {
-					return writeErr
-				}
-				switch {
-				case bytes.HasSuffix(lineBytes, []byte("\r\n")):
-					if _, writeErr := io.WriteString(w, "\r\n"); writeErr != nil {
-						return writeErr
-					}
-				case bytes.HasSuffix(lineBytes, []byte("\n")):
-					if _, writeErr := io.WriteString(w, "\n"); writeErr != nil {
-						return writeErr
-					}
-				}
+	currentBaseRow := 0
+	baseLineCount := e.huge.buffer.LineCount()
+	for _, patch := range patches {
+		if patch.baseStart > currentBaseRow {
+			if err := e.writeHugeBaseRange(reader, w, currentBaseRow, patch.baseStart, edits); err != nil {
+				return err
 			}
-			delete(edits, row)
-			row++
 		}
-		if err == io.EOF {
-			break
+		for _, row := range patch.rows {
+			if err := writeHugeOverlayRow(w, row); err != nil {
+				return err
+			}
 		}
-		if err != nil {
-			return err
-		}
+		currentBaseRow = patch.baseStart + patch.baseDelete
 	}
-
-	if replacement, ok := edits[row]; ok {
-		if _, err := io.WriteString(w, replacement); err != nil {
-			return err
-		}
-		delete(edits, row)
+	if err := e.writeHugeBaseRange(reader, w, currentBaseRow, baseLineCount, edits); err != nil {
+		return err
 	}
 	if len(edits) > 0 {
 		return errors.New("huge file save failed: unresolved edited rows")
 	}
 	return nil
-}
-
-func readHugeFileLine(r *bufio.Reader, w io.Writer, collect bool) ([]byte, error) {
-	if collect {
-		var line bytes.Buffer
-		for {
-			chunk, err := r.ReadSlice('\n')
-			if len(chunk) > 0 {
-				line.Write(chunk)
-			}
-			if err == nil || err == io.EOF {
-				return line.Bytes(), err
-			}
-			if !errors.Is(err, bufio.ErrBufferFull) {
-				return nil, err
-			}
-		}
-	}
-
-	for {
-		chunk, err := r.ReadSlice('\n')
-		if len(chunk) > 0 {
-			if _, writeErr := w.Write(chunk); writeErr != nil {
-				return nil, writeErr
-			}
-		}
-		if err == nil || err == io.EOF {
-			return chunk, err
-		}
-		if !errors.Is(err, bufio.ErrBufferFull) {
-			return nil, err
-		}
-	}
 }
 
 func (e *Editor) WriteHugeFile(path string, store FileStore) error {

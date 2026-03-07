@@ -1,10 +1,12 @@
 package editor
 
 type editorHugeFileState struct {
-	active    bool
-	sizeBytes int64
-	buffer    *HugeFileBuffer
-	edits     map[int][]rune
+	active     bool
+	sizeBytes  int64
+	buffer     *HugeFileBuffer
+	edits      map[int][]rune
+	patches    []hugeFileRowPatch
+	defaultEOL string
 }
 
 const hugeFilePrimeViewportLines = 64

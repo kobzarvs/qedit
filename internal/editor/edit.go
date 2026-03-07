@@ -98,8 +98,7 @@ func (e *Editor) insertNewline() {
 }
 func (e *Editor) splitLineAt(pos Cursor) bool {
 	if e.hugeFileActive() {
-		e.setStatus("multiline edits are unavailable in huge file mode")
-		return false
+		return e.hugeSplitLineAt(pos)
 	}
 	if pos.Row < 0 || pos.Row >= e.LineCount() {
 		return false
@@ -708,8 +707,7 @@ func (e *Editor) deleteRuneAt(pos Cursor) bool {
 }
 func (e *Editor) joinLineAt(pos Cursor) bool {
 	if e.hugeFileActive() {
-		e.setStatus("multiline edits are unavailable in huge file mode")
-		return false
+		return e.hugeJoinLineAt(pos)
 	}
 	if pos.Row < 0 || pos.Row+1 >= e.LineCount() {
 		return false

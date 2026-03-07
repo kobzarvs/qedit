@@ -179,6 +179,90 @@ func TestHugeFileSavePreservesCRLFAndTrailingEmptyLine(t *testing.T) {
 	}
 }
 
+func TestHugeFileSupportsSplitAndJoinLineEdits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.cursor = Cursor{Row: 0, Col: 2}
+	e.insertNewline()
+
+	if got := e.LineCount(); got != 4 {
+		t.Fatalf("line count after split = %d, want 4", got)
+	}
+	if got := string(e.line(0)); got != "al" {
+		t.Fatalf("line 0 after split = %q, want %q", got, "al")
+	}
+	if got := string(e.line(1)); got != "pha" {
+		t.Fatalf("line 1 after split = %q, want %q", got, "pha")
+	}
+
+	e.backspace()
+
+	if got := e.LineCount(); got != 3 {
+		t.Fatalf("line count after join = %d, want 3", got)
+	}
+	if got := string(e.line(0)); got != "alpha" {
+		t.Fatalf("line 0 after join = %q, want %q", got, "alpha")
+	}
+}
+
+func TestHugeFileSaveWritesRowPatches(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.cursor = Cursor{Row: 0, Col: 2}
+	e.insertNewline()
+
+	if err := e.WriteHugeFile(path, realTestFileStore{}); err != nil {
+		t.Fatalf("WriteHugeFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if got := string(data); got != "al\npha\nbeta\n" {
+		t.Fatalf("saved content = %q, want %q", got, "al\npha\nbeta\n")
+	}
+	if len(e.huge.patches) != 0 {
+		t.Fatalf("expected huge row patches to be cleared after save")
+	}
+}
+
 func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")

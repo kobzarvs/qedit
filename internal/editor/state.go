@@ -157,7 +157,7 @@ func (e *Editor) LineCount() int {
 		return len(e.git.diffPreview.lines)
 	}
 	if e.hugeFileActive() {
-		return e.huge.buffer.LineCount()
+		return e.hugeLineCount()
 	}
 	return e.docLineCount()
 }

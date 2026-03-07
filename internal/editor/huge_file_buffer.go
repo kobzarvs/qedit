@@ -716,6 +716,51 @@ func (b *HugeFileBuffer) LineLen(row int) int {
 	return len(b.Line(row))
 }
 
+func (b *HugeFileBuffer) RawSpanForRows(startRow, endRow int) (int64, int64, error) {
+	if b == nil {
+		return 0, 0, errHugeFileUnavailable
+	}
+	lineCount := b.LineCount()
+	if startRow < 0 {
+		startRow = 0
+	}
+	if endRow < startRow {
+		endRow = startRow
+	}
+	if startRow > lineCount {
+		startRow = lineCount
+	}
+	if endRow > lineCount {
+		endRow = lineCount
+	}
+
+	var start int64
+	if startRow >= lineCount {
+		start = b.sizeBytes
+	} else {
+		span, err := b.resolveLineSpan(startRow)
+		if err != nil {
+			return 0, 0, err
+		}
+		start = span.start
+	}
+
+	var end int64
+	if endRow >= lineCount {
+		end = b.sizeBytes
+	} else {
+		span, err := b.resolveLineSpan(endRow)
+		if err != nil {
+			return 0, 0, err
+		}
+		end = span.start
+	}
+	if end < start {
+		end = start
+	}
+	return start, end, nil
+}
+
 func (b *HugeFileBuffer) Line(row int) []rune {
 	if b == nil || b.reader == nil {
 		return nil
@@ -758,6 +803,36 @@ func (b *HugeFileBuffer) Line(row int) []rune {
 	line := []rune(string(data))
 	b.storeCachedLine(row, line)
 	return line
+}
+
+func (b *HugeFileBuffer) LineEnding(row int) string {
+	if b == nil || b.reader == nil {
+		return ""
+	}
+	lineCount := b.LineCount()
+	if row < 0 || row >= lineCount-1 {
+		return ""
+	}
+	span, err := b.resolveLineSpan(row)
+	if err != nil {
+		return ""
+	}
+	nextSpan, err := b.resolveLineSpan(row + 1)
+	if err != nil {
+		return ""
+	}
+	delimLen := nextSpan.start - span.end
+	if delimLen <= 0 {
+		return ""
+	}
+	if _, err := b.reader.Seek(span.end, io.SeekStart); err != nil {
+		return ""
+	}
+	data := make([]byte, delimLen)
+	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return ""
+	}
+	return string(data)
 }
 
 func (b *HugeFileBuffer) resolveLineSpan(row int) (hugeFileLineSpan, error) {
