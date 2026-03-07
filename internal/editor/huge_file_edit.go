@@ -272,7 +272,51 @@ func (e *Editor) hugeApplyBaseInterval(baseStart, baseDelete int, rows []hugeFil
 	if replacementNeeded && !inserted {
 		e.huge.patches = append(e.huge.patches, replacement)
 	}
+	e.normalizeHugePatches()
 	e.invalidateHugeResolveCache()
+}
+
+func (e *Editor) normalizeHugePatches() {
+	if len(e.huge.patches) < 2 {
+		if len(e.huge.patches) == 1 && e.hugeBaseIntervalMatchesOriginal(
+			e.huge.patches[0].baseStart,
+			e.huge.patches[0].baseDelete,
+			e.huge.patches[0].rows,
+		) {
+			e.huge.patches = nil
+		}
+		return
+	}
+
+	normalized := make([]hugeFileRowPatch, 0, len(e.huge.patches))
+	current := hugeFileRowPatch{
+		baseStart:  e.huge.patches[0].baseStart,
+		baseDelete: e.huge.patches[0].baseDelete,
+		rows:       copyHugeOverlayRows(e.huge.patches[0].rows),
+	}
+
+	appendPatch := func(patch hugeFileRowPatch) {
+		if e.hugeBaseIntervalMatchesOriginal(patch.baseStart, patch.baseDelete, patch.rows) {
+			return
+		}
+		normalized = append(normalized, patch)
+	}
+
+	for _, next := range e.huge.patches[1:] {
+		if current.baseStart+current.baseDelete == next.baseStart {
+			current.baseDelete += next.baseDelete
+			current.rows = append(current.rows, copyHugeOverlayRows(next.rows)...)
+			continue
+		}
+		appendPatch(current)
+		current = hugeFileRowPatch{
+			baseStart:  next.baseStart,
+			baseDelete: next.baseDelete,
+			rows:       copyHugeOverlayRows(next.rows),
+		}
+	}
+	appendPatch(current)
+	e.huge.patches = normalized
 }
 
 func (e *Editor) hugeDefaultLineEnding() string {

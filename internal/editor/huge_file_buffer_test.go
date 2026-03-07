@@ -579,6 +579,43 @@ func TestHugeFileResolveCacheStaysCorrectAcrossSeparatedPatches(t *testing.T) {
 	}
 }
 
+func TestHugeFileCoalescesAdjacentRowPatches(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.cursor = Cursor{Row: 0, Col: 1}
+	e.insertNewline()
+	e.cursor = Cursor{Row: 2, Col: 1}
+	e.insertNewline()
+
+	if got := len(e.huge.patches); got != 1 {
+		t.Fatalf("patch count after adjacent splits = %d, want 1", got)
+	}
+	want := []string{"a", "lpha", "b", "eta", ""}
+	for row, expected := range want {
+		if got := string(e.line(row)); got != expected {
+			t.Fatalf("line %d = %q, want %q", row, got, expected)
+		}
+	}
+}
+
 func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")
