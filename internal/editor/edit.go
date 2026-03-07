@@ -875,9 +875,14 @@ func (e *Editor) pasteAfter() {
 		}
 	} else {
 		// Multi-line - paste lines below
-		insert := append([]rune{'\n'}, joinText(e.clipboard.lines)...)
-		index := e.docLineStartIndex(e.cursor.Row) + e.lineLen(e.cursor.Row)
-		e.docInsert(index, insert)
+		pos := Cursor{Row: e.cursor.Row, Col: e.lineLen(e.cursor.Row)}
+		text := make([][]rune, 0, len(e.clipboard.lines)+1)
+		text = append(text, nil)
+		for _, line := range e.clipboard.lines {
+			text = append(text, append([]rune(nil), line...))
+		}
+		endPos := e.insertTextAt(pos, text)
+		e.appendUndo(action{kind: actionDeleteText, pos: pos, endPos: endPos, text: text})
 		e.cursor.Row++
 		e.cursor.Col = 0
 		e.change.lastEdit.Valid = false
@@ -905,9 +910,14 @@ func (e *Editor) pasteBefore() {
 		}
 	} else {
 		// Multi-line - paste lines above
-		insert := append(joinText(e.clipboard.lines), '\n')
-		index := e.docLineStartIndex(e.cursor.Row)
-		e.docInsert(index, insert)
+		pos := Cursor{Row: e.cursor.Row, Col: 0}
+		text := make([][]rune, 0, len(e.clipboard.lines)+1)
+		for _, line := range e.clipboard.lines {
+			text = append(text, append([]rune(nil), line...))
+		}
+		text = append(text, nil)
+		endPos := e.insertTextAt(pos, text)
+		e.appendUndo(action{kind: actionDeleteText, pos: pos, endPos: endPos, text: text})
 		e.cursor.Col = 0
 		e.change.lastEdit.Valid = false
 	}

@@ -453,6 +453,90 @@ func TestHugeFileHelixChangeSelectionEntersInsertMode(t *testing.T) {
 	}
 }
 
+func TestHugeFileLinewisePasteSupportsUndo(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.clipboard.lines = [][]rune{[]rune("x"), []rune("y")}
+	e.clipboard.linewise = true
+	e.cursor = Cursor{Row: 0, Col: 0}
+	if quit := e.execAction(actionPaste); quit {
+		t.Fatalf("paste returned quit=true")
+	}
+	if got := e.LineCount(); got != 5 {
+		t.Fatalf("line count after paste = %d, want 5", got)
+	}
+	if got := string(e.line(1)); got != "x" {
+		t.Fatalf("line 1 after paste = %q, want %q", got, "x")
+	}
+	if got := string(e.line(2)); got != "y" {
+		t.Fatalf("line 2 after paste = %q, want %q", got, "y")
+	}
+
+	e.Undo()
+	if got := e.LineCount(); got != 3 {
+		t.Fatalf("line count after undo = %d, want 3", got)
+	}
+	if got := string(e.line(1)); got != "beta" {
+		t.Fatalf("line 1 after undo = %q, want %q", got, "beta")
+	}
+}
+
+func TestHugeFileAppendActionsStayAvailable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "  alpha\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	if quit := e.execAction(actionAppendLineEnd); quit {
+		t.Fatalf("append line end returned quit=true")
+	}
+	if e.mode != ModeInsert || e.cursor.Col != len([]rune("  alpha")) {
+		t.Fatalf("append line end state = mode %v col %d, want insert/%d", e.mode, e.cursor.Col, len([]rune("  alpha")))
+	}
+
+	e.mode = ModeNormal
+	e.cursor = Cursor{Row: 0, Col: 0}
+	if quit := e.execAction(actionInsertLineStart); quit {
+		t.Fatalf("insert line start returned quit=true")
+	}
+	if e.mode != ModeInsert || e.cursor.Col != 2 {
+		t.Fatalf("insert line start state = mode %v col %d, want insert/2", e.mode, e.cursor.Col)
+	}
+}
+
 func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")
