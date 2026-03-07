@@ -304,6 +304,155 @@ func TestHugeFileSupportsOpenBelowAndOpenAbove(t *testing.T) {
 	}
 }
 
+func TestHugeFileDeleteLineSupportsUndoRedoAndSave(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\ngamma\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.cursor = Cursor{Row: 1, Col: 0}
+	if quit := e.execAction(actionDeleteLine); quit {
+		t.Fatalf("delete line returned quit=true")
+	}
+	if got := e.LineCount(); got != 3 {
+		t.Fatalf("line count after delete = %d, want 3", got)
+	}
+	if got := string(e.line(1)); got != "gamma" {
+		t.Fatalf("line 1 after delete = %q, want %q", got, "gamma")
+	}
+
+	e.Undo()
+	if got := e.LineCount(); got != 4 {
+		t.Fatalf("line count after undo = %d, want 4", got)
+	}
+	if got := string(e.line(1)); got != "beta" {
+		t.Fatalf("line 1 after undo = %q, want %q", got, "beta")
+	}
+
+	e.Redo()
+	if got := e.LineCount(); got != 3 {
+		t.Fatalf("line count after redo = %d, want 3", got)
+	}
+	if got := string(e.line(1)); got != "gamma" {
+		t.Fatalf("line 1 after redo = %q, want %q", got, "gamma")
+	}
+
+	if err := e.WriteHugeFile(path, realTestFileStore{}); err != nil {
+		t.Fatalf("WriteHugeFile returned error: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if got := string(data); got != "alpha\ngamma\n" {
+		t.Fatalf("saved content = %q, want %q", got, "alpha\ngamma\n")
+	}
+}
+
+func TestHugeFileHelixDeleteSelectionSupportsUndo(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\ngamma\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 2}
+	e.selectionEnd = Cursor{Row: 1, Col: 2}
+	e.modal.selectMode = true
+	if quit := e.execAction(actionDelete); quit {
+		t.Fatalf("delete returned quit=true")
+	}
+	if got := string(e.line(0)); got != "alta" {
+		t.Fatalf("line 0 after delete = %q, want %q", got, "alta")
+	}
+	if got := string(e.line(1)); got != "gamma" {
+		t.Fatalf("line 1 after delete = %q, want %q", got, "gamma")
+	}
+	if e.selectionActive || e.modal.selectMode {
+		t.Fatalf("selection should be cleared after helix delete")
+	}
+
+	e.Undo()
+	if got := string(e.line(0)); got != "alpha" {
+		t.Fatalf("line 0 after undo = %q, want %q", got, "alpha")
+	}
+	if got := string(e.line(1)); got != "beta" {
+		t.Fatalf("line 1 after undo = %q, want %q", got, "beta")
+	}
+	if !e.selectionActive {
+		t.Fatalf("expected selection to be restored on undo")
+	}
+	if e.selectionStart != (Cursor{Row: 0, Col: 2}) || e.selectionEnd != (Cursor{Row: 1, Col: 2}) {
+		t.Fatalf("restored selection = %+v..%+v, want {0 2}..{1 2}", e.selectionStart, e.selectionEnd)
+	}
+}
+
+func TestHugeFileHelixChangeSelectionEntersInsertMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\nbeta\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.selectionActive = true
+	e.selectionStart = Cursor{Row: 0, Col: 1}
+	e.selectionEnd = Cursor{Row: 0, Col: 4}
+	e.modal.selectMode = true
+	if quit := e.execAction(actionChange); quit {
+		t.Fatalf("change returned quit=true")
+	}
+	if got := string(e.line(0)); got != "aa" {
+		t.Fatalf("line 0 after change = %q, want %q", got, "aa")
+	}
+	if e.mode != ModeInsert {
+		t.Fatalf("mode after change = %v, want %v", e.mode, ModeInsert)
+	}
+}
+
 func TestOpenHugeFileBufferUsesSparseCheckpoints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")

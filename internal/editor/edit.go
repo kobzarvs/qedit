@@ -63,6 +63,13 @@ func (e *Editor) insertTextAt(pos Cursor, text [][]rune) Cursor {
 	if pos.Col > lineLen {
 		pos.Col = lineLen
 	}
+	if e.hugeFileActive() {
+		endPos, _, ok := e.hugeReplaceTextRange(pos, pos, text)
+		if !ok {
+			return pos
+		}
+		return endPos
+	}
 	runes := joinText(text)
 	index := e.docLineStartIndex(pos.Row) + pos.Col
 	e.docInsert(index, runes)
@@ -82,6 +89,14 @@ func (e *Editor) deleteTextRange(start, end Cursor) [][]rune {
 	end.Col = clampRange(end.Col, 0, endLen)
 	if start.Row == end.Row && start.Col >= end.Col {
 		return nil
+	}
+	if e.hugeFileActive() {
+		_, deleted, ok := e.hugeReplaceTextRange(start, end, nil)
+		if !ok {
+			return nil
+		}
+		e.cursor = start
+		return deleted
 	}
 	startIndex := e.docLineStartIndex(start.Row) + start.Col
 	endIndex := e.docLineStartIndex(end.Row) + end.Col
@@ -240,6 +255,30 @@ func (e *Editor) deleteSelection(start, end Cursor, restoreSelectionOnUndo bool)
 	if start.Row == end.Row && start.Col >= end.Col {
 		return
 	}
+	if e.hugeFileActive() {
+		deleted := e.collectDeletedText(start, end)
+
+		e.startUndoGroup()
+		e.appendUndo(action{
+			kind:           actionInsertText,
+			pos:            start,
+			text:           deleted,
+			selectionStart: start,
+			selectionEnd:   end,
+			hasSelection:   restoreSelectionOnUndo,
+		})
+		e.finishUndoGroup()
+
+		if _, _, ok := e.hugeReplaceTextRange(start, end, nil); !ok {
+			return
+		}
+
+		e.cursor = start
+		e.clearSelection()
+		e.change.tick++
+		e.updateDirty()
+		return
+	}
 
 	// Calculate byte offsets BEFORE making changes
 	startByte, startColBytes := e.byteOffset(start)
@@ -287,6 +326,9 @@ func (e *Editor) deleteSelection(start, end Cursor, restoreSelectionOnUndo bool)
 
 // collectDeletedText collects text from start to end position without modifying the buffer.
 func (e *Editor) collectDeletedText(start, end Cursor) [][]rune {
+	if e.hugeFileActive() {
+		return e.hugeCollectDeletedText(start, end)
+	}
 	startLen := e.lineLen(start.Row)
 	endLen := e.lineLen(end.Row)
 	start.Col = clampRange(start.Col, 0, startLen)

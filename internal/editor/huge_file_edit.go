@@ -26,6 +26,17 @@ type hugeFileLogicalRowRef struct {
 	patchIndex   int
 }
 
+type hugeFileTextWindow struct {
+	baseStart    int
+	baseDelete   int
+	logicalStart int
+	start        Cursor
+	end          Cursor
+	startIdx     int
+	endIdx       int
+	rows         []hugeFileOverlayRow
+}
+
 func copyRunes(src []rune) []rune {
 	if len(src) == 0 {
 		return nil
@@ -239,6 +250,155 @@ func (e *Editor) hugeDefaultLineEnding() string {
 	}
 	e.huge.defaultEOL = "\n"
 	return e.huge.defaultEOL
+}
+
+func (e *Editor) hugeTextWindow(start, end Cursor) (hugeFileTextWindow, bool) {
+	if !e.hugeFileActive() || e.huge.buffer == nil {
+		return hugeFileTextWindow{}, false
+	}
+	lineCount := e.LineCount()
+	if start.Row < 0 || start.Row >= lineCount || end.Row < 0 || end.Row >= lineCount {
+		return hugeFileTextWindow{}, false
+	}
+	startLen := e.lineLen(start.Row)
+	endLen := e.lineLen(end.Row)
+	start.Col = clampRange(start.Col, 0, startLen)
+	end.Col = clampRange(end.Col, 0, endLen)
+	if cursorLess(end, start) {
+		return hugeFileTextWindow{}, false
+	}
+
+	startRef, ok := e.hugeResolveLogicalRow(start.Row)
+	if !ok {
+		return hugeFileTextWindow{}, false
+	}
+	endRef, ok := e.hugeResolveLogicalRow(end.Row)
+	if !ok {
+		return hugeFileTextWindow{}, false
+	}
+
+	baseStart := startRef.baseStart
+	baseEnd := startRef.baseStart + startRef.baseDelete
+	if endIntervalEnd := endRef.baseStart + endRef.baseDelete; endIntervalEnd > baseEnd {
+		baseEnd = endIntervalEnd
+	}
+	logicalStart := startRef.logicalStart
+	rows := e.hugeCurrentRowsForBaseInterval(baseStart, baseEnd-baseStart)
+	startIdx := start.Row - logicalStart
+	endIdx := end.Row - logicalStart
+	if startIdx < 0 || endIdx < startIdx || endIdx >= len(rows) {
+		return hugeFileTextWindow{}, false
+	}
+
+	return hugeFileTextWindow{
+		baseStart:    baseStart,
+		baseDelete:   baseEnd - baseStart,
+		logicalStart: logicalStart,
+		start:        start,
+		end:          end,
+		startIdx:     startIdx,
+		endIdx:       endIdx,
+		rows:         rows,
+	}, true
+}
+
+func hugeWindowDeletedRunes(win hugeFileTextWindow) []rune {
+	if win.startIdx == win.endIdx && win.start.Col >= win.end.Col {
+		return nil
+	}
+	var deleted []rune
+	for row := win.startIdx; row <= win.endIdx; row++ {
+		line := win.rows[row].text
+		startCol := 0
+		endCol := len(line)
+		if row == win.startIdx {
+			startCol = win.start.Col
+		}
+		if row == win.endIdx {
+			endCol = win.end.Col
+		}
+		deleted = append(deleted, line[startCol:endCol]...)
+		if row < win.endIdx {
+			deleted = append(deleted, '\n')
+		}
+	}
+	return deleted
+}
+
+func hugeInsertedEndPos(start Cursor, replacement [][]rune) Cursor {
+	if len(replacement) == 0 {
+		return start
+	}
+	if len(replacement) == 1 {
+		return Cursor{Row: start.Row, Col: start.Col + len(replacement[0])}
+	}
+	return Cursor{Row: start.Row + len(replacement) - 1, Col: len(replacement[len(replacement)-1])}
+}
+
+func (e *Editor) hugeReplacementRows(win hugeFileTextWindow, replacement [][]rune) []hugeFileOverlayRow {
+	before := copyHugeOverlayRows(win.rows[:win.startIdx])
+	after := copyHugeOverlayRows(win.rows[win.endIdx+1:])
+	prefix := copyRunes(win.rows[win.startIdx].text[:win.start.Col])
+	suffix := copyRunes(win.rows[win.endIdx].text[win.end.Col:])
+	suffixEOL := win.rows[win.endIdx].eol
+
+	replaced := make([]hugeFileOverlayRow, 0, len(replacement)+1)
+	switch len(replacement) {
+	case 0:
+		line := append(prefix, suffix...)
+		replaced = append(replaced, hugeFileOverlayRow{text: line, eol: suffixEOL})
+	case 1:
+		line := append(prefix, replacement[0]...)
+		line = append(line, suffix...)
+		replaced = append(replaced, hugeFileOverlayRow{text: line, eol: suffixEOL})
+	default:
+		lineEOL := e.hugeDefaultLineEnding()
+		first := append(prefix, replacement[0]...)
+		replaced = append(replaced, hugeFileOverlayRow{text: first, eol: lineEOL})
+		for _, line := range replacement[1 : len(replacement)-1] {
+			replaced = append(replaced, hugeFileOverlayRow{
+				text: copyRunes(line),
+				eol:  lineEOL,
+			})
+		}
+		last := append(copyRunes(replacement[len(replacement)-1]), suffix...)
+		replaced = append(replaced, hugeFileOverlayRow{text: last, eol: suffixEOL})
+	}
+
+	rows := make([]hugeFileOverlayRow, 0, len(before)+len(replaced)+len(after))
+	rows = append(rows, before...)
+	rows = append(rows, replaced...)
+	rows = append(rows, after...)
+	return rows
+}
+
+func (e *Editor) hugeCollectDeletedText(start, end Cursor) [][]rune {
+	win, ok := e.hugeTextWindow(start, end)
+	if !ok {
+		return nil
+	}
+	deleted := hugeWindowDeletedRunes(win)
+	if len(deleted) == 0 {
+		return nil
+	}
+	return splitRunesByNewline(deleted)
+}
+
+func (e *Editor) hugeReplaceTextRange(start, end Cursor, replacement [][]rune) (Cursor, [][]rune, bool) {
+	win, ok := e.hugeTextWindow(start, end)
+	if !ok {
+		return start, nil, false
+	}
+	if win.start == win.end && len(replacement) == 0 {
+		return win.start, nil, true
+	}
+
+	deletedRunes := hugeWindowDeletedRunes(win)
+	deleted := splitRunesByNewline(deletedRunes)
+	rows := e.hugeReplacementRows(win, replacement)
+	e.hugeApplyBaseInterval(win.baseStart, win.baseDelete, rows)
+	e.change.lastEdit.Valid = false
+	return hugeInsertedEndPos(win.start, replacement), deleted, true
 }
 
 func (e *Editor) hugeLine(row int) ([]rune, bool) {
