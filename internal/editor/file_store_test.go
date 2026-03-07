@@ -2,6 +2,7 @@ package editor
 
 import (
 	"errors"
+	"io"
 	"testing"
 )
 
@@ -31,6 +32,10 @@ func (s *testFileStore) Abs(path string) (string, error) {
 
 func (s *testFileStore) HomeDir() (string, error) {
 	return s.homeDir, nil
+}
+
+func (s *testFileStore) Open(path string) (io.ReadSeekCloser, error) {
+	return nil, errTestFileStoreNotExist
 }
 
 func (s *testFileStore) Read(path string) ([]byte, error) {

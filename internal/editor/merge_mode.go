@@ -79,6 +79,10 @@ func (e *Editor) handleMerge(ev EventKey) bool {
 }
 
 func (e *Editor) enterMergeMode() bool {
+	if e.hugeFileActive() {
+		e.setStatus("merge review unavailable in huge file mode")
+		return false
+	}
 	e.ensureConflictBlocks()
 	if e.hasConflictBlocks() {
 		e.mode = ModeMerge

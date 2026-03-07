@@ -3,6 +3,9 @@ package editor
 import "errors"
 
 func (e *Editor) prepareSave(path string) (string, []byte, error) {
+	if e.hugeFileActive() {
+		return "", nil, errors.New("save is unavailable in huge file mode")
+	}
 	if path == "" {
 		if e.document.filename == "" {
 			return "", nil, errors.New("no file name")
@@ -43,6 +46,9 @@ func (e *Editor) queueSaveRequest(path string, quitAfter bool) error {
 }
 
 func (e *Editor) prepareReload(force bool) (string, error) {
+	if e.hugeFileActive() {
+		return "", errors.New("reload is unavailable in huge file mode")
+	}
 	if e.document.filename == "" {
 		return "", errors.New("no file name")
 	}

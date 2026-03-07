@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/kobzarvs/qedit/internal/editor"
@@ -57,6 +58,10 @@ func (s testAppFileStore) Abs(path string) (string, error) {
 
 func (s testAppFileStore) HomeDir() (string, error) {
 	return "", nil
+}
+
+func (s testAppFileStore) Open(path string) (io.ReadSeekCloser, error) {
+	return nil, errTestAppNotExist
 }
 
 func (s testAppFileStore) Read(path string) ([]byte, error) {

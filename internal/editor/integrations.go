@@ -1,5 +1,7 @@
 package editor
 
+import "io"
+
 import "time"
 
 // Clipboard provides access to system clipboard.
@@ -84,6 +86,7 @@ type WorkspaceRuntime interface {
 	HasMerger() bool
 	Abs(path string) (string, error)
 	HomeDir() (string, error)
+	Open(path string) (io.ReadSeekCloser, error)
 	Read(path string) ([]byte, error)
 	ReadDir(path string) ([]DirEntry, error)
 	Write(path string, data []byte) error
@@ -129,6 +132,7 @@ type RuntimeServices struct {
 type FileStore interface {
 	Abs(path string) (string, error)
 	HomeDir() (string, error)
+	Open(path string) (io.ReadSeekCloser, error)
 	Read(path string) ([]byte, error)
 	ReadDir(path string) ([]DirEntry, error)
 	Write(path string, data []byte) error
@@ -202,6 +206,13 @@ func (r *storeBackedWorkspaceRuntime) HomeDir() (string, error) {
 		return "", nil
 	}
 	return r.fileStore.HomeDir()
+}
+
+func (r *storeBackedWorkspaceRuntime) Open(path string) (io.ReadSeekCloser, error) {
+	if r == nil || r.fileStore == nil {
+		return nil, nil
+	}
+	return r.fileStore.Open(path)
 }
 
 func (r *storeBackedWorkspaceRuntime) Read(path string) ([]byte, error) {

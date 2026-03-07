@@ -406,6 +406,7 @@ type Editor struct {
 	profile                      editorProfileState
 	ui                           editorUIFeedbackState
 	viewport                     editorViewportState
+	huge                         editorHugeFileState
 	git                          editorGitState
 	highlight                    editorHighlightState
 	conflicts                    editorConflictState

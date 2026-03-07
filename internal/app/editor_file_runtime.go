@@ -11,6 +11,8 @@ import (
 	"github.com/kobzarvs/qedit/internal/treesitter"
 )
 
+var hugeFileThresholdBytes int64 = 64 << 20
+
 type activeFileState struct {
 	openPath           string
 	gitPath            string
@@ -28,6 +30,14 @@ func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts
 		return activeFileState{}, nil
 	}
 	if !ed.OpenExistingBuffer(path) {
+		if fileStore != nil && hugeFileThresholdBytes > 0 {
+			if info, err := fileStore.Stat(path); err == nil && info.Size >= hugeFileThresholdBytes {
+				if err := ed.LoadHugeFile(path, fileStore, info); err != nil {
+					return activeFileState{}, err
+				}
+				return activateEditorFile(ed, screen, ls, ts, langs, fileStore, path, highlightMaxBytes), nil
+			}
+		}
 		data, err := fileStore.Read(path)
 		if err != nil {
 			return activeFileState{}, err
@@ -48,7 +58,9 @@ func activateRuntimeFile(ed *editor.Editor, path string, data []byte) error {
 
 func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts *treesitter.Engine, langs config.Languages, fileStore editor.FileStore, path string, highlightMaxBytes int64) activeFileState {
 	content := ed.Content()
-	ls.OpenFile(path, content)
+	if !ed.HugeFileMode() {
+		ls.OpenFile(path, content)
+	}
 
 	state := activeFileState{
 		openPath:           path,
@@ -58,6 +70,12 @@ func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager,
 		lastChangeTick:     ed.ChangeTick(),
 		lastHighlightStart: -1,
 		lastHighlightEnd:   -1,
+	}
+	if ed.HugeFileMode() {
+		ed.SetHighlights(-1, -1, nil)
+		state.highlightEnabled = false
+		state.highlightExpected = false
+		return state
 	}
 	state.langName, state.highlightEnabled = detectHighlightLanguage(fileStore, path, langs, highlightMaxBytes)
 	state.highlightExpected = state.highlightEnabled && state.langName != ""

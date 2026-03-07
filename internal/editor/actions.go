@@ -12,6 +12,10 @@ func (e *Editor) execAction(action string) bool {
 	if e.bindings.actionHook != nil {
 		e.bindings.actionHook(action)
 	}
+	if e.hugeFileActive() && !e.hugeFileAllowsAction(action) {
+		e.setStatus("huge file mode is read-only")
+		return false
+	}
 	if e.gitDiffPreviewActive() && !e.gitDiffPreviewAllowsAction(action) {
 		e.setStatus("diff preview is read-only")
 		return false
@@ -328,6 +332,26 @@ func (e *Editor) execAction(action string) bool {
 		e.clearSelection()
 	}
 	return false
+}
+
+func (e *Editor) hugeFileAllowsAction(action string) bool {
+	switch action {
+	case actionMoveLeft, actionMoveRight, actionMoveUp, actionMoveDown,
+		actionWordLeft, actionWordRight, actionLineStart, actionLineEnd,
+		actionFileStart, actionFileEnd, actionPageUp, actionPageDown,
+		actionToggleLineNumbers,
+		actionBranchPicker, actionWorktreeMenu, actionWorktreeRefresh,
+		actionOpenFileTree, actionToggleSidebar, actionToggleSidebarFocus,
+		actionFocusSidebar, actionFocusPrevPane, actionFocusNextPane,
+		actionFocusEditor, actionFocusCommandLine, actionEnterCommand,
+		actionQuit, actionScrollUp, actionScrollDown, actionGotoMode,
+		actionGotoLine, actionGotoLinePrompt, actionGotoFirstLine,
+		actionGotoFileEnd, actionBufferPicker, actionGotoNextBuffer,
+		actionGotoPrevBuffer, actionGotoLastAccessed, actionCloseBuffer:
+		return true
+	default:
+		return false
+	}
 }
 func (e *Editor) Save(path string) error {
 	path, data, err := e.prepareSave(path)

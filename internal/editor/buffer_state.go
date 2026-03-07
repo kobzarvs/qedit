@@ -1,5 +1,7 @@
 package editor
 
+import "fmt"
+
 func (e *Editor) OpenFile(path string) error {
 	if e.workspaceFileStore() == nil {
 		return errFileStoreUnavailable()
@@ -43,9 +45,11 @@ func (e *Editor) LoadFileContent(path string, data []byte) error {
 	}
 
 	e.text = NewTextBufferFromBytes(data)
+	e.huge = editorHugeFileState{}
 	e.clearGitDiffPreview()
 	e.cursor = Cursor{}
 	e.file.diskContent = e.Content()
+	e.file.readOnly = false
 	e.resetConflictBlocks()
 	e.viewport.scroll = 0
 	e.viewport.scrollX = 0
@@ -79,6 +83,66 @@ func (e *Editor) LoadFileContent(path string, data []byte) error {
 		e.buffers.SetActive(newIdx)
 	}
 
+	return nil
+}
+
+func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) error {
+	if e.OpenExistingBuffer(path) {
+		return nil
+	}
+	if store == nil {
+		return errFileStoreUnavailable()
+	}
+	if e.buffers != nil && e.buffers.Count() > 0 && e.document.filename != "" {
+		e.saveSessionState()
+		_ = e.SaveUndoHistory()
+		bs := e.snapshotBufferState()
+		e.buffers.UpdateActive(bs)
+	}
+
+	buffer, err := OpenHugeFileBuffer(path, meta.Size, store)
+	if err != nil {
+		return err
+	}
+
+	e.text = nil
+	e.huge = editorHugeFileState{
+		active:    true,
+		sizeBytes: meta.Size,
+		buffer:    buffer,
+	}
+	e.clearGitDiffPreview()
+	e.cursor = Cursor{}
+	e.file.diskContent = ""
+	e.file.readOnly = true
+	e.resetConflictBlocks()
+	e.viewport.scroll = 0
+	e.viewport.scrollX = 0
+	e.mode = ModeNormal
+	e.document.filename = path
+	e.commandLine.text = e.commandLine.text[:0]
+	e.ui.statusMessage = ""
+	e.undo = nil
+	e.redo = nil
+	e.savePoint = 0
+	e.change.tick = 0
+	e.change.lastEdit.Valid = false
+	e.highlight = editorHighlightState{start: -1, end: -1}
+	e.selectionActive = false
+	e.clipboard = editorClipboardState{}
+	e.selectionScope = selectionScopeState{}
+	e.searchMatches = nil
+	e.searchMatchIndex = 0
+	e.updateDirty()
+	_ = e.syncFileSnapshot()
+	e.file.externalChange = ExternalChangeNone
+	e.restoreSessionState()
+	if e.buffers != nil {
+		bs := e.snapshotBufferState()
+		newIdx := e.buffers.Add(bs)
+		e.buffers.SetActive(newIdx)
+	}
+	e.setStatus(fmt.Sprintf("huge file mode: read-only (%.1f MB)", float64(meta.Size)/(1024*1024)))
 	return nil
 }
 
@@ -163,6 +227,9 @@ func (e *Editor) closeCurrentBuffer(force bool) {
 	}
 
 	// Remove the buffer. This shifts indices >= idx down by 1.
+	if closing := e.buffers.buffers[idx]; closing != nil && closing.huge.buffer != nil {
+		_ = closing.huge.buffer.Close()
+	}
 	e.buffers.Remove(idx)
 
 	// After removal, adjust nextIdx if it was shifted.
@@ -192,6 +259,9 @@ func (e *Editor) closeBufferAtIndex(index int) {
 	}
 
 	// Closing a non-active buffer
+	if closing := e.buffers.buffers[index]; closing != nil && closing.huge.buffer != nil {
+		_ = closing.huge.buffer.Close()
+	}
 	e.buffers.Remove(index)
 }
 

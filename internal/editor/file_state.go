@@ -6,4 +6,5 @@ type editorFileState struct {
 	externalChange       ExternalChange
 	autoReloadOnChanges  bool
 	autoReloadInProgress bool
+	readOnly             bool
 }

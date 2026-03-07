@@ -14,6 +14,9 @@ func (e *Editor) line(row int) []rune {
 	if line, ok := e.gitDiffPreviewLine(row); ok {
 		return line.text
 	}
+	if e.hugeFileActive() {
+		return e.huge.buffer.Line(row)
+	}
 	if e.text == nil {
 		return nil
 	}
@@ -22,6 +25,9 @@ func (e *Editor) line(row int) []rune {
 func (e *Editor) lineLen(row int) int {
 	if line, ok := e.gitDiffPreviewLine(row); ok {
 		return len(line.text)
+	}
+	if e.hugeFileActive() {
+		return e.huge.buffer.LineLen(row)
 	}
 	if e.text == nil {
 		return 0

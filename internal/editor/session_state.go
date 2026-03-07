@@ -23,8 +23,8 @@ func (e *Editor) restoreSessionState() {
 		e.cursor.Row = 0
 	}
 	e.cursor.Col = state.CursorCol
-	if e.cursor.Row < lineCount && e.cursor.Col > e.text.LineLen(e.cursor.Row) {
-		e.cursor.Col = e.text.LineLen(e.cursor.Row)
+	if e.cursor.Row < lineCount && e.cursor.Col > e.lineLen(e.cursor.Row) {
+		e.cursor.Col = e.lineLen(e.cursor.Row)
 	}
 	if e.cursor.Col < 0 {
 		e.cursor.Col = 0
@@ -58,12 +58,12 @@ func (e *Editor) restoreSessionState() {
 			e.selectionActive = true
 			// Clamp columns to line lengths
 			startCol := state.SelectionStartCol
-			if startCol > e.text.LineLen(state.SelectionStartRow) {
-				startCol = e.text.LineLen(state.SelectionStartRow)
+			if startCol > e.lineLen(state.SelectionStartRow) {
+				startCol = e.lineLen(state.SelectionStartRow)
 			}
 			endCol := state.SelectionEndCol
-			if endCol > e.text.LineLen(state.SelectionEndRow) {
-				endCol = e.text.LineLen(state.SelectionEndRow)
+			if endCol > e.lineLen(state.SelectionEndRow) {
+				endCol = e.lineLen(state.SelectionEndRow)
 			}
 			e.selectionStart = Cursor{Row: state.SelectionStartRow, Col: startCol}
 			e.selectionEnd = Cursor{Row: state.SelectionEndRow, Col: endCol}
@@ -125,9 +125,13 @@ func (e *Editor) Shutdown() {
 				e.saveSessionState()
 				e.document.filename = origFilename
 			}
+			if bufState := e.buffers.buffers[info.Index]; bufState != nil && bufState.huge.buffer != nil {
+				_ = bufState.huge.buffer.Close()
+			}
 		}
 	} else {
 		e.saveSessionState()
+		e.closeHugeFileBuffer()
 	}
 	if e.hasSessionPersistence() {
 		e.stopPersistence()

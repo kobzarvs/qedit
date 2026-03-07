@@ -76,6 +76,12 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	if e.document.dirty {
 		flags += "[*]"
 	}
+	if e.file.readOnly {
+		flags += "[RO]"
+	}
+	if e.hugeFileActive() {
+		flags += "[HUGE]"
+	}
 	if e.file.externalChange != ExternalChangeNone {
 		flags += "[!]"
 	}

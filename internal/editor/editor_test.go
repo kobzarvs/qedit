@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,10 @@ func (realTestFileStore) Abs(path string) (string, error) {
 
 func (realTestFileStore) HomeDir() (string, error) {
 	return os.UserHomeDir()
+}
+
+func (realTestFileStore) Open(path string) (io.ReadSeekCloser, error) {
+	return os.Open(path)
 }
 
 func (realTestFileStore) Read(path string) ([]byte, error) {

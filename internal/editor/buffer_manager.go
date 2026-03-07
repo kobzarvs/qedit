@@ -5,6 +5,7 @@ package editor
 type BufferState struct {
 	// Core buffer
 	text   *TextBuffer
+	huge   editorHugeFileState
 	cursor Cursor
 
 	// File identity
@@ -210,6 +211,7 @@ func (bm *BufferManager) PrevIndex() int {
 func (e *Editor) snapshotBufferState() *BufferState {
 	return &BufferState{
 		text:                e.text,
+		huge:                e.huge,
 		cursor:              e.cursor,
 		filename:            e.document.filename,
 		file:                e.file,
@@ -244,6 +246,7 @@ func (e *Editor) snapshotBufferState() *BufferState {
 // restoreBufferState writes per-file fields from a BufferState back into the Editor.
 func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.text = bs.text
+	e.huge = bs.huge
 	e.cursor = bs.cursor
 	e.document.filename = bs.filename
 	e.file = bs.file

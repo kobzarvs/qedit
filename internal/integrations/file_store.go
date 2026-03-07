@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 
@@ -16,6 +17,10 @@ func (FileStore) Abs(path string) (string, error) {
 
 func (FileStore) HomeDir() (string, error) {
 	return os.UserHomeDir()
+}
+
+func (FileStore) Open(path string) (io.ReadSeekCloser, error) {
+	return os.Open(path)
 }
 
 func (FileStore) Read(path string) ([]byte, error) {

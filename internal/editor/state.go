@@ -84,6 +84,9 @@ func New(opts Options) *Editor {
 	return e
 }
 func (e *Editor) Content() string {
+	if e.hugeFileActive() {
+		return ""
+	}
 	if e.text == nil {
 		return ""
 	}
@@ -155,6 +158,9 @@ func (e *Editor) PeekLastEdit() (TextEdit, bool) {
 func (e *Editor) LineCount() int {
 	if e.gitDiffPreviewActive() {
 		return len(e.git.diffPreview.lines)
+	}
+	if e.hugeFileActive() {
+		return e.huge.buffer.LineCount()
 	}
 	if e.text == nil {
 		return 1

@@ -172,6 +172,9 @@ func (e *Editor) SetAutoReloadInProgress(inProgress bool) {
 
 // AutoReloadOnChanges reports whether auto-reload on external changes is enabled.
 func (e *Editor) AutoReloadOnChanges() bool {
+	if e.hugeFileActive() {
+		return false
+	}
 	return e.file.autoReloadOnChanges
 }
 
