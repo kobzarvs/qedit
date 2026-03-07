@@ -1282,6 +1282,39 @@ func TestHugeFileLongLineHorizontalHelpersAvoidFullDecode(t *testing.T) {
 	}
 }
 
+func TestOpenHugeFileBufferSeedsInitialSpanCache(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 512 << 10
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge-long-line.txt")
+	content := strings.Repeat("a", 300000) + "\n" + strings.Repeat("x\n", 400000)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	if !buf.hasCachedLineSpan(0) {
+		t.Fatalf("expected initial sample to seed line span cache for first long line")
+	}
+}
+
 func TestRenderHugeLongLineUsesVisibleSegment(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge-long-line.txt")

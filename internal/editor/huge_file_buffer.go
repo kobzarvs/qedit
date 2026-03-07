@@ -18,6 +18,7 @@ const hugeFileCheckpointSpacing = 1024
 const hugeFileLinePrefetch = 64
 const hugeFileIndexCheckpointBatch = 64
 const hugeFileDirectReadThreshold int64 = 128 << 10
+const hugeFileInitialSpanCacheLimit = 4096
 
 var hugeFileInitialSampleBytes int64 = 2 << 20
 var hugeFileMinByteAnchorSpacing int64 = 64 << 10
@@ -82,6 +83,7 @@ type hugeFileInitialIndex struct {
 	checkpoints        []hugeFileCheckpoint
 	byteAnchors        []hugeFileCheckpoint
 	pageAnchors        []hugeFilePageAnchor
+	lineSpans          []hugeFileLineSpanEntry
 	lineCount          int
 	estimatedLineCount int
 	sampleOffset       int64
@@ -207,6 +209,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		pageData:           make(map[int]hugeFileCachedPageData),
 		warmInFlight:       make(map[int]struct{}),
 	}
+	b.storeLineSpansBatch(initial.lineSpans)
 
 	if initial.fullyIndexed {
 		_ = b.persistIndexCache()
@@ -252,6 +255,7 @@ func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes, byteAnchorSpacin
 	checkpoints := []hugeFileCheckpoint{{row: 0, offset: 0}}
 	byteAnchors := []hugeFileCheckpoint{{row: 0, offset: 0}}
 	pageAnchors := []hugeFilePageAnchor{{row: 0, offset: 0, lineStart: 0}}
+	lineSpans := make([]hugeFileLineSpanEntry, 0, minInt(hugeFileInitialSpanCacheLimit, 256))
 	nextByteAnchorOffset := byteAnchorSpacing
 	nextPageAnchorOffset := byteAnchorSpacing
 	buf := make([]byte, 256<<10)
@@ -286,6 +290,15 @@ func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes, byteAnchorSpacin
 						nextPageAnchorOffset += byteAnchorSpacing
 					}
 					continue
+				}
+				if len(lineSpans) < hugeFileInitialSpanCacheLimit {
+					lineSpans = append(lineSpans, hugeFileLineSpanEntry{
+						row: currentRow,
+						span: hugeFileLineSpan{
+							start: lineStart,
+							end:   offset + int64(i),
+						},
+					})
 				}
 				lineCount++
 				currentRow = lineCount - 1
@@ -337,12 +350,21 @@ func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes, byteAnchorSpacin
 	estimated := lineCount
 	if !fullyIndexed {
 		estimated = estimateHugeFileLineCount(sizeBytes, offset, lineCount)
+	} else if len(lineSpans) < hugeFileInitialSpanCacheLimit {
+		lineSpans = append(lineSpans, hugeFileLineSpanEntry{
+			row: currentRow,
+			span: hugeFileLineSpan{
+				start: lineStart,
+				end:   sizeBytes,
+			},
+		})
 	}
 
 	return hugeFileInitialIndex{
 		checkpoints:        checkpoints,
 		byteAnchors:        byteAnchors,
 		pageAnchors:        pageAnchors,
+		lineSpans:          lineSpans,
 		lineCount:          lineCount,
 		estimatedLineCount: estimated,
 		sampleOffset:       offset,
