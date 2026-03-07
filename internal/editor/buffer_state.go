@@ -142,7 +142,11 @@ func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) e
 		newIdx := e.buffers.Add(bs)
 		e.buffers.SetActive(newIdx)
 	}
-	e.setStatus(fmt.Sprintf("huge file mode: read-only (%.1f MB)", float64(meta.Size)/(1024*1024)))
+	status := fmt.Sprintf("huge file mode: read-only (%.1f MB)", float64(meta.Size)/(1024*1024))
+	if !buffer.IndexingComplete() {
+		status += ", indexing..."
+	}
+	e.setStatus(status)
 	return nil
 }
 

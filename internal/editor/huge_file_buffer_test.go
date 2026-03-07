@@ -148,3 +148,44 @@ func TestHugeFileBufferPrefetchLinesCachesViewport(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenHugeFileBufferBuildsLargeIndexInBackground(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 32
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 20000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, info.Size(), realTestFileStore{})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	if got := string(buf.Line(0)); got != "line" {
+		t.Fatalf("line 0 = %q, want %q", got, "line")
+	}
+
+	buf.WaitForIndexing()
+
+	if !buf.IndexingComplete() {
+		t.Fatalf("expected background indexing to complete")
+	}
+	if got := buf.LineCount(); got != 20001 {
+		t.Fatalf("line count = %d, want %d", got, 20001)
+	}
+}
