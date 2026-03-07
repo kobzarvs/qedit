@@ -702,6 +702,12 @@ func TestHugeFileBufferPrefetchLinesCachesViewport(t *testing.T) {
 	buf.spanOrder = nil
 	buf.mu.Unlock()
 
+	if line, ok := buf.TryLine(50); !ok || string(line) != "line" {
+		t.Fatalf("TryLine(50) after cache eviction = %q, ok=%v, want %q/true", string(line), ok, "line")
+	}
+	if !buf.CanPrefetchQuick(50, 12) {
+		t.Fatalf("expected CanPrefetchQuick(50, 12) to stay true with warmed page cache")
+	}
 	if got := string(buf.Line(50)); got != "line" {
 		t.Fatalf("line(50) after cache eviction = %q, want %q", got, "line")
 	}

@@ -731,6 +731,9 @@ func (b *HugeFileBuffer) canResolveLineQuick(row int) bool {
 	if b.hasCachedLineSpan(row) {
 		return true
 	}
+	if b.hasCachedPageRange(row, row) {
+		return true
+	}
 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
