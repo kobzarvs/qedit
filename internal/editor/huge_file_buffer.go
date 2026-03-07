@@ -1052,7 +1052,49 @@ func (b *HugeFileBuffer) scanStartAnchor(row int) hugeFileScanAnchor {
 			lineStart: pageAnchor.lineStart,
 		}
 	}
+	if cachedPageAnchor, ok := b.nearestCachedPageScanAnchor(row); ok && cachedPageAnchor.offset > best.offset {
+		best = cachedPageAnchor
+	}
 	return best
+}
+
+func (b *HugeFileBuffer) nearestCachedPageScanAnchor(row int) (hugeFileScanAnchor, bool) {
+	if b == nil || row < 0 {
+		return hugeFileScanAnchor{}, false
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if len(b.pageData) == 0 {
+		return hugeFileScanAnchor{}, false
+	}
+
+	var best hugeFileScanAnchor
+	found := false
+	for _, page := range b.pageData {
+		if page.startRow > row || len(page.spans) == 0 {
+			continue
+		}
+		candidateRow := page.endRow
+		candidateSpan := page.spans[len(page.spans)-1]
+		if row <= page.endRow {
+			idx := row - page.startRow
+			if idx < 0 || idx >= len(page.spans) {
+				continue
+			}
+			candidateRow = row
+			candidateSpan = page.spans[idx]
+		}
+		candidate := hugeFileScanAnchor{
+			row:       candidateRow,
+			offset:    candidateSpan.start,
+			lineStart: candidateSpan.start,
+		}
+		if !found || candidate.offset > best.offset {
+			best = candidate
+			found = true
+		}
+	}
+	return best, found
 }
 
 func (b *HugeFileBuffer) latestCachedAnchor() hugeFileCheckpoint {

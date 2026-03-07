@@ -1011,6 +1011,48 @@ func TestHugeFileScanStartAnchorUsesBestAnchor(t *testing.T) {
 	}
 }
 
+func TestHugeFileScanStartAnchorUsesCachedPageData(t *testing.T) {
+	buf := &HugeFileBuffer{
+		checkpoints: []hugeFileCheckpoint{
+			{row: 0, offset: 0},
+			{row: 1024, offset: 8192},
+		},
+		byteAnchors: []hugeFileCheckpoint{
+			{row: 0, offset: 0},
+			{row: 1500, offset: 16384},
+		},
+		pageAnchors: []hugeFilePageAnchor{
+			{row: 0, offset: 0, lineStart: 0},
+			{row: 1400, offset: 12288, lineStart: 12240},
+		},
+		pageData: map[int]hugeFileCachedPageData{
+			1550: {
+				startRow:    1550,
+				endRow:      1560,
+				startOffset: 20000,
+				spans: []hugeFileLineSpan{
+					{start: 20000, end: 20004},
+					{start: 20005, end: 20009},
+					{start: 20010, end: 20014},
+					{start: 20015, end: 20019},
+					{start: 20020, end: 20024},
+					{start: 20025, end: 20029},
+					{start: 20030, end: 20034},
+					{start: 20035, end: 20039},
+					{start: 20040, end: 20044},
+					{start: 20045, end: 20049},
+					{start: 20050, end: 20054},
+				},
+			},
+		},
+	}
+
+	anchor := buf.scanStartAnchor(1700)
+	if anchor.row != 1560 || anchor.offset != 20050 || anchor.lineStart != 20050 {
+		t.Fatalf("scanStartAnchor picked %#v, want cached-page-backed start", anchor)
+	}
+}
+
 func TestHugeFileBufferWarmLinesPopulatesFarViewportBeforeFullIndex(t *testing.T) {
 	prevSampleBytes := hugeFileInitialSampleBytes
 	hugeFileInitialSampleBytes = 64
