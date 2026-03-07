@@ -412,6 +412,20 @@ func (b *HugeFileBuffer) IndexedLineCount() int {
 	return b.lineCount
 }
 
+func (b *HugeFileBuffer) CanPrefetchQuick(startRow, count int) bool {
+	if b == nil || count <= 0 {
+		return false
+	}
+	if startRow < 0 {
+		startRow = 0
+	}
+	endRow := startRow + count - 1 + hugeFileLinePrefetch
+	if endRow < startRow {
+		endRow = startRow
+	}
+	return b.canResolveLineQuick(endRow)
+}
+
 func (b *HugeFileBuffer) TryLine(row int) ([]rune, bool) {
 	if b == nil || b.reader == nil {
 		return nil, false

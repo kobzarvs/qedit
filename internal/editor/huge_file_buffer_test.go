@@ -288,11 +288,17 @@ func TestHugeFileBufferTryLineDefersFarRowsUntilIndexed(t *testing.T) {
 	if line, ok := buf.TryLine(7000); ok {
 		t.Fatalf("expected far line to be deferred before indexing completes, got %q", string(line))
 	}
+	if buf.CanPrefetchQuick(7000, 20) {
+		t.Fatalf("expected far viewport prefetch to be deferred before indexing completes")
+	}
 
 	buf.WaitForIndexing()
 
 	if line, ok := buf.TryLine(7000); !ok || string(line) != "line" {
 		t.Fatalf("line 7000 after indexing = %q, ready=%v; want ready line", string(line), ok)
+	}
+	if !buf.CanPrefetchQuick(7000, 20) {
+		t.Fatalf("expected viewport prefetch to become available after indexing completes")
 	}
 }
 
