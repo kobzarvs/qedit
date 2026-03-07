@@ -1145,6 +1145,7 @@ func (b *HugeFileBuffer) WarmLines(startRow, count int) {
 		endRow = lineCount - 1
 	}
 	if b.hasCachedLineSpans(startRow, endRow) {
+		b.warmCachedPageRange(startRow, endRow)
 		return
 	}
 	warmKey := startRow / hugeFileLinePrefetch
@@ -1184,6 +1185,24 @@ func (b *HugeFileBuffer) finishWarm(warmKey int) {
 		return
 	}
 	delete(b.warmInFlight, warmKey)
+}
+
+func (b *HugeFileBuffer) warmCachedPageRange(startRow, endRow int) {
+	if b == nil || startRow > endRow {
+		return
+	}
+	currentRow := startRow
+	for currentRow <= endRow {
+		page, ok := b.cachedPageData(currentRow)
+		if !ok || currentRow < page.startRow || currentRow > page.endRow {
+			return
+		}
+		b.populateCachesFromPageData(currentRow)
+		if page.endRow < currentRow {
+			return
+		}
+		currentRow = page.endRow + 1
+	}
 }
 
 func (b *HugeFileBuffer) prefetchLinesFromReader(reader io.ReadSeeker, startRow, count int) error {
