@@ -464,3 +464,63 @@ func TestHugeFileBufferLoadsPersistentIndexCache(t *testing.T) {
 		t.Fatalf("cached line 9000 = %q, want %q", got, "line")
 	}
 }
+
+func TestHugeFileBufferLoadsPartialIndexCacheAndResumes(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	prevPersistInterval := hugeFileIndexPersistInterval
+	hugeFileInitialSampleBytes = 64
+	hugeFileIndexPersistInterval = 10 * time.Millisecond
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+		hugeFileIndexPersistInterval = prevPersistInterval
+	}()
+
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 200000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+	meta := FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}
+
+	first, err := OpenHugeFileBuffer(path, meta, slowTestFileStore{maxRead: 128, delay: 2 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("first open huge file buffer: %v", err)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if err := first.Close(); err != nil {
+		t.Fatalf("close first buffer: %v", err)
+	}
+
+	cachePath := hugeFileIndexCachePath(path)
+	if _, err := os.Stat(cachePath); err != nil {
+		t.Fatalf("partial cache file not written: %v", err)
+	}
+
+	second, err := OpenHugeFileBuffer(path, meta, slowTestFileStore{maxRead: 128, delay: 2 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("second open huge file buffer: %v", err)
+	}
+	defer second.Close()
+
+	if second.IndexingComplete() {
+		t.Fatalf("expected partial cache reopen to resume indexing instead of finishing immediately")
+	}
+	if got := second.IndexedLineCount(); got <= 20 {
+		t.Fatalf("indexed line count from partial cache = %d, want progress beyond initial sample", got)
+	}
+}

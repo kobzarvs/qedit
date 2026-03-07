@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"time"
 )
 
 const hugeFileLineCacheSize = 256
@@ -16,6 +17,7 @@ const hugeFileLinePrefetch = 64
 const hugeFileIndexCheckpointBatch = 64
 
 var hugeFileInitialSampleBytes int64 = 2 << 20
+var hugeFileIndexPersistInterval = 250 * time.Millisecond
 
 var errHugeFileLineOutOfRange = errors.New("huge file line out of range")
 
@@ -72,7 +74,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		return nil, err
 	}
 
-	if checkpoints, lineCount, ok := loadHugeFileIndexCache(path, meta); ok {
+	if cachedIndex, ok := loadHugeFileIndexCache(path, meta); ok {
 		b := &HugeFileBuffer{
 			path:      path,
 			sizeBytes: meta.Size,
@@ -81,17 +83,32 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 			openReader: func() (io.ReadSeekCloser, error) {
 				return fs.Open(path)
 			},
-			lineCount:          lineCount,
-			estimatedLineCount: lineCount,
-			checkpoints:        checkpoints,
-			fullyIndexed:       true,
+			lineCount:          cachedIndex.LineCount,
+			estimatedLineCount: cachedIndex.EstimatedLineCount,
+			checkpoints:        cachedIndex.Checkpoints,
+			fullyIndexed:       cachedIndex.FullyIndexed,
 			cancelIndex:        make(chan struct{}),
 			indexDone:          make(chan struct{}),
 			lineSpans:          make(map[int]hugeFileLineSpan),
 			lineCache:          make(map[int][]rune),
 			warmInFlight:       make(map[int]struct{}),
 		}
-		close(b.indexDone)
+		if cachedIndex.FullyIndexed {
+			close(b.indexDone)
+			return b, nil
+		}
+		indexReader, err := fs.Open(path)
+		if err != nil {
+			b.recordIndexError(err)
+			close(b.indexDone)
+			return b, nil
+		}
+		startCheckpoint := cachedIndex.Checkpoints[len(cachedIndex.Checkpoints)-1]
+		b.workers.Add(1)
+		go func() {
+			defer b.workers.Done()
+			b.buildFullIndex(indexReader, startCheckpoint.offset, startCheckpoint.row)
+		}()
 		return b, nil
 	}
 
@@ -262,10 +279,15 @@ func (b *HugeFileBuffer) buildFullIndex(reader io.ReadSeekCloser, startOffset in
 	var offset = startOffset
 	lineCount := startLineCount
 	pending := make([]hugeFileCheckpoint, 0, hugeFileIndexCheckpointBatch)
+	lastPersist := time.Now()
 
 	for {
 		select {
 		case <-b.cancelIndex:
+			if len(pending) > 0 {
+				b.appendCheckpoints(pending, lineCount)
+			}
+			_ = b.persistIndexCache()
 			return
 		default:
 		}
@@ -285,10 +307,15 @@ func (b *HugeFileBuffer) buildFullIndex(reader io.ReadSeekCloser, startOffset in
 				}
 			}
 			offset += int64(n)
+			b.setIndexedLineCount(lineCount)
 		}
 		if len(pending) >= hugeFileIndexCheckpointBatch {
 			b.appendCheckpoints(pending, lineCount)
 			pending = pending[:0]
+			if time.Since(lastPersist) >= hugeFileIndexPersistInterval {
+				_ = b.persistIndexCache()
+				lastPersist = time.Now()
+			}
 		}
 		if err == io.EOF {
 			if len(pending) > 0 {
@@ -298,6 +325,10 @@ func (b *HugeFileBuffer) buildFullIndex(reader io.ReadSeekCloser, startOffset in
 			return
 		}
 		if err != nil {
+			if len(pending) > 0 {
+				b.appendCheckpoints(pending, lineCount)
+			}
+			_ = b.persistIndexCache()
 			b.recordIndexError(err)
 			return
 		}
@@ -324,16 +355,21 @@ func (b *HugeFileBuffer) appendCheckpoints(checkpoints []hugeFileCheckpoint, lin
 	}
 }
 
+func (b *HugeFileBuffer) setIndexedLineCount(lineCount int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if lineCount > b.lineCount {
+		b.lineCount = lineCount
+	}
+}
+
 func (b *HugeFileBuffer) completeIndex(lineCount int) {
 	b.mu.Lock()
 	b.lineCount = lineCount
 	b.estimatedLineCount = lineCount
 	b.fullyIndexed = true
-	checkpoints := append([]hugeFileCheckpoint(nil), b.checkpoints...)
-	meta := b.meta
-	path := b.path
 	b.mu.Unlock()
-	_ = saveHugeFileIndexCache(path, meta, checkpoints, lineCount)
+	_ = b.persistIndexCache()
 }
 
 func (b *HugeFileBuffer) recordIndexError(err error) {
@@ -349,10 +385,12 @@ func (b *HugeFileBuffer) persistIndexCache() error {
 	b.mu.RLock()
 	checkpoints := append([]hugeFileCheckpoint(nil), b.checkpoints...)
 	lineCount := b.lineCount
+	estimatedLineCount := b.estimatedLineCount
+	fullyIndexed := b.fullyIndexed
 	meta := b.meta
 	path := b.path
 	b.mu.RUnlock()
-	return saveHugeFileIndexCache(path, meta, checkpoints, lineCount)
+	return saveHugeFileIndexCache(path, meta, checkpoints, lineCount, estimatedLineCount, fullyIndexed)
 }
 
 func (b *HugeFileBuffer) Close() error {

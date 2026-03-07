@@ -7,45 +7,63 @@ import (
 	"strings"
 )
 
-const hugeFileIndexCacheVersion = 1
+const hugeFileIndexCacheVersion = 2
 
-type hugeFileIndexCache struct {
-	Version     int                  `json:"v"`
-	Size        int64                `json:"size"`
-	ModTimeUnix int64                `json:"mtime"`
-	LineCount   int                  `json:"line_count"`
-	Checkpoints []hugeFileCheckpoint `json:"checkpoints"`
+type hugeFileCachedIndex struct {
+	Checkpoints        []hugeFileCheckpoint
+	LineCount          int
+	EstimatedLineCount int
+	FullyIndexed       bool
 }
 
-func loadHugeFileIndexCache(filePath string, meta FileMetadata) ([]hugeFileCheckpoint, int, bool) {
+type hugeFileIndexCache struct {
+	Version            int                  `json:"v"`
+	Size               int64                `json:"size"`
+	ModTimeUnix        int64                `json:"mtime"`
+	LineCount          int                  `json:"line_count"`
+	EstimatedLineCount int                  `json:"estimated_line_count,omitempty"`
+	FullyIndexed       bool                 `json:"fully_indexed"`
+	Checkpoints        []hugeFileCheckpoint `json:"checkpoints"`
+}
+
+func loadHugeFileIndexCache(filePath string, meta FileMetadata) (hugeFileCachedIndex, bool) {
 	cachePath := hugeFileIndexCachePath(filePath)
 	if cachePath == "" {
-		return nil, 0, false
+		return hugeFileCachedIndex{}, false
 	}
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
-		return nil, 0, false
+		return hugeFileCachedIndex{}, false
 	}
 	var cache hugeFileIndexCache
 	if err := json.Unmarshal(data, &cache); err != nil {
-		return nil, 0, false
+		return hugeFileCachedIndex{}, false
 	}
 	if cache.Version != hugeFileIndexCacheVersion {
-		return nil, 0, false
+		return hugeFileCachedIndex{}, false
 	}
 	if cache.Size != meta.Size || cache.ModTimeUnix != meta.ModTime.UnixNano() {
-		return nil, 0, false
+		return hugeFileCachedIndex{}, false
 	}
 	if cache.LineCount < 1 || len(cache.Checkpoints) == 0 {
-		return nil, 0, false
+		return hugeFileCachedIndex{}, false
 	}
 	if cache.Checkpoints[0].row != 0 || cache.Checkpoints[0].offset != 0 {
-		return nil, 0, false
+		return hugeFileCachedIndex{}, false
 	}
-	return cache.Checkpoints, cache.LineCount, true
+	estimated := cache.EstimatedLineCount
+	if estimated < cache.LineCount {
+		estimated = cache.LineCount
+	}
+	return hugeFileCachedIndex{
+		Checkpoints:        cache.Checkpoints,
+		LineCount:          cache.LineCount,
+		EstimatedLineCount: estimated,
+		FullyIndexed:       cache.FullyIndexed,
+	}, true
 }
 
-func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints []hugeFileCheckpoint, lineCount int) error {
+func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints []hugeFileCheckpoint, lineCount, estimatedLineCount int, fullyIndexed bool) error {
 	cachePath := hugeFileIndexCachePath(filePath)
 	if cachePath == "" {
 		return nil
@@ -55,11 +73,13 @@ func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints []hu
 		return err
 	}
 	cache := hugeFileIndexCache{
-		Version:     hugeFileIndexCacheVersion,
-		Size:        meta.Size,
-		ModTimeUnix: meta.ModTime.UnixNano(),
-		LineCount:   lineCount,
-		Checkpoints: checkpoints,
+		Version:            hugeFileIndexCacheVersion,
+		Size:               meta.Size,
+		ModTimeUnix:        meta.ModTime.UnixNano(),
+		LineCount:          lineCount,
+		EstimatedLineCount: estimatedLineCount,
+		FullyIndexed:       fullyIndexed,
+		Checkpoints:        checkpoints,
 	}
 	data, err := json.Marshal(cache)
 	if err != nil {
