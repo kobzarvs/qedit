@@ -524,3 +524,53 @@ func TestHugeFileBufferLoadsPartialIndexCacheAndResumes(t *testing.T) {
 		t.Fatalf("indexed line count from partial cache = %d, want progress beyond initial sample", got)
 	}
 }
+
+func TestHugeFileBufferPrefersByteAnchorsForLongLines(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	prevAnchorSpacing := hugeFileByteAnchorSpacing
+	hugeFileInitialSampleBytes = 0
+	hugeFileByteAnchorSpacing = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+		hugeFileByteAnchorSpacing = prevAnchorSpacing
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 20; i++ {
+		content.WriteString(strings.Repeat("x", 120))
+		content.WriteByte('\n')
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}, realTestFileStore{})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	checkpoint := buf.nearestCheckpoint(10)
+	byteAnchor := buf.nearestByteAnchor(10)
+	scanAnchor := buf.scanStartAnchor(10)
+
+	if checkpoint.offset != 0 {
+		t.Fatalf("checkpoint offset = %d, want 0 without intermediate line checkpoints", checkpoint.offset)
+	}
+	if byteAnchor.offset <= 0 {
+		t.Fatalf("expected byte anchors to advance past offset 0")
+	}
+	if scanAnchor.offset != byteAnchor.offset {
+		t.Fatalf("scan anchor offset = %d, want byte anchor offset %d", scanAnchor.offset, byteAnchor.offset)
+	}
+}

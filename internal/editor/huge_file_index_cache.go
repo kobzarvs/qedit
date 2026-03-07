@@ -11,6 +11,7 @@ const hugeFileIndexCacheVersion = 2
 
 type hugeFileCachedIndex struct {
 	Checkpoints        []hugeFileCheckpoint
+	ByteAnchors        []hugeFileCheckpoint
 	LineCount          int
 	EstimatedLineCount int
 	FullyIndexed       bool
@@ -24,6 +25,7 @@ type hugeFileIndexCache struct {
 	EstimatedLineCount int                  `json:"estimated_line_count,omitempty"`
 	FullyIndexed       bool                 `json:"fully_indexed"`
 	Checkpoints        []hugeFileCheckpoint `json:"checkpoints"`
+	ByteAnchors        []hugeFileCheckpoint `json:"byte_anchors,omitempty"`
 }
 
 func loadHugeFileIndexCache(filePath string, meta FileMetadata) (hugeFileCachedIndex, bool) {
@@ -57,13 +59,14 @@ func loadHugeFileIndexCache(filePath string, meta FileMetadata) (hugeFileCachedI
 	}
 	return hugeFileCachedIndex{
 		Checkpoints:        cache.Checkpoints,
+		ByteAnchors:        ensureHugeFileAnchors(cache.ByteAnchors),
 		LineCount:          cache.LineCount,
 		EstimatedLineCount: estimated,
 		FullyIndexed:       cache.FullyIndexed,
 	}, true
 }
 
-func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints []hugeFileCheckpoint, lineCount, estimatedLineCount int, fullyIndexed bool) error {
+func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints, byteAnchors []hugeFileCheckpoint, lineCount, estimatedLineCount int, fullyIndexed bool) error {
 	cachePath := hugeFileIndexCachePath(filePath)
 	if cachePath == "" {
 		return nil
@@ -80,12 +83,23 @@ func saveHugeFileIndexCache(filePath string, meta FileMetadata, checkpoints []hu
 		EstimatedLineCount: estimatedLineCount,
 		FullyIndexed:       fullyIndexed,
 		Checkpoints:        checkpoints,
+		ByteAnchors:        ensureHugeFileAnchors(byteAnchors),
 	}
 	data, err := json.Marshal(cache)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(cachePath, data, 0o644)
+}
+
+func ensureHugeFileAnchors(anchors []hugeFileCheckpoint) []hugeFileCheckpoint {
+	if len(anchors) == 0 {
+		return []hugeFileCheckpoint{{row: 0, offset: 0}}
+	}
+	if anchors[0].row == 0 && anchors[0].offset == 0 {
+		return anchors
+	}
+	return append([]hugeFileCheckpoint{{row: 0, offset: 0}}, anchors...)
 }
 
 func hugeFileIndexCachePath(filePath string) string {
