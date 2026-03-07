@@ -22,6 +22,19 @@ func (e *Editor) line(row int) []rune {
 	}
 	return e.docLine(row)
 }
+
+func (e *Editor) lineForDisplay(row int) []rune {
+	if line, ok := e.gitDiffPreviewLine(row); ok {
+		return line.text
+	}
+	if e.hugeFileActive() {
+		if line, ok := e.huge.buffer.TryLine(row); ok {
+			return line
+		}
+		return []rune("[indexing huge file region...]")
+	}
+	return e.line(row)
+}
 func (e *Editor) lineLen(row int) int {
 	if line, ok := e.gitDiffPreviewLine(row); ok {
 		return len(line.text)

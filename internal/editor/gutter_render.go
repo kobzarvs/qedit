@@ -3,7 +3,7 @@ package editor
 import "fmt"
 
 func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx int) {
-	line := e.line(lineIdx)
+	line := e.lineForDisplay(lineIdx)
 	if markerKind, _ := parseConflictMarker(line); markerKind != conflictNone {
 		e.drawConflictMarkerLine(s, y, x0+gutterWidth, x0+w)
 		return

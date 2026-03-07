@@ -1,10 +1,12 @@
 package editor
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOpenHugeFileBufferIndexesLines(t *testing.T) {
@@ -187,5 +189,89 @@ func TestOpenHugeFileBufferBuildsLargeIndexInBackground(t *testing.T) {
 	}
 	if got := buf.LineCount(); got != 20001 {
 		t.Fatalf("line count = %d, want %d", got, 20001)
+	}
+}
+
+type slowReadSeekCloser struct {
+	*os.File
+	maxRead int
+	delay   time.Duration
+}
+
+func (s *slowReadSeekCloser) Read(p []byte) (int, error) {
+	if s.maxRead > 0 && len(p) > s.maxRead {
+		p = p[:s.maxRead]
+	}
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
+	return s.File.Read(p)
+}
+
+type slowTestFileStore struct {
+	maxRead int
+	delay   time.Duration
+}
+
+func (s slowTestFileStore) Open(path string) (io.ReadSeekCloser, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return &slowReadSeekCloser{File: f, maxRead: s.maxRead, delay: s.delay}, nil
+}
+
+func (s slowTestFileStore) Read(path string) ([]byte, error) { return os.ReadFile(path) }
+func (s slowTestFileStore) Write(path string, data []byte) error {
+	return os.WriteFile(path, data, 0o644)
+}
+func (s slowTestFileStore) Stat(path string) (FileMetadata, error) {
+	return realTestFileStore{}.Stat(path)
+}
+func (s slowTestFileStore) Abs(path string) (string, error) { return realTestFileStore{}.Abs(path) }
+func (s slowTestFileStore) HomeDir() (string, error)        { return realTestFileStore{}.HomeDir() }
+func (s slowTestFileStore) ReadDir(path string) ([]DirEntry, error) {
+	return realTestFileStore{}.ReadDir(path)
+}
+func (s slowTestFileStore) IsNotExist(err error) bool { return realTestFileStore{}.IsNotExist(err) }
+
+func TestHugeFileBufferTryLineDefersFarRowsUntilIndexed(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 8000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	buf, err := OpenHugeFileBuffer(path, info.Size(), slowTestFileStore{maxRead: 128, delay: time.Millisecond})
+	if err != nil {
+		t.Fatalf("open huge file buffer: %v", err)
+	}
+	defer buf.Close()
+
+	if line, ok := buf.TryLine(0); !ok || string(line) != "line" {
+		t.Fatalf("line 0 = %q, ready=%v; want ready line", string(line), ok)
+	}
+	if line, ok := buf.TryLine(7000); ok {
+		t.Fatalf("expected far line to be deferred before indexing completes, got %q", string(line))
+	}
+
+	buf.WaitForIndexing()
+
+	if line, ok := buf.TryLine(7000); !ok || string(line) != "line" {
+		t.Fatalf("line 7000 after indexing = %q, ready=%v; want ready line", string(line), ok)
 	}
 }

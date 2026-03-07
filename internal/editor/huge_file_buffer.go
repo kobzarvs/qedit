@@ -360,11 +360,48 @@ func (b *HugeFileBuffer) IndexingComplete() bool {
 	return b.fullyIndexed
 }
 
+func (b *HugeFileBuffer) TryLine(row int) ([]rune, bool) {
+	if b == nil || b.reader == nil {
+		return nil, false
+	}
+	if !b.canResolveLineQuick(row) {
+		return nil, false
+	}
+	return b.Line(row), true
+}
+
 func (b *HugeFileBuffer) WaitForIndexing() {
 	if b == nil || b.indexDone == nil {
 		return
 	}
 	<-b.indexDone
+}
+
+func (b *HugeFileBuffer) canResolveLineQuick(row int) bool {
+	if row < 0 {
+		return false
+	}
+	if _, ok := b.lineCache[row]; ok {
+		return true
+	}
+	if _, ok := b.lineSpans[row]; ok {
+		return true
+	}
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.fullyIndexed {
+		return row < b.lineCount
+	}
+	if row >= b.estimatedLineCount {
+		return false
+	}
+	highestIndexedRow := b.lineCount - 1
+	if highestIndexedRow < 0 {
+		highestIndexedRow = 0
+	}
+	return row <= highestIndexedRow+hugeFileCheckpointSpacing
 }
 
 func (b *HugeFileBuffer) LineLen(row int) int {

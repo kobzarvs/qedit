@@ -131,7 +131,8 @@ func (e *Editor) Render(s Screen) {
 			cursorVisible = false
 		}
 		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-			cx = editorX + gutterWidth + visualCol(e.line(e.cursor.Row), e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
+			line := e.lineForDisplay(e.cursor.Row)
+			cx = editorX + gutterWidth + visualCol(line, e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
 		}
 		if cx < editorX+gutterWidth {
 			cx = editorX + gutterWidth
