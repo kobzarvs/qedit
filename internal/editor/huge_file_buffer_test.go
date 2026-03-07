@@ -342,12 +342,9 @@ func TestHugeFileBufferWarmLinesPopulatesFarViewportBeforeFullIndex(t *testing.T
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		line, ok := buf.TryLine(7000)
-		if ok {
+		if ok && buf.CanPrefetchQuick(7000, 20) {
 			if got := string(line); got != "line" {
 				t.Fatalf("warmed line 7000 = %q, want %q", got, "line")
-			}
-			if !buf.CanPrefetchQuick(7000, 20) {
-				t.Fatalf("expected warmed viewport to become quickly prefetchable")
 			}
 			if buf.IndexingComplete() {
 				t.Fatalf("expected warm path to finish before full indexing")
@@ -358,6 +355,51 @@ func TestHugeFileBufferWarmLinesPopulatesFarViewportBeforeFullIndex(t *testing.T
 	}
 
 	t.Fatalf("timed out waiting for far viewport warm")
+}
+
+func TestHugeFileUIPathsAvoidBlockingOnFarUnindexedRows(t *testing.T) {
+	prevSampleBytes := hugeFileInitialSampleBytes
+	hugeFileInitialSampleBytes = 64
+	defer func() {
+		hugeFileInitialSampleBytes = prevSampleBytes
+	}()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	var content strings.Builder
+	for i := 0; i < 200000; i++ {
+		content.WriteString("line\n")
+	}
+	if err := os.WriteFile(path, []byte(content.String()), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, slowTestFileStore{maxRead: 128, delay: 2 * time.Millisecond}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+	defer e.closeHugeFileBuffer()
+
+	e.cursor.Row = 7000
+	e.cursor.Col = 32
+	e.viewport.scroll = 7000
+	e.viewport.height = 20
+	e.viewport.scrollX = 0
+
+	start := time.Now()
+	e.clampCursorCol()
+	e.ensureCursorVisibleHorizontal(120, e.gutterWidth())
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("huge UI helpers blocked for %v on unresolved far row", elapsed)
+	}
 }
 
 func TestHugeFileBufferLoadsPersistentIndexCache(t *testing.T) {

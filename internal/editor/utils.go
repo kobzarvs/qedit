@@ -23,18 +23,26 @@ func (e *Editor) line(row int) []rune {
 	return e.docLine(row)
 }
 
-func (e *Editor) lineForDisplay(row int) []rune {
+func (e *Editor) tryLine(row int) ([]rune, bool) {
 	if line, ok := e.gitDiffPreviewLine(row); ok {
-		return line.text
+		return line.text, true
 	}
 	if e.hugeFileActive() {
-		if line, ok := e.huge.buffer.TryLine(row); ok {
-			return line
-		}
+		return e.huge.buffer.TryLine(row)
+	}
+	return e.line(row), true
+}
+
+func (e *Editor) lineForDisplay(row int) []rune {
+	if line, ok := e.tryLine(row); ok {
+		return line
+	}
+	if e.hugeFileActive() {
 		return []rune("[indexing huge file region...]")
 	}
 	return e.line(row)
 }
+
 func (e *Editor) lineLen(row int) int {
 	if line, ok := e.gitDiffPreviewLine(row); ok {
 		return len(line.text)
@@ -47,6 +55,15 @@ func (e *Editor) lineLen(row int) int {
 	}
 	return e.docLineLen(row)
 }
+
+func (e *Editor) tryLineLen(row int) (int, bool) {
+	line, ok := e.tryLine(row)
+	if !ok {
+		return 0, false
+	}
+	return len(line), true
+}
+
 func (e *Editor) clampCursorCol() {
 	lineCount := e.LineCount()
 	if lineCount == 0 {
@@ -54,6 +71,19 @@ func (e *Editor) clampCursorCol() {
 		return
 	}
 	if e.cursor.Row < 0 || e.cursor.Row >= lineCount {
+		return
+	}
+	if e.hugeFileActive() {
+		lineLen, ok := e.tryLineLen(e.cursor.Row)
+		if !ok {
+			return
+		}
+		if e.cursor.Col > lineLen {
+			e.cursor.Col = lineLen
+		}
+		if e.cursor.Col < 0 {
+			e.cursor.Col = 0
+		}
 		return
 	}
 	lineLen := e.lineLen(e.cursor.Row)
@@ -106,7 +136,11 @@ func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
 
 	var visualCursorCol int
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
-		visualCursorCol = visualCol(e.line(e.cursor.Row), e.cursor.Col, e.display.tabWidth)
+		line, ok := e.tryLine(e.cursor.Row)
+		if !ok {
+			return
+		}
+		visualCursorCol = visualCol(line, e.cursor.Col, e.display.tabWidth)
 	}
 
 	// Cursor position relative to scrollX

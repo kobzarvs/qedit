@@ -191,7 +191,7 @@ func (e *Editor) maxVisibleLineWidth() int {
 	}
 	maxWidth := 0
 	for i := startLine; i < endLine; i++ {
-		line := e.line(i)
+		line := e.lineForDisplay(i)
 		w := visualCol(line, len(line), e.display.tabWidth)
 		if w > maxWidth {
 			maxWidth = w
@@ -235,7 +235,10 @@ func (e *Editor) handleMouseClick(ev EventMouse) {
 	}
 
 	// Convert visual column to logical column
-	col := visualToLogicalCol(e.line(row), visualX, e.display.tabWidth)
+	col := 0
+	if line, ok := e.tryLine(row); ok {
+		col = visualToLogicalCol(line, visualX, e.display.tabWidth)
+	}
 
 	// Set cursor position
 	e.cursor.Row = row
@@ -334,7 +337,10 @@ func (e *Editor) setCursorFromEditorClick(screenX, contentY, editorX int) {
 	if visualX < 0 {
 		visualX = 0
 	}
-	col := visualToLogicalCol(e.line(row), visualX, e.display.tabWidth)
+	col := 0
+	if line, ok := e.tryLine(row); ok {
+		col = visualToLogicalCol(line, visualX, e.display.tabWidth)
+	}
 
 	e.cursor.Row = row
 	e.cursor.Col = col
