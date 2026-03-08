@@ -84,6 +84,28 @@ var hugeFileIndexPersistInterval = 250 * time.Millisecond
 
 var errHugeFileLineOutOfRange = errors.New("huge file line out of range")
 
+// bytesToRunes converts bytes to runes. For pure-ASCII data, avoids the
+// intermediate string allocation of []rune(string(data)) — single pass,
+// single allocation.
+func bytesToRunes(data []byte) []rune {
+	// Quick ASCII check: if all bytes < 0x80 we can skip UTF-8 decoding.
+	ascii := true
+	for _, b := range data {
+		if b >= utf8.RuneSelf {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		runes := make([]rune, len(data))
+		for i, b := range data {
+			runes[i] = rune(b)
+		}
+		return runes
+	}
+	return []rune(string(data))
+}
+
 type hugeFileCheckpoint struct {
 	row    int
 	offset int64
@@ -1466,7 +1488,7 @@ func (b *HugeFileBuffer) Line(row int) []rune {
 	if len(data) > 0 && data[len(data)-1] == '\r' {
 		data = data[:len(data)-1]
 	}
-	line := []rune(string(data))
+	line := bytesToRunes(data)
 	b.storeCachedLine(row, line)
 	b.storeCachedLineInfo(row, analyzeHugeFileLineData(data))
 	return line
@@ -1658,7 +1680,7 @@ func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
 	if err != nil || len(data) == 0 {
 		return nil, false
 	}
-	return []rune(string(data)), true
+	return bytesToRunes(data), true
 }
 
 func (b *HugeFileBuffer) analyzeLineSpan(row int, span hugeFileLineSpan) (hugeFileLineInfo, error) {
@@ -2291,7 +2313,7 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 		}
 		cached = append(cached, hugeFileCachedLineEntry{
 			row:  row,
-			line: []rune(string(lineData)),
+			line: bytesToRunes(lineData),
 		})
 		infos = append(infos, hugeFileCachedLineInfoEntry{
 			row:  row,
@@ -2779,7 +2801,7 @@ func (b *HugeFileBuffer) populateCachesFromPageData(row int) {
 		}
 		cached = append(cached, hugeFileCachedLineEntry{
 			row:  currentRow,
-			line: []rune(string(lineData)),
+			line: bytesToRunes(lineData),
 		})
 		infos = append(infos, hugeFileCachedLineInfoEntry{
 			row:  currentRow,
@@ -3197,7 +3219,7 @@ func (b *HugeFileBuffer) cachedPageLine(row int, span hugeFileLineSpan) ([]rune,
 	if len(lineData) > 0 && lineData[len(lineData)-1] == '\r' {
 		lineData = lineData[:len(lineData)-1]
 	}
-	line := []rune(string(lineData))
+	line := bytesToRunes(lineData)
 	b.storeCachedLine(row, line)
 	b.storeCachedLineInfo(row, analyzeHugeFileLineData(lineData))
 	return line, true
@@ -3240,7 +3262,7 @@ func (b *HugeFileBuffer) cachedPageLinePrefix(row int, page hugeFileCachedPageDa
 	if limit := relStart + int64(maxBytes); relEnd > limit {
 		relEnd = limit
 	}
-	return []rune(string(page.data[relStart:relEnd])), true
+	return bytesToRunes(page.data[relStart:relEnd]), true
 }
 
 func (b *HugeFileBuffer) cachedPageLineInfo(row int, span hugeFileLineSpan) (hugeFileLineInfo, bool) {
