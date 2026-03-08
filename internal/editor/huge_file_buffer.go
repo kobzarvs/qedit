@@ -2887,12 +2887,8 @@ func (b *HugeFileBuffer) cachePageDataFromReader(reader io.ReadSeeker, row int) 
 	if err != nil {
 		return err
 	}
-	// If data came from mmap, we need a copy since pageData stores []byte that may be modified.
-	if b.mmapData != nil && len(data) > 0 {
-		copied := make([]byte, len(data))
-		copy(copied, data)
-		data = copied
-	}
+	// pageData.data is read-only (CR-stripping uses re-slicing, not mutation),
+	// so mmap sub-slices can be stored directly without copying.
 	b.storeCachedPageData(hugeFileCachedPageData{
 		startRow:    start.row,
 		endRow:      actualEndRow,
