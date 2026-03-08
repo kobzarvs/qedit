@@ -217,6 +217,57 @@ func TestLongLinePerLineQueryNonASCIIFile(t *testing.T) {
 	}
 }
 
+func TestMultiLineTemplateStringHighlightsCrossChunkBoundary(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	// Build a file where a template literal starts at line 0 and spans many
+	// lines.  If we query starting at line 5, the template_string node (which
+	// starts at line 0) must still be captured — otherwise the interior lines
+	// get no "string" highlight and render as styleSyntaxUnknown (red).
+	var sb strings.Builder
+	sb.WriteString("const css = `\n")       // line 0: template start
+	for i := 0; i < 10; i++ {
+		sb.WriteString("  .class" + string(rune('a'+i)) + " { color: red; }\n") // lines 1-10
+	}
+	sb.WriteString("`;\n")                   // line 11: template end
+	sb.WriteString("const x = 42;\n")        // line 12
+
+	path := "tpl.js"
+	text := sb.String()
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+
+	// Query lines 5-10 only — the template_string starts at line 0.
+	spans := e.Highlights(path, 5, 10)
+	if spans == nil {
+		t.Fatalf("expected spans, got nil")
+	}
+	// Lines 5-10 are inside a template_string.  Each should have a "string" span.
+	for row := 5; row <= 10; row++ {
+		lineSpans := spans[row]
+		found := false
+		for _, s := range lineSpans {
+			if s.Kind == "string" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("line %d: expected 'string' span inside template literal, got %v", row, lineSpans)
+		}
+	}
+}
+
 func spanCoversKind(spans []HighlightSpan, col int, kind string) bool {
 	for _, span := range spans {
 		if span.Kind != kind {

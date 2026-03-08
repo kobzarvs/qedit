@@ -510,11 +510,28 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, line
 
 func queryHighlightsInto(query *sitter.Query, tree *sitter.Tree, source []byte, lines [][]byte, asciiOnly bool, lineASCIIFlags []bool, startLine, endLine int, clipStartCol, clipEndCol int, out map[int][]HighlightSpan) {
 	useColClip := clipStartCol >= 0 && clipEndCol > clipStartCol
-	rangeStart := sitter.Point{Row: uint32(startLine), Column: 0}
+	// Extend range start backward to capture multi-line nodes (template
+	// literals, multi-line comments, strings) that begin before startLine
+	// but extend into the query range.  tree-sitter's SetPointRange filters
+	// by capture START position, so without this lookback we would miss
+	// parent nodes and leave their interior lines unhighlighted.
+	const multiLineLookback = 500
+	rangeStartRow := startLine
+	if rangeStartRow > multiLineLookback {
+		rangeStartRow -= multiLineLookback
+	} else {
+		rangeStartRow = 0
+	}
+	rangeStart := sitter.Point{Row: uint32(rangeStartRow), Column: 0}
 	rangeEnd := sitter.Point{Row: uint32(endLine + 1), Column: 0}
 	allASCII := asciiOnly || allLinesASCII(lineASCIIFlags, startLine, endLine)
 	if useColClip && allASCII {
-		rangeStart.Column = uint32(clipStartCol)
+		// Only apply column constraint on start when NOT using lookback,
+		// otherwise we'd exclude multi-line nodes starting at earlier
+		// columns on the lookback row.
+		if rangeStartRow == startLine {
+			rangeStart.Column = uint32(clipStartCol)
+		}
 		rangeEnd = sitter.Point{Row: uint32(endLine), Column: uint32(clipEndCol)}
 	}
 	cursor := sitter.NewQueryCursor()
