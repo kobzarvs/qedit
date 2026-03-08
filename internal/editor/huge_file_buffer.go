@@ -96,6 +96,7 @@ type HugeFileBuffer struct {
 	meta       FileMetadata
 	reader     io.ReadSeekCloser
 	openReader func() (io.ReadSeekCloser, error)
+	mmapData   []byte // memory-mapped file contents (nil if mmap unavailable)
 
 	mu                 sync.RWMutex
 	lineCount          int
@@ -125,6 +126,42 @@ type HugeFileBuffer struct {
 	workers sync.WaitGroup
 }
 
+// mmapSlice returns a sub-slice of the mmap'd data without copying.
+// Returns nil if mmap is not available or range is invalid.
+func (b *HugeFileBuffer) mmapSlice(start, end int64) []byte {
+	if b.mmapData == nil || start < 0 || end < start || end > int64(len(b.mmapData)) {
+		return nil
+	}
+	return b.mmapData[start:end]
+}
+
+// readBytesAt reads [start, end) from the file using mmap if available,
+// otherwise falling back to the provided reader (seek+read).
+// The returned slice must NOT be modified when sourced from mmap.
+func (b *HugeFileBuffer) readBytesAt(reader io.ReadSeeker, start, end int64) ([]byte, error) {
+	if start < 0 || end < start {
+		return nil, nil
+	}
+	if data := b.mmapSlice(start, end); data != nil {
+		return data, nil
+	}
+	if reader == nil {
+		return nil, errHugeFileUnavailable
+	}
+	length := end - start
+	if length == 0 {
+		return nil, nil
+	}
+	if _, err := reader.Seek(start, io.SeekStart); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, length)
+	if _, err := io.ReadFull(reader, buf); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, err
+	}
+	return buf, nil
+}
+
 func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFileBuffer, error) {
 	if fs == nil {
 		return nil, errFileStoreUnavailable()
@@ -135,12 +172,16 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		return nil, err
 	}
 
+	// Try to mmap the file for zero-copy reads. Falls back to seek+read if mmap fails.
+	mdata, _ := mmapFile(path, meta.Size)
+
 	if cachedIndex, ok := loadHugeFileIndexCache(path, meta); ok {
 		b := &HugeFileBuffer{
 			path:      path,
 			sizeBytes: meta.Size,
 			meta:      meta,
 			reader:    reader,
+			mmapData:  mdata,
 			openReader: func() (io.ReadSeekCloser, error) {
 				return fs.Open(path)
 			},
@@ -190,6 +231,7 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		sizeBytes: meta.Size,
 		meta:      meta,
 		reader:    reader,
+		mmapData:  mdata,
 		openReader: func() (io.ReadSeekCloser, error) {
 			return fs.Open(path)
 		},
@@ -436,6 +478,12 @@ func (b *HugeFileBuffer) buildFullIndex(reader io.ReadSeekCloser, startOffset in
 	defer close(b.indexDone)
 	defer reader.Close()
 
+	// mmap fast path: scan the byte slice directly.
+	if b.mmapData != nil {
+		b.buildFullIndexFromMmap(startOffset, startLineCount)
+		return
+	}
+
 	if _, err := reader.Seek(startOffset, io.SeekStart); err != nil {
 		b.recordIndexError(err)
 		return
@@ -524,6 +572,85 @@ func (b *HugeFileBuffer) buildFullIndex(reader io.ReadSeekCloser, startOffset in
 			return
 		}
 	}
+}
+
+// buildFullIndexFromMmap scans the mmap'd data directly — no reader needed.
+// This is significantly faster than chunked reading for large files.
+func (b *HugeFileBuffer) buildFullIndexFromMmap(startOffset int64, startLineCount int) {
+	data := b.mmapData
+	size := int64(len(data))
+	lineCount := startLineCount
+	currentRow := startLineCount - 1
+	if currentRow < 0 {
+		currentRow = 0
+	}
+	lineStart := startOffset
+	pending := make([]hugeFileCheckpoint, 0, hugeFileIndexCheckpointBatch)
+	nextByteAnchorOffset := b.nextByteAnchorOffset(startOffset)
+	nextPageAnchorOffset := b.nextPageAnchorOffset(startOffset)
+	lastPersist := time.Now()
+
+	scanStart := startOffset
+	if scanStart < 0 {
+		scanStart = 0
+	}
+
+	for offset := scanStart; offset < size; offset++ {
+		if offset&0xFFFFF == 0 { // check cancel every ~1MB
+			select {
+			case <-b.cancelIndex:
+				if len(pending) > 0 {
+					b.appendCheckpoints(pending, lineCount)
+				}
+				_ = b.persistIndexCache()
+				return
+			default:
+			}
+		}
+
+		nextOffset := offset + 1
+		if data[offset] != '\n' {
+			for nextPageAnchorOffset > 0 && nextOffset >= nextPageAnchorOffset {
+				b.appendPageAnchor(currentRow, nextPageAnchorOffset, lineStart)
+				nextPageAnchorOffset += b.byteAnchorSpacing
+			}
+			continue
+		}
+		lineCount++
+		currentRow = lineCount - 1
+		nextLineOffset := nextOffset
+		lineStart = nextLineOffset
+		if (lineCount-1)%hugeFileCheckpointSpacing == 0 {
+			pending = append(pending, hugeFileCheckpoint{
+				row:    currentRow,
+				offset: nextLineOffset,
+			})
+		}
+		if nextByteAnchorOffset > 0 && nextLineOffset >= nextByteAnchorOffset {
+			b.appendByteAnchor(currentRow, nextLineOffset)
+			for nextByteAnchorOffset > 0 && nextLineOffset >= nextByteAnchorOffset {
+				nextByteAnchorOffset += b.byteAnchorSpacing
+			}
+		}
+		for nextPageAnchorOffset > 0 && nextOffset >= nextPageAnchorOffset {
+			b.appendPageAnchor(currentRow, nextPageAnchorOffset, lineStart)
+			nextPageAnchorOffset += b.byteAnchorSpacing
+		}
+		b.setIndexedLineCount(lineCount)
+
+		if len(pending) >= hugeFileIndexCheckpointBatch {
+			b.appendCheckpoints(pending, lineCount)
+			pending = pending[:0]
+			if time.Since(lastPersist) >= hugeFileIndexPersistInterval {
+				_ = b.persistIndexCache()
+				lastPersist = time.Now()
+			}
+		}
+	}
+	if len(pending) > 0 {
+		b.appendCheckpoints(pending, lineCount)
+	}
+	b.completeIndex(lineCount)
 }
 
 func (b *HugeFileBuffer) appendCheckpoints(checkpoints []hugeFileCheckpoint, lineCount int) {
@@ -643,6 +770,10 @@ func (b *HugeFileBuffer) Close() error {
 		<-b.indexDone
 	}
 	b.workers.Wait()
+	if b.mmapData != nil {
+		_ = munmapFile(b.mmapData)
+		b.mmapData = nil
+	}
 	if b.reader == nil {
 		return nil
 	}
@@ -746,7 +877,7 @@ func (b *HugeFileBuffer) CanPrefetchQuick(startRow, count int) bool {
 }
 
 func (b *HugeFileBuffer) TryLine(row int) ([]rune, bool) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil, false
 	}
 	if !b.canResolveLineQuick(row) {
@@ -756,7 +887,7 @@ func (b *HugeFileBuffer) TryLine(row int) ([]rune, bool) {
 }
 
 func (b *HugeFileBuffer) TryCachedLine(row int) ([]rune, bool) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil, false
 	}
 	lineCount := b.LineCount()
@@ -783,7 +914,7 @@ func (b *HugeFileBuffer) TryCachedLine(row int) ([]rune, bool) {
 }
 
 func (b *HugeFileBuffer) TryCachedLineInfo(row int) (hugeFileLineInfo, bool) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return hugeFileLineInfo{}, false
 	}
 	lineCount := b.LineCount()
@@ -807,7 +938,7 @@ func (b *HugeFileBuffer) TryCachedLineInfo(row int) (hugeFileLineInfo, bool) {
 }
 
 func (b *HugeFileBuffer) TryCachedLineSegment(row, startCol, maxCols int) ([]rune, bool) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil, false
 	}
 	lineCount := b.LineCount()
@@ -941,7 +1072,7 @@ func (b *HugeFileBuffer) RawSpanForRows(startRow, endRow int) (int64, int64, err
 }
 
 func (b *HugeFileBuffer) Line(row int) []rune {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil
 	}
 	lineCount := b.LineCount()
@@ -992,15 +1123,8 @@ func (b *HugeFileBuffer) Line(row int) []rune {
 	} else if !errors.Is(err, errHugeFileLineOutOfRange) {
 		return []rune(fmt.Sprintf("[read error: %v]", err))
 	}
-	length := span.end - span.start
-	if length < 0 {
-		length = 0
-	}
-	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
-		return []rune(fmt.Sprintf("[read error: %v]", err))
-	}
-	data := make([]byte, length)
-	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	data, err := b.readBytesAt(b.reader, span.start, span.end)
+	if err != nil {
 		return []rune(fmt.Sprintf("[read error: %v]", err))
 	}
 	if len(data) > 0 && data[len(data)-1] == '\r' {
@@ -1013,7 +1137,7 @@ func (b *HugeFileBuffer) Line(row int) []rune {
 }
 
 func (b *HugeFileBuffer) LineInfo(row int) (hugeFileLineInfo, bool) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return hugeFileLineInfo{}, false
 	}
 	lineCount := b.LineCount()
@@ -1061,7 +1185,7 @@ func (b *HugeFileBuffer) LineInfo(row int) (hugeFileLineInfo, bool) {
 }
 
 func (b *HugeFileBuffer) LineSegment(row, startCol, maxCols int) ([]rune, bool) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil, false
 	}
 	lineCount := b.LineCount()
@@ -1125,18 +1249,15 @@ func (b *HugeFileBuffer) LineSegment(row, startCol, maxCols int) ([]rune, bool) 
 	}
 
 	readStart := span.start + int64(startCol)
-	readLen := endCol - startCol
+	readEnd := span.start + int64(endCol)
 	if readStart < span.start {
 		readStart = span.start
 	}
-	if readLen <= 0 {
+	if readEnd <= readStart {
 		return []rune{}, true
 	}
-	if _, err := b.reader.Seek(readStart, io.SeekStart); err != nil {
-		return nil, false
-	}
-	data := make([]byte, readLen)
-	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	data, err := b.readBytesAt(b.reader, readStart, readEnd)
+	if err != nil || len(data) == 0 {
 		return nil, false
 	}
 	segment := make([]rune, len(data))
@@ -1147,7 +1268,7 @@ func (b *HugeFileBuffer) LineSegment(row, startCol, maxCols int) ([]rune, bool) 
 }
 
 func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil, false
 	}
 	lineCount := b.LineCount()
@@ -1197,27 +1318,37 @@ func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
 	if readLen <= 0 {
 		return []rune{}, true
 	}
-	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
-		return nil, false
-	}
-	data := make([]byte, readLen)
-	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	data, err := b.readBytesAt(b.reader, span.start, span.start+readLen)
+	if err != nil || len(data) == 0 {
 		return nil, false
 	}
 	return []rune(string(data)), true
 }
 
 func (b *HugeFileBuffer) analyzeLineSpan(row int, span hugeFileLineSpan) (hugeFileLineInfo, error) {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return hugeFileLineInfo{}, errHugeFileUnavailable
 	}
 	if span.end < span.start {
 		span.end = span.start
 	}
-	length := span.end - span.start
-	if length == 0 {
+	if span.end == span.start {
 		return hugeFileLineInfo{asciiOnly: true}, nil
 	}
+
+	// With mmap, we can analyze the data directly without copying.
+	if data := b.mmapSlice(span.start, span.end); data != nil {
+		if len(data) > 0 && data[len(data)-1] == '\r' {
+			data = data[:len(data)-1]
+		}
+		return analyzeHugeFileLineData(data), nil
+	}
+
+	// Fallback: chunked read via reader.
+	if b.reader == nil {
+		return hugeFileLineInfo{}, errHugeFileUnavailable
+	}
+	length := span.end - span.start
 	if _, err := b.reader.Seek(span.start, io.SeekStart); err != nil {
 		return hugeFileLineInfo{}, err
 	}
@@ -1300,7 +1431,7 @@ func (b *HugeFileBuffer) analyzeLineSpan(row int, span hugeFileLineSpan) (hugeFi
 }
 
 func (b *HugeFileBuffer) LineEnding(row int) string {
-	if b == nil || b.reader == nil {
+	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return ""
 	}
 	lineCount := b.LineCount()
@@ -1349,11 +1480,8 @@ func (b *HugeFileBuffer) LineEnding(row int) string {
 	if span.end > span.start {
 		prefixLen = 1
 	}
-	if _, err := b.reader.Seek(span.end-prefixLen, io.SeekStart); err != nil {
-		return ""
-	}
-	data := make([]byte, prefixLen+delimLen)
-	if _, err := io.ReadFull(b.reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	data, err := b.readBytesAt(b.reader, span.end-prefixLen, span.end-prefixLen+prefixLen+delimLen)
+	if err != nil || len(data) == 0 {
 		return ""
 	}
 	eol := string(data[prefixLen:])
@@ -1669,7 +1797,7 @@ func (b *HugeFileBuffer) PrefetchLines(startRow, count int) error {
 }
 
 func (b *HugeFileBuffer) WarmLines(startRow, count int) {
-	if b == nil || b.reader == nil || count <= 0 {
+	if b == nil || (b.reader == nil && b.mmapData == nil) || count <= 0 {
 		return
 	}
 	if startRow < 0 {
@@ -1794,13 +1922,11 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 	if readLen < 0 {
 		return nil
 	}
-	if _, err := reader.Seek(startSpan.start, io.SeekStart); err != nil {
+	data, err := b.readBytesAt(reader, startSpan.start, endSpan.end)
+	if err != nil {
 		return err
 	}
-	data := make([]byte, readLen)
-	if _, err := io.ReadFull(reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return err
-	}
+	baseOffset := startSpan.start
 	cached := make([]hugeFileCachedLineEntry, 0, actualEndRow-startRow+1)
 	infos := make([]hugeFileCachedLineInfoEntry, 0, actualEndRow-startRow+1)
 	endings := make([]hugeFileCachedLineEndingEntry, 0, actualEndRow-startRow)
@@ -1809,8 +1935,8 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 		if !ok {
 			continue
 		}
-		relStart := span.start - startSpan.start
-		relEnd := span.end - startSpan.start
+		relStart := span.start - baseOffset
+		relEnd := span.end - baseOffset
 		if relStart < 0 || relEnd < relStart || relEnd > int64(len(data)) {
 			continue
 		}
@@ -1830,8 +1956,8 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 		if row < actualEndRow {
 			nextSpan, ok := b.peekLineSpan(row + 1)
 			if ok {
-				delimStart := span.end - startSpan.start
-				delimEnd := nextSpan.start - startSpan.start
+				delimStart := span.end - baseOffset
+				delimEnd := nextSpan.start - baseOffset
 				if delimStart >= 0 && delimEnd >= delimStart && delimEnd <= int64(len(data)) {
 					eol := string(data[delimStart:delimEnd])
 					if hadCR {
@@ -1852,7 +1978,7 @@ func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRo
 }
 
 func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow, endRow int) error {
-	if b == nil || reader == nil {
+	if b == nil {
 		return nil
 	}
 	if startRow < 0 {
@@ -1869,6 +1995,15 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 		return nil
 	}
 	if b.hasCachedLineSpans(startRow, endRow) {
+		return nil
+	}
+
+	// mmap fast path: scan byte slice directly — no syscalls.
+	if b.mmapData != nil {
+		return b.cacheLineSpansFromMmap(startRow, endRow)
+	}
+
+	if reader == nil {
 		return nil
 	}
 
@@ -1945,6 +2080,72 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 		}
 		flushPending()
 	}
+}
+
+// cacheLineSpansFromMmap scans the mmap'd data directly to find line spans.
+// Much faster than the reader path: no syscalls, no buffer copies.
+func (b *HugeFileBuffer) cacheLineSpansFromMmap(startRow, endRow int) error {
+	anchor := b.scanStartAnchor(startRow)
+	currentRow := anchor.row
+	lineStart := anchor.lineStart
+	nextByteAnchorOffset := b.nextByteAnchorOffset(anchor.offset)
+	nextPageAnchorOffset := b.nextPageAnchorOffset(anchor.offset)
+	pending := make([]hugeFileLineSpanEntry, 0, 256)
+	data := b.mmapData
+	size := int64(len(data))
+
+	flushPending := func() {
+		if len(pending) == 0 {
+			return
+		}
+		b.storeLineSpansBatch(pending)
+		pending = pending[:0]
+	}
+
+	scanStart := anchor.offset
+	if scanStart < 0 {
+		scanStart = 0
+	}
+	for offset := scanStart; offset < size; offset++ {
+		if b.isCanceled() {
+			flushPending()
+			return nil
+		}
+		nextOffset := offset + 1
+		if data[offset] != '\n' {
+			b.observeScanOffset(currentRow, nextOffset, lineStart, &nextPageAnchorOffset)
+			continue
+		}
+		pending = append(pending, hugeFileLineSpanEntry{
+			row: currentRow,
+			span: hugeFileLineSpan{
+				start: lineStart,
+				end:   offset,
+			},
+		})
+		nextRow := currentRow + 1
+		nextLineStart := nextOffset
+		if len(pending) >= 256 {
+			flushPending()
+		}
+		b.observeScanLineBoundary(nextRow, nextOffset, nextLineStart, &nextByteAnchorOffset, &nextPageAnchorOffset)
+		if currentRow >= endRow {
+			flushPending()
+			return nil
+		}
+		currentRow = nextRow
+		lineStart = nextLineStart
+	}
+	// Last line (no trailing newline).
+	pending = append(pending, hugeFileLineSpanEntry{
+		row: currentRow,
+		span: hugeFileLineSpan{
+			start: lineStart,
+			end:   size,
+		},
+	})
+	flushPending()
+	return nil
 }
 
 func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row int) error {
@@ -2163,12 +2364,15 @@ func (b *HugeFileBuffer) cachePageDataFromReader(reader io.ReadSeeker, row int) 
 	if readLen < 0 {
 		return nil
 	}
-	if _, err := reader.Seek(startSpan.start, io.SeekStart); err != nil {
+	data, err := b.readBytesAt(reader, startSpan.start, endSpan.end)
+	if err != nil {
 		return err
 	}
-	data := make([]byte, readLen)
-	if _, err := io.ReadFull(reader, data); err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return err
+	// If data came from mmap, we need a copy since pageData stores []byte that may be modified.
+	if b.mmapData != nil && len(data) > 0 {
+		copied := make([]byte, len(data))
+		copy(copied, data)
+		data = copied
 	}
 	b.storeCachedPageData(hugeFileCachedPageData{
 		startRow:    start.row,
