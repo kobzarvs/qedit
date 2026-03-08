@@ -26,7 +26,10 @@ func (e *Editor) Render(s Screen) {
 	}
 	e.viewport.height = viewHeight
 	e.viewport.width = w
-	e.ensureConflictBlocks()
+	skipHeavyHugeFirstPaint := e.skipHeavyHugeFirstPaint()
+	if !skipHeavyHugeFirstPaint {
+		e.ensureConflictBlocks()
+	}
 	e.syncGitDiffPreview()
 	mergeReviewActive := e.mergeReviewActive()
 	mergeReviewLayout := mergeReviewLayout{}
@@ -62,11 +65,12 @@ func (e *Editor) Render(s Screen) {
 		editorX = mergeReviewLayout.centerX
 		editorWidth = mergeReviewLayout.centerW
 	}
-
 	gutterWidth := e.gutterWidth()
 	if !e.interaction.freeScroll {
 		e.ensureCursorVisible(contentViewHeight)
-		e.ensureCursorVisibleHorizontal(editorWidth, gutterWidth)
+		if !skipHeavyHugeFirstPaint {
+			e.ensureCursorVisibleHorizontal(editorWidth, gutterWidth)
+		}
 	}
 
 	s.SetStyle(e.styleMain)
@@ -81,7 +85,9 @@ func (e *Editor) Render(s Screen) {
 		} else if mergeReviewActive {
 			e.renderMergeReview(s, viewHeight, w)
 		} else {
-			e.prefetchHugeViewport(viewHeight)
+			if !skipHeavyHugeFirstPaint {
+				e.prefetchHugeViewport(viewHeight)
+			}
 			for y := 0; y < viewHeight; y++ {
 				lineIdx := e.viewport.scroll + y
 				if lineIdx >= e.LineCount() {
@@ -130,7 +136,9 @@ func (e *Editor) Render(s Screen) {
 		if cy < 0 || cy >= viewHeight {
 			cursorVisible = false
 		}
-		if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
+		if skipHeavyHugeFirstPaint {
+			cx = editorX + gutterWidth
+		} else if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
 			if vc, ok := e.hugeVisualCol(e.cursor.Row, e.cursor.Col); ok {
 				cx = editorX + gutterWidth + vc - e.viewport.scrollX
 			} else {
@@ -182,6 +190,9 @@ func (e *Editor) Render(s Screen) {
 		}
 	}
 	sidebarFocused := !mergeReviewActive && e.sidebar != nil && e.sidebar.Visible && e.sidebar.Focused
+	if skipHeavyHugeFirstPaint {
+		e.huge.deferInitialViewportWarm = false
+	}
 	if e.mode == ModeBranchPicker || e.modal.spaceMenuActive || e.keybindingsHelp.active || sidebarFocused || !cursorVisible {
 		s.HideCursor()
 		s.Show()
@@ -290,6 +301,24 @@ func (e *Editor) drawLineSegment(s Screen, y, w, startX int, line []rune, logica
 	if tabWidth < 1 {
 		tabWidth = 1
 	}
+	visibleCols := w - startX
+	if visibleCols < 1 {
+		visibleCols = 1
+	}
+	spanClipStart := logicalStart
+	spanClipEnd := logicalStart + len(line)
+	if logicalStart == 0 {
+		spanClipStart = scrollX - tabWidth*2
+		if spanClipStart < 0 {
+			spanClipStart = 0
+		}
+		spanClipEnd = spanClipStart + visibleCols + tabWidth*4
+		if spanClipEnd > len(line) {
+			spanClipEnd = len(line)
+		}
+	}
+	renderSpans := clipHighlightSpans(spans, spanClipStart, spanClipEnd)
+	walker := newHighlightWalker(renderSpans)
 	fallbackStyle := e.styleMain
 	if highlightActive {
 		fallbackStyle = e.styleSyntaxUnknown
@@ -310,7 +339,7 @@ func (e *Editor) drawLineSegment(s Screen, y, w, startX int, line []rune, logica
 
 		// First determine the syntax-highlighted style
 		activeStyle := fallbackStyle
-		if kind, ok := highlightKindAt(spans, idx); ok {
+		if kind, ok := walker.kindAt(idx); ok {
 			if style, ok := e.styleForHighlight(kind); ok {
 				activeStyle = style
 			}

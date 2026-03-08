@@ -68,7 +68,7 @@ func (e *Editor) drawGitDiffPreviewLineAt(s Screen, x0, y, width, lineIdx int) {
 }
 
 func (e *Editor) gitDiffPreviewHighlight(line gitDiffPreviewLine) ([]HighlightSpan, bool) {
-	if line.actualLine < 0 || e.highlight.start < 0 || line.actualLine < e.highlight.start || line.actualLine > e.highlight.end {
+	if line.actualLine < 0 || !e.highlight.lineCovered(line.actualLine) {
 		return nil, false
 	}
 	return e.highlight.spans[line.actualLine], true

@@ -367,6 +367,38 @@ func TestExecCommandFmtNoGo(t *testing.T) {
 	}
 }
 
+func TestExecCommandFmtJavaScript(t *testing.T) {
+	e := newTestEditor("const x=1;")
+	e.document.filename = "/tmp/app.min.js"
+	if quit := e.execCommand("fmt"); quit {
+		t.Fatalf("execCommand fmt returned true")
+	}
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected format request")
+	}
+	if req.Kind != RuntimeRequestFormatBuffer || req.Path != "/tmp/app.min.js" || req.Content != "const x=1;" {
+		t.Fatalf("request = %#v, want js format-buffer request", req)
+	}
+}
+
+func TestQueueFormatRequestHugeFileJavaScript(t *testing.T) {
+	e := New(Options{})
+	e.document.filename = "/tmp/app.min.js"
+	e.huge.active = true
+	e.huge.buffer = &HugeFileBuffer{}
+	if err := e.queueFormatRequest(); err != nil {
+		t.Fatalf("queueFormatRequest returned error: %v", err)
+	}
+	req, ok := e.ConsumeRuntimeRequest()
+	if !ok {
+		t.Fatalf("expected format request")
+	}
+	if req.Kind != RuntimeRequestFormatBuffer || req.Path != "/tmp/app.min.js" || req.Content != "" {
+		t.Fatalf("request = %#v, want huge js format-buffer request with empty content", req)
+	}
+}
+
 func TestExecCommandUnknown(t *testing.T) {
 	e := newTestEditor("a")
 	if quit := e.execCommand("nope"); quit {

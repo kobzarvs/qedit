@@ -179,17 +179,60 @@ func (e *Editor) VisibleRange() (int, int) {
 	}
 	return start, end
 }
-func (e *Editor) SetHighlights(startLine, endLine int, spans map[int][]HighlightSpan) {
-	if spans == nil || startLine < 0 || endLine < startLine {
-		e.highlight = editorHighlightState{start: -1, end: -1}
-		return
+
+func (e *Editor) HighlightWindowCols() (int, int) {
+	start := e.viewport.scrollX
+	if start < 0 {
+		start = 0
 	}
-	e.highlight.spans = spans
-	e.highlight.start = startLine
-	e.highlight.end = endLine
+	screenWidth := e.viewport.width
+	if screenWidth <= 0 {
+		screenWidth = 1
+	}
+	editorWidth := screenWidth
+	if e.mergeReviewActive() {
+		layout := e.computeMergeReviewLayout(screenWidth)
+		editorWidth = layout.centerW
+	} else if e.sidebar != nil && e.sidebar.Visible {
+		editorWidth -= e.sidebar.CalculateWidth(screenWidth)
+	} else if e.refsPicker.active && len(e.refsPicker.items) > 0 {
+		sidebarWidth := screenWidth / 4
+		if sidebarWidth < 20 {
+			sidebarWidth = 20
+		}
+		if sidebarWidth > screenWidth/2 {
+			sidebarWidth = screenWidth / 2
+		}
+		editorWidth -= sidebarWidth
+	}
+	textWidth := editorWidth - e.gutterWidth()
+	if textWidth < 1 {
+		textWidth = 1
+	}
+	const overscan = 64
+	return start, start + textWidth + overscan
+}
+
+func (e *Editor) SetHighlights(startLine, endLine int, spans map[int][]HighlightSpan) {
+	e.highlight.set(startLine, endLine, spans)
+}
+
+func (e *Editor) MergeHighlights(startLine, endLine int, spans map[int][]HighlightSpan) {
+	e.highlight.merge(startLine, endLine, spans)
 }
 func (e *Editor) HasHighlights() bool {
-	return e.highlight.spans != nil && e.highlight.start >= 0 && e.highlight.end >= e.highlight.start
+	return e.highlight.has()
+}
+
+func (e *Editor) HighlightsCover(startLine, endLine int) bool {
+	return e.highlight.covers(startLine, endLine)
+}
+
+func (e *Editor) HighlightRange() (int, int, bool) {
+	if !e.HasHighlights() {
+		return -1, -1, false
+	}
+	return e.highlight.start, e.highlight.end, true
 }
 
 // AdjustHighlights shifts the cached highlight map in-place after an edit.
@@ -212,8 +255,5 @@ func (e *Editor) AdjustHighlights(editStart, oldEnd, newEnd int) {
 		// lines in [editStart, oldEnd) are dropped
 	}
 	e.highlight.spans = updated
-	e.highlight.end += delta
-	if e.highlight.end < e.highlight.start {
-		e.highlight = editorHighlightState{start: -1, end: -1}
-	}
+	e.highlight.rebuildRangesFromSpans()
 }

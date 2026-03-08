@@ -88,6 +88,38 @@ func TestMarkdownHighlightRuneColumns(t *testing.T) {
 	}
 }
 
+func TestJavaScriptHighlightsWindowClipsColumns(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	text := "const mermaid=foo(bar)+baz(qux)+quux;"
+	path := "sample.js"
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+	spans := e.HighlightsWindow(path, 0, 0, 18, 28)
+	if spans == nil {
+		t.Fatalf("expected spans, got nil")
+	}
+	lineSpans := spans[0]
+	if len(lineSpans) == 0 {
+		t.Fatalf("expected clipped highlight spans")
+	}
+	for _, span := range lineSpans {
+		if span.StartCol < 18 || span.EndCol > 28 {
+			t.Fatalf("span %#v escapes requested window", span)
+		}
+	}
+}
+
 func runeIndex(haystack, needle string) int {
 	hr := []rune(haystack)
 	nr := []rune(needle)

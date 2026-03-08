@@ -25,7 +25,7 @@ func (e *Editor) restoreSessionState() {
 	e.cursor.Col = state.CursorCol
 	if e.cursor.Row < lineCount {
 		if e.hugeFileActive() {
-			if lineLen, ok := e.tryLineLen(e.cursor.Row); ok && e.cursor.Col > lineLen {
+			if lineLen, ok := e.tryLineLenQuick(e.cursor.Row); ok && e.cursor.Col > lineLen {
 				e.cursor.Col = lineLen
 			}
 		} else if e.cursor.Col > e.lineLen(e.cursor.Row) {
@@ -64,13 +64,13 @@ func (e *Editor) restoreSessionState() {
 			e.selectionActive = true
 			// Clamp columns to line lengths
 			startCol := state.SelectionStartCol
-			if lineLen, ok := e.tryLineLen(state.SelectionStartRow); ok && startCol > lineLen {
+			if lineLen, ok := e.tryLineLenQuick(state.SelectionStartRow); ok && startCol > lineLen {
 				startCol = lineLen
 			} else if !e.hugeFileActive() && startCol > e.lineLen(state.SelectionStartRow) {
 				startCol = e.lineLen(state.SelectionStartRow)
 			}
 			endCol := state.SelectionEndCol
-			if lineLen, ok := e.tryLineLen(state.SelectionEndRow); ok && endCol > lineLen {
+			if lineLen, ok := e.tryLineLenQuick(state.SelectionEndRow); ok && endCol > lineLen {
 				endCol = lineLen
 			} else if !e.hugeFileActive() && endCol > e.lineLen(state.SelectionEndRow) {
 				endCol = e.lineLen(state.SelectionEndRow)
@@ -79,8 +79,9 @@ func (e *Editor) restoreSessionState() {
 			e.selectionEnd = Cursor{Row: state.SelectionEndRow, Col: endCol}
 		}
 	}
-
-	e.primeHugeViewport()
+	if e.hugeFileActive() {
+		e.huge.deferInitialViewportWarm = true
+	}
 }
 
 func (e *Editor) saveSessionState() {

@@ -37,10 +37,13 @@ type Engine struct {
 	trees         map[string]*sitter.Tree
 	queries       map[string]*sitter.Query
 	sources       map[string][]byte
+	sourceLines   map[string][][]byte
+	sourceASCII   map[string]bool
 	mdInlineQuery *sitter.Query
 	reqCh         chan parseRequest
 	events        chan Event
 	stopCh        chan struct{}
+	opMu          sync.Mutex
 	mu            sync.RWMutex
 }
 
@@ -87,15 +90,32 @@ func (e *Engine) ensureQuery(name string) *sitter.Query {
 
 func New(langs config.Languages) *Engine {
 	return &Engine{
-		langs:   langs,
-		parsers: make(map[string]*sitter.Parser),
-		trees:   make(map[string]*sitter.Tree),
-		queries: make(map[string]*sitter.Query),
-		sources: make(map[string][]byte),
-		reqCh:   make(chan parseRequest, 8),
-		events:  make(chan Event, 16),
-		stopCh:  make(chan struct{}),
+		langs:       langs,
+		parsers:     make(map[string]*sitter.Parser),
+		trees:       make(map[string]*sitter.Tree),
+		queries:     make(map[string]*sitter.Query),
+		sources:     make(map[string][]byte),
+		sourceLines: make(map[string][][]byte),
+		sourceASCII: make(map[string]bool),
+		reqCh:       make(chan parseRequest, 8),
+		events:      make(chan Event, 16),
+		stopCh:      make(chan struct{}),
 	}
+}
+
+func buildSourceMetadata(source []byte) ([][]byte, bool) {
+	if source == nil {
+		return nil, true
+	}
+	lines := bytes.Split(source, []byte("\n"))
+	asciiOnly := true
+	for _, b := range source {
+		if b >= utf8.RuneSelf {
+			asciiOnly = false
+			break
+		}
+	}
+	return lines, asciiOnly
 }
 
 func (e *Engine) Start() error {
@@ -164,9 +184,15 @@ func (e *Engine) OpenFile(path, text string) {
 	// For regex-based languages, just store the source
 	switch lang.Name {
 	case "json", "gitignore", "makefile":
+		e.opMu.Lock()
 		e.mu.Lock()
-		e.sources[path] = []byte(text)
+		source := []byte(text)
+		lines, asciiOnly := buildSourceMetadata(source)
+		e.sources[path] = source
+		e.sourceLines[path] = lines
+		e.sourceASCII[path] = asciiOnly
 		e.mu.Unlock()
+		e.opMu.Unlock()
 		e.sendEvent("parsed", path)
 		return
 	}
@@ -192,18 +218,25 @@ func (e *Engine) loop() {
 		case req := <-e.reqCh:
 			start := time.Now()
 			logger.Debug("treesitter parse start", "path", req.path, "lang", req.language, "mode", "async", "bytes", len(req.text))
+			e.opMu.Lock()
 			e.mu.RLock()
 			parser, ok := e.parsers[req.language]
 			e.mu.RUnlock()
 			if !ok {
+				e.opMu.Unlock()
 				logger.Debug("treesitter parse skip", "path", req.path, "lang", req.language, "mode", "async", "reason", "no-parser")
 				continue
 			}
 			e.mu.Lock()
 			tree, err := parser.ParseCtx(context.Background(), nil, []byte(req.text))
+			source := []byte(req.text)
+			lines, asciiOnly := buildSourceMetadata(source)
 			e.trees[req.path] = tree
-			e.sources[req.path] = []byte(req.text)
+			e.sources[req.path] = source
+			e.sourceLines[req.path] = lines
+			e.sourceASCII[req.path] = asciiOnly
 			e.mu.Unlock()
+			e.opMu.Unlock()
 			if err != nil {
 				logger.Warn("treesitter parse error", "path", req.path, "lang", req.language, "mode", "async", "error", err, "duration", time.Since(start))
 			} else {
@@ -246,9 +279,15 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	// For regex-based languages, just store the source
 	switch lang {
 	case "json", "gitignore", "makefile":
+		e.opMu.Lock()
 		e.mu.Lock()
-		e.sources[path] = []byte(text)
+		source := []byte(text)
+		lines, asciiOnly := buildSourceMetadata(source)
+		e.sources[path] = source
+		e.sourceLines[path] = lines
+		e.sourceASCII[path] = asciiOnly
 		e.mu.Unlock()
+		e.opMu.Unlock()
 		e.sendEvent("parsed", path)
 		logger.Debug("treesitter parse done", "path", path, "lang", lang, "mode", "sync", "duration", time.Since(start))
 		return true
@@ -278,6 +317,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 		logger.Debug("treesitter parse skip", "path", path, "lang", lang, "mode", "sync", "reason", "no-language")
 		return false
 	}
+	e.opMu.Lock()
 	e.mu.Lock()
 	parser := e.parsers[lang]
 	if parser == nil {
@@ -293,9 +333,14 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 		prev.Edit(*edit)
 	}
 	tree, err := parser.ParseCtx(context.Background(), prev, []byte(text))
+	source := []byte(text)
+	lines, asciiOnly := buildSourceMetadata(source)
 	e.trees[path] = tree
-	e.sources[path] = []byte(text)
+	e.sources[path] = source
+	e.sourceLines[path] = lines
+	e.sourceASCII[path] = asciiOnly
 	e.mu.Unlock()
+	e.opMu.Unlock()
 	if err != nil {
 		logger.Warn("treesitter parse error", "path", path, "lang", lang, "mode", "sync", "error", err, "duration", time.Since(start))
 	} else {
@@ -306,10 +351,20 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 }
 
 func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]HighlightSpan {
+	return e.highlights(path, startLine, endLine, -1, -1)
+}
+
+func (e *Engine) HighlightsWindow(path string, startLine, endLine int, startCol, endCol int) map[int][]HighlightSpan {
+	return e.highlights(path, startLine, endLine, startCol, endCol)
+}
+
+func (e *Engine) highlights(path string, startLine, endLine int, startCol, endCol int) map[int][]HighlightSpan {
 	if startLine < 0 || endLine < startLine {
 		logger.Debug("treesitter highlight skip", "path", path, "reason", "invalid-range", "start", startLine, "end", endLine)
 		return nil
 	}
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
 	lang := e.langs.Match(path)
 	if lang == nil {
 		logger.Debug("treesitter highlight skip", "path", path, "reason", "no-lang")
@@ -328,8 +383,12 @@ func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]Highl
 	case "json", "gitignore", "makefile":
 		e.mu.RLock()
 		source := e.sources[path]
+		lines := e.sourceLines[path]
+		asciiOnly := e.sourceASCII[path]
 		e.mu.RUnlock()
 		if source != nil {
+			_ = lines
+			_ = asciiOnly
 			out = e.regexHighlights(lang.Name, source, startLine, endLine)
 		} else {
 			reason = "no-source"
@@ -349,8 +408,10 @@ func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]Highl
 				reason = "no-tree"
 			} else {
 				source := e.sources[path]
+				lines := e.sourceLines[path]
+				asciiOnly := e.sourceASCII[path]
 				e.mu.RUnlock()
-				out = queryHighlights(query, tree, source, startLine, endLine)
+				out = queryHighlights(query, tree, source, lines, asciiOnly, startLine, endLine, startCol, endCol)
 			}
 		}
 	}
@@ -362,20 +423,24 @@ func (e *Engine) Highlights(path string, startLine, endLine int) map[int][]Highl
 	return out
 }
 
-func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, startLine, endLine int) map[int][]HighlightSpan {
+func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, lines [][]byte, asciiOnly bool, startLine, endLine int, clipStartCol, clipEndCol int) map[int][]HighlightSpan {
 	if query == nil || tree == nil {
 		return nil
 	}
-	var lines [][]byte
-	if source != nil {
-		lines = bytes.Split(source, []byte("\n"))
+	useColClip := clipStartCol >= 0 && clipEndCol > clipStartCol
+	rangeStart := sitter.Point{Row: uint32(startLine), Column: 0}
+	rangeEnd := sitter.Point{Row: uint32(endLine + 1), Column: 0}
+	if useColClip && asciiOnly {
+		rangeStart.Column = uint32(clipStartCol)
+		if startLine == endLine {
+			rangeEnd = sitter.Point{Row: uint32(endLine), Column: uint32(clipEndCol)}
+		} else {
+			rangeEnd = sitter.Point{Row: uint32(endLine), Column: uint32(clipEndCol)}
+		}
 	}
 	cursor := sitter.NewQueryCursor()
 	defer cursor.Close()
-	cursor.SetPointRange(
-		sitter.Point{Row: uint32(startLine), Column: 0},
-		sitter.Point{Row: uint32(endLine + 1), Column: 0},
-	)
+	cursor.SetPointRange(rangeStart, rangeEnd)
 	cursor.Exec(query, tree.RootNode())
 
 	out := make(map[int][]HighlightSpan)
@@ -414,8 +479,28 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, star
 				}
 				if lines != nil && row >= 0 && row < len(lines) {
 					line := lines[row]
-					startCol = byteColToRuneCol(line, startCol)
-					endCol = byteColToRuneCol(line, endCol)
+					if asciiOnly {
+						if startCol > len(line) {
+							startCol = len(line)
+						}
+						if endCol > len(line) {
+							endCol = len(line)
+						}
+					} else {
+						startCol = byteColToRuneCol(line, startCol)
+						endCol = byteColToRuneCol(line, endCol)
+					}
+				}
+				if useColClip {
+					if startCol < clipStartCol {
+						startCol = clipStartCol
+					}
+					if endCol > clipEndCol {
+						endCol = clipEndCol
+					}
+					if endCol <= startCol {
+						continue
+					}
 				}
 				out[row] = append(out[row], HighlightSpan{
 					StartCol: startCol,
@@ -447,13 +532,15 @@ func (e *Engine) markdownHighlights(path string, startLine, endLine int) map[int
 	inlineQuery := e.mdInlineQuery
 	tree := e.trees[path]
 	source := e.sources[path]
+	sourceLines := e.sourceLines[path]
+	sourceASCII := e.sourceASCII[path]
 	e.mu.RUnlock()
 
 	if query == nil || tree == nil || source == nil {
 		return map[int][]HighlightSpan{}
 	}
 
-	out := queryHighlights(query, tree, source, startLine, endLine)
+	out := queryHighlights(query, tree, source, sourceLines, sourceASCII, startLine, endLine, -1, -1)
 	if out == nil {
 		out = make(map[int][]HighlightSpan)
 	}
@@ -503,7 +590,8 @@ func (e *Engine) markdownHighlights(path string, startLine, endLine int) map[int
 		if inlineTree == nil {
 			continue
 		}
-		lineSpans := queryHighlights(inlineQuery, inlineTree, []byte(line), 0, 0)
+		lineBytes := []byte(line)
+		lineSpans := queryHighlights(inlineQuery, inlineTree, lineBytes, [][]byte{lineBytes}, false, 0, 0, -1, -1)
 		if len(lineSpans) == 0 {
 			continue
 		}
@@ -869,7 +957,7 @@ func (e *Engine) applyFencedBlockHighlights(out map[int][]HighlightSpan, block m
 	}
 
 	lang = normalizeFenceLang(lang)
-	query := e.queries[lang]
+	query := e.ensureQuery(lang)
 	tsLang := tsLanguageForName(lang)
 	if query == nil || tsLang == nil {
 		addFenceFallback(out, block, offsets, contentLines, startLine, endLine, "string")
@@ -883,7 +971,8 @@ func (e *Engine) applyFencedBlockHighlights(out map[int][]HighlightSpan, block m
 		addFenceFallback(out, block, offsets, contentLines, startLine, endLine, "string")
 		return
 	}
-	spans := queryHighlights(query, tree, []byte(text), 0, lineCount-1)
+	textBytes := []byte(text)
+	spans := queryHighlights(query, tree, textBytes, bytes.Split(textBytes, []byte("\n")), false, 0, lineCount-1, -1, -1)
 	for line, lineSpans := range spans {
 		globalRow := block.contentStartRow + line
 		if globalRow < startLine || globalRow > endLine {
@@ -1001,6 +1090,8 @@ type NodeRange struct {
 // GetNodeStackAt returns a stack of node ranges at the given position,
 // from innermost to outermost (root). Used for expand/shrink selection.
 func (e *Engine) GetNodeStackAt(path string, row, col int) []NodeRange {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
 	e.mu.RLock()
 	tree := e.trees[path]
 	e.mu.RUnlock()

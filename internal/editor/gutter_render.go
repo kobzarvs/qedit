@@ -7,16 +7,23 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 	logicalStart := 0
 	visualStart := 0
 	useSegment := false
+	skipHeavyHugeFirstPaint := e.skipHeavyHugeFirstPaint()
 	if textWidth := w - gutterWidth; textWidth > 0 {
-		if segment, logical, visual, ok := e.hugeLineSegment(lineIdx, e.viewport.scrollX, textWidth); ok && !e.hasConflictBlocks() {
-			line = segment
-			logicalStart = logical
-			visualStart = visual
-			useSegment = true
+		if !skipHeavyHugeFirstPaint {
+			if segment, logical, visual, ok := e.hugeLineSegment(lineIdx, e.viewport.scrollX, textWidth); ok && !e.hasConflictBlocks() {
+				line = segment
+				logicalStart = logical
+				visualStart = visual
+				useSegment = true
+			}
 		}
 	}
 	if !useSegment {
-		line = e.lineForDisplay(lineIdx)
+		if skipHeavyHugeFirstPaint {
+			line = e.lineForDisplayQuick(lineIdx)
+		} else {
+			line = e.lineForDisplay(lineIdx)
+		}
 		if markerKind, _ := parseConflictMarker(line); markerKind != conflictNone {
 			e.drawConflictMarkerLine(s, y, x0+gutterWidth, x0+w)
 			return
@@ -128,7 +135,7 @@ func (e *Editor) drawLineWithGutterAt(s Screen, x0, y, w, gutterWidth, lineIdx i
 		selStart = -1
 		selEnd = -1
 	}
-	highlightActive := e.highlight.start >= 0 && lineIdx >= e.highlight.start && lineIdx <= e.highlight.end
+	highlightActive := e.highlight.lineCovered(lineIdx)
 	var spans []HighlightSpan
 	if highlightActive {
 		spans = e.highlight.spans[lineIdx]
@@ -188,7 +195,7 @@ func (e *Editor) drawPreviewLineWithGutterAt(s Screen, x0, y, w, gutterWidth, li
 			s.SetContent(x0+numWidth-1, y, ' ', nil, spaceStyle)
 		}
 	}
-	highlightActive := e.fileTreePreview.highlight.start >= 0 && lineIdx >= e.fileTreePreview.highlight.start && lineIdx <= e.fileTreePreview.highlight.end
+	highlightActive := e.fileTreePreview.highlight.lineCovered(lineIdx)
 	var spans []HighlightSpan
 	if highlightActive {
 		spans = e.fileTreePreview.highlight.spans[lineIdx]

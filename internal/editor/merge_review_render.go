@@ -243,7 +243,7 @@ func (e *Editor) drawMergeReviewPaneLine(s Screen, x0, y, width, gutterWidth int
 		}
 	}
 
-	highlightActive := actualRow >= 0 && e.highlight.start >= 0 && actualRow >= e.highlight.start && actualRow <= e.highlight.end
+	highlightActive := actualRow >= 0 && e.highlight.lineCovered(actualRow)
 	var spans []HighlightSpan
 	if highlightActive {
 		spans = e.highlight.spans[actualRow]

@@ -247,6 +247,9 @@ func (e *Editor) snapshotBufferState() *BufferState {
 func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.text = bs.text
 	e.huge = bs.huge
+	if e.hugeFileActive() {
+		e.huge.deferInitialViewportWarm = true
+	}
 	e.cursor = bs.cursor
 	e.document.filename = bs.filename
 	e.file = bs.file
@@ -277,5 +280,4 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.clipboard.lines = bs.clipboard
 	e.clipboard.linewise = bs.clipboardLinewise
 	e.selectionScope = bs.selectionScope
-	e.primeHugeViewport()
 }

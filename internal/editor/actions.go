@@ -402,6 +402,9 @@ func (e *Editor) FormatCurrent() error {
 	if isGoFile(e.document.filename) {
 		return e.FormatGo()
 	}
+	if isPrettierFile(e.document.filename) {
+		return e.queueFormatRequest()
+	}
 	if e.document.filename == "" && looksLikeGo(e.Content()) {
 		return e.FormatGo()
 	}
@@ -410,6 +413,15 @@ func (e *Editor) FormatCurrent() error {
 func isGoFile(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	return ext == ".go"
+}
+func isPrettierFile(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	switch ext {
+	case ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".json", ".css", ".scss", ".less", ".html", ".htm", ".vue":
+		return true
+	default:
+		return false
+	}
 }
 func looksLikeGo(src string) bool {
 	src = strings.TrimLeftFunc(src, unicode.IsSpace)

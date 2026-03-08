@@ -109,7 +109,9 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	}
 	row := e.cursor.Row + 1
 	col := 1
-	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
+	if e.skipHeavyHugeFirstPaint() {
+		col = e.cursor.Col + 1
+	} else if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
 		if vc, ok := e.hugeVisualCol(e.cursor.Row, e.cursor.Col); ok {
 			col = vc + 1
 		} else if line, ok := e.tryLine(e.cursor.Row); ok {

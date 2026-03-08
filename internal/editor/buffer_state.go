@@ -107,9 +107,10 @@ func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) e
 
 	e.text = nil
 	e.huge = editorHugeFileState{
-		active:    true,
-		sizeBytes: meta.Size,
-		buffer:    buffer,
+		active:                   true,
+		sizeBytes:                meta.Size,
+		buffer:                   buffer,
+		deferInitialViewportWarm: true,
 	}
 	e.clearGitDiffPreview()
 	e.cursor = Cursor{}

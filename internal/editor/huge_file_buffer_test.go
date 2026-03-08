@@ -1392,7 +1392,7 @@ func TestRenderHugeLongLineUsesVisibleSegment(t *testing.T) {
 		}
 		b.WriteRune(r)
 	}
-	if got, want := b.String(), strings.Repeat("a", 10)+strings.Repeat(".", 10); got != want {
+	if got, want := b.String(), strings.Repeat(".", 20); got != want {
 		t.Fatalf("first row = %q, want %q", got, want)
 	}
 }
@@ -1442,6 +1442,13 @@ func TestLoadHugeFilePrimesRestoredViewport(t *testing.T) {
 	if e.cursor.Row != 7000 || e.viewport.scroll != 7000 {
 		t.Fatalf("restored cursor/scroll = row %d scroll %d, want 7000/7000", e.cursor.Row, e.viewport.scroll)
 	}
+	if line, ok := e.huge.buffer.TryLine(7000); ok {
+		t.Fatalf("expected restored huge viewport to stay cold before first render, got %q", string(line))
+	}
+
+	screen := newFakeScreen(120, 40)
+	e.Render(screen)
+	e.prefetchHugeRows(e.viewport.scroll, 40)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

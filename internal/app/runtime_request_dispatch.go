@@ -1,7 +1,13 @@
 package app
 
 import (
+	"errors"
+	"path/filepath"
+	"strings"
+	"unicode"
+
 	"github.com/kobzarvs/qedit/internal/editor"
+	"github.com/kobzarvs/qedit/internal/integrations"
 	"github.com/kobzarvs/qedit/internal/logger"
 )
 
@@ -125,6 +131,10 @@ func (c *editorRuntimeController) handleSaveFileRequest(req editor.RuntimeReques
 		c.state.openPath = savedPath
 		c.fileMonitor.Watch(savedPath)
 	}
+	if c.ls != nil && !c.ed.HugeFileMode() {
+		c.ls.DidSave(savedPath, c.ed.Content())
+		c.state.lastLSPChangeTick = c.ed.ChangeTick()
+	}
 
 	c.ed.SetStatusMessage("written")
 	if req.QuitAfter {
@@ -167,21 +177,77 @@ func (c *editorRuntimeController) handleReloadFileRequest(req editor.RuntimeRequ
 	}
 	c.ed.ApplyReloadedContent(data)
 	c.activateCurrentEditorFile(req.Path, false)
+	refreshEditorBufferInLSP(c.ls, c.ed, c.state, c.fileStore, req.Path)
 	c.ed.SetStatusMessage("reloaded")
 }
 
 func (c *editorRuntimeController) handleFormatBufferRequest(req editor.RuntimeRequest) {
-	if c.formatter == nil {
-		c.ed.SetStatusMessage("formatter unavailable")
-		return
+	content := req.Content
+	if content == "" && req.Path != "" {
+		data, err := c.fileStore.Read(req.Path)
+		if err != nil {
+			c.ed.SetStatusMessage(err.Error())
+			return
+		}
+		content = string(data)
 	}
-	formatted, err := c.formatter.FormatGo(req.Content)
+	formatted, err := c.formatBuffer(req.Path, content)
 	if err != nil {
 		c.ed.SetStatusMessage(err.Error())
 		return
 	}
+	if strings.TrimSpace(formatted) == strings.TrimSpace(content) && formatted == content {
+		c.ed.SetStatusMessage("already formatted")
+		return
+	}
 	c.ed.ApplyFormattedContent(formatted)
+	targetPath := req.Path
+	if targetPath == "" {
+		targetPath = c.ed.Filename()
+	}
+	refreshEditorBufferInLSP(c.ls, c.ed, c.state, c.fileStore, targetPath)
 	c.ed.SetStatusMessage("formatted")
+}
+
+func (c *editorRuntimeController) formatBuffer(path, content string) (string, error) {
+	if editorPathLooksGo(path, content) {
+		if c.formatter == nil {
+			return "", errFormatterUnavailable()
+		}
+		return c.formatter.FormatGo(content)
+	}
+	if editorPathLooksPrettier(path) {
+		return integrations.FormatPrettier(path, content)
+	}
+	return "", errFormatNotSupported()
+}
+
+func editorPathLooksGo(path, content string) bool {
+	if strings.EqualFold(filepath.Ext(path), ".go") {
+		return true
+	}
+	if strings.TrimSpace(path) != "" {
+		return false
+	}
+	content = strings.TrimLeftFunc(content, unicode.IsSpace)
+	return strings.HasPrefix(content, "package ")
+}
+
+func editorPathLooksPrettier(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".json", ".css", ".scss", ".less", ".html", ".htm", ".vue":
+		return true
+	default:
+		return false
+	}
+}
+
+func errFormatterUnavailable() error {
+	return errors.New("formatter unavailable")
+}
+
+func errFormatNotSupported() error {
+	return errors.New("format not supported")
 }
 
 func (c *editorRuntimeController) handleWriteClipboardRequest(req editor.RuntimeRequest) {

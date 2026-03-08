@@ -535,6 +535,23 @@ func (e *Editor) hugeLineLen(row int) (int, bool) {
 	return info.runeLen, true
 }
 
+func (e *Editor) hugeLineInfoQuick(row int) (hugeFileLineInfo, bool) {
+	if !e.hugeFileActive() || e.huge.buffer == nil {
+		return hugeFileLineInfo{}, false
+	}
+	ref, ok := e.hugeResolveLogicalRow(row)
+	if !ok {
+		return hugeFileLineInfo{}, false
+	}
+	if ref.patchIndex >= 0 {
+		return analyzeHugeRunes(e.huge.patches[ref.patchIndex].rows[ref.rowOffset].text), true
+	}
+	if line, ok := e.huge.edits[ref.baseStart]; ok {
+		return analyzeHugeRunes(line), true
+	}
+	return e.huge.buffer.TryCachedLineInfo(ref.baseStart)
+}
+
 func (e *Editor) hugeLineInfo(row int) (hugeFileLineInfo, bool) {
 	if !e.hugeFileActive() || e.huge.buffer == nil {
 		return hugeFileLineInfo{}, false

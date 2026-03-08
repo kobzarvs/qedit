@@ -66,4 +66,18 @@ func (e *Editor) registerBuiltInFormatters() {
 			return nil
 		},
 	})
+	e.RegisterFormatter(FormatterProvider{
+		Name: "javascript",
+		Supports: func(path, content string) bool {
+			return isPrettierFile(path)
+		},
+		Format: func(ed *Editor, path, content string) error {
+			ed.enqueueRuntimeRequest(RuntimeRequest{
+				Kind:    RuntimeRequestFormatBuffer,
+				Path:    path,
+				Content: content,
+			})
+			return nil
+		},
+	})
 }

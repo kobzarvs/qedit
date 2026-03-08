@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/kobzarvs/qedit/internal/editor"
@@ -56,6 +58,38 @@ func TestHandleFormatBufferRequestAppliesFormattedContent(t *testing.T) {
 	}
 	if got := ed.Content(); got != formatted {
 		t.Fatalf("content = %q, want %q", got, formatted)
+	}
+}
+
+func TestHandleFormatBufferRequestAppliesJavaScriptPrettier(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "node_modules", ".bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	prettierPath := filepath.Join(binDir, "prettier")
+	script := "#!/bin/sh\ncat >/dev/null\nprintf 'const x = 1;\\n'\n"
+	if err := os.WriteFile(prettierPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write prettier stub: %v", err)
+	}
+
+	path := filepath.Join(dir, "app.min.js")
+	ed := editor.New(editor.Options{})
+	if err := ed.LoadFileContent(path, []byte("const x=1;")); err != nil {
+		t.Fatalf("LoadFileContent returned error: %v", err)
+	}
+	controller := editorRuntimeController{
+		ed: ed,
+	}
+
+	controller.handleFormatBufferRequest(editor.RuntimeRequest{
+		Kind:    editor.RuntimeRequestFormatBuffer,
+		Path:    path,
+		Content: "const x=1;",
+	})
+
+	if got := ed.Content(); got != "const x = 1;\n" {
+		t.Fatalf("content = %q, want %q", got, "const x = 1;\n")
 	}
 }
 

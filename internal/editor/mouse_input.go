@@ -162,6 +162,12 @@ func (e *Editor) scrollRight(amount, textWidth int) {
 
 // clampScrollX limits horizontal scroll so text doesn't scroll past the end.
 func (e *Editor) clampScrollX(textWidth int) {
+	if e.hugeFileActive() {
+		if e.viewport.scrollX < 0 {
+			e.viewport.scrollX = 0
+		}
+		return
+	}
 	maxX := e.maxVisibleLineWidth() - textWidth + 10
 	if maxX < 0 {
 		maxX = 0

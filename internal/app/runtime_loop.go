@@ -122,6 +122,7 @@ func (r *editorRuntime) HandleRequests() {
 func (r *editorRuntime) Tick() {
 	runEditorRuntimeTick(
 		r.ed,
+		r.controller.ls,
 		r.ts,
 		r.fileMonitor,
 		&r.state,

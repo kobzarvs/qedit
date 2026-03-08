@@ -1,13 +1,14 @@
 package editor
 
 type editorHugeFileState struct {
-	active     bool
-	sizeBytes  int64
-	buffer     *HugeFileBuffer
-	edits      map[int][]rune
-	patches    []hugeFileRowPatch
-	defaultEOL string
-	resolve    hugeFileResolveCache
+	active                   bool
+	sizeBytes                int64
+	buffer                   *HugeFileBuffer
+	edits                    map[int][]rune
+	patches                  []hugeFileRowPatch
+	defaultEOL               string
+	resolve                  hugeFileResolveCache
+	deferInitialViewportWarm bool
 }
 
 type hugeFileResolveCache struct {
@@ -28,6 +29,10 @@ func (e *Editor) hugeFileActive() bool {
 
 func (e *Editor) HugeFileMode() bool {
 	return e.hugeFileActive()
+}
+
+func (e *Editor) skipHeavyHugeFirstPaint() bool {
+	return e.hugeFileActive() && e.huge.deferInitialViewportWarm
 }
 
 func (e *Editor) prefetchHugeViewport(viewHeight int) {
@@ -61,7 +66,7 @@ func (e *Editor) shouldSkipHugeViewportWarm(startRow, count int) bool {
 		checkRows = append(checkRows, e.cursor.Row)
 	}
 	for _, row := range checkRows {
-		info, ok := e.hugeLineInfo(row)
+		info, ok := e.hugeLineInfoQuick(row)
 		if !ok {
 			continue
 		}

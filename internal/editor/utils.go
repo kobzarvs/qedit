@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -36,12 +37,45 @@ func (e *Editor) tryLine(row int) ([]rune, bool) {
 	return e.line(row), true
 }
 
+func (e *Editor) tryLineQuick(row int) ([]rune, bool) {
+	if line, ok := e.gitDiffPreviewLine(row); ok {
+		return line.text, true
+	}
+	if e.hugeFileActive() {
+		if !e.hugeFileActive() || e.huge.buffer == nil {
+			return nil, false
+		}
+		ref, ok := e.hugeResolveLogicalRow(row)
+		if !ok {
+			return nil, false
+		}
+		if ref.patchIndex >= 0 {
+			return copyRunes(e.huge.patches[ref.patchIndex].rows[ref.rowOffset].text), true
+		}
+		if line, ok := e.huge.edits[ref.baseStart]; ok {
+			return copyRunes(line), true
+		}
+		return e.huge.buffer.TryCachedLine(ref.baseStart)
+	}
+	return e.line(row), true
+}
+
 func (e *Editor) lineForDisplay(row int) []rune {
 	if line, ok := e.tryLine(row); ok {
 		return line
 	}
 	if e.hugeFileActive() {
 		return []rune("[indexing huge file region...]")
+	}
+	return e.line(row)
+}
+
+func (e *Editor) lineForDisplayQuick(row int) []rune {
+	if line, ok := e.tryLineQuick(row); ok {
+		return line
+	}
+	if e.hugeFileActive() {
+		return []rune("[loading huge file view...]")
 	}
 	return e.line(row)
 }
@@ -70,11 +104,19 @@ func (e *Editor) tryLineLen(row int) (int, bool) {
 	return len(line), true
 }
 
+func (e *Editor) tryLineLenQuick(row int) (int, bool) {
+	line, ok := e.tryLineQuick(row)
+	if !ok {
+		return 0, false
+	}
+	return len(line), true
+}
+
 func (e *Editor) hugeVisualCol(row, logicalCol int) (int, bool) {
 	if !e.hugeFileActive() {
 		return 0, false
 	}
-	info, ok := e.hugeLineInfo(row)
+	info, ok := e.hugeLineInfoQuick(row)
 	if !ok {
 		return 0, false
 	}
@@ -100,10 +142,11 @@ func (e *Editor) clampCursorCol() {
 		return
 	}
 	if e.hugeFileActive() {
-		lineLen, ok := e.hugeLineLen(e.cursor.Row)
+		info, ok := e.hugeLineInfoQuick(e.cursor.Row)
 		if !ok {
 			return
 		}
+		lineLen := info.runeLen
 		if e.cursor.Col > lineLen {
 			e.cursor.Col = lineLen
 		}
@@ -164,6 +207,10 @@ func (e *Editor) ensureCursorVisibleHorizontal(viewWidth, gutterWidth int) {
 	if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
 		if vc, ok := e.hugeVisualCol(e.cursor.Row, e.cursor.Col); ok {
 			visualCursorCol = vc
+		} else if e.hugeFileActive() {
+			if e.cursor.Col > 0 {
+				visualCursorCol = e.cursor.Col
+			}
 		} else {
 			line, ok := e.tryLine(e.cursor.Row)
 			if !ok {
@@ -345,6 +392,80 @@ func highlightKindAt(spans []HighlightSpan, col int) (string, bool) {
 		return "", false
 	}
 	return bestKind, true
+}
+
+type highlightWalker struct {
+	spans []HighlightSpan
+	first int
+}
+
+func newHighlightWalker(spans []HighlightSpan) highlightWalker {
+	return highlightWalker{spans: spans}
+}
+
+func (w *highlightWalker) kindAt(col int) (string, bool) {
+	for w.first < len(w.spans) && w.spans[w.first].EndCol <= col {
+		w.first++
+	}
+	bestKind := ""
+	bestPriority := 0
+	for i := w.first; i < len(w.spans); i++ {
+		span := w.spans[i]
+		if span.StartCol > col {
+			break
+		}
+		if col >= span.EndCol {
+			continue
+		}
+		priority := highlightPriority(span.Kind)
+		if priority > bestPriority {
+			bestPriority = priority
+			bestKind = span.Kind
+		}
+	}
+	if bestKind == "" {
+		return "", false
+	}
+	return bestKind, true
+}
+
+func clipHighlightSpans(spans []HighlightSpan, startCol, endCol int) []HighlightSpan {
+	if len(spans) == 0 || endCol <= startCol {
+		return nil
+	}
+	startIdx := sort.Search(len(spans), func(i int) bool {
+		return spans[i].StartCol >= startCol
+	})
+	for startIdx > 0 && spans[startIdx-1].EndCol > startCol {
+		startIdx--
+	}
+	endIdx := sort.Search(len(spans), func(i int) bool {
+		return spans[i].StartCol >= endCol
+	})
+	out := make([]HighlightSpan, 0, max(0, endIdx-startIdx+1))
+	for i := startIdx; i < len(spans); i++ {
+		span := spans[i]
+		if i >= endIdx && span.StartCol >= endCol {
+			break
+		}
+		if span.EndCol <= startCol {
+			continue
+		}
+		if span.StartCol >= endCol {
+			break
+		}
+		clipped := span
+		if clipped.StartCol < startCol {
+			clipped.StartCol = startCol
+		}
+		if clipped.EndCol > endCol {
+			clipped.EndCol = endCol
+		}
+		if clipped.EndCol > clipped.StartCol {
+			out = append(out, clipped)
+		}
+	}
+	return out
 }
 func clampRange(value, min, max int) int {
 	if value < min {

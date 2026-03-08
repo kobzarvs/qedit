@@ -4,12 +4,14 @@ import (
 	"time"
 
 	"github.com/kobzarvs/qedit/internal/editor"
+	"github.com/kobzarvs/qedit/internal/lsp"
 	"github.com/kobzarvs/qedit/internal/platform/keyboard"
 	"github.com/kobzarvs/qedit/internal/treesitter"
 )
 
 func runEditorRuntimeTick(
 	ed *editor.Editor,
+	ls *lsp.Manager,
 	ts *treesitter.Engine,
 	fileMonitor *externalFileMonitor,
 	state *editorRuntimeState,
@@ -24,10 +26,12 @@ func runEditorRuntimeTick(
 	if state.openPath != "" {
 		fileMonitor.PollExternalChange(now, filePollInterval)
 	}
+	syncEditorChangeToLSP(ls, ed, state)
 
 	state.lastChangeTick, state.lastHighlightStart, state.lastHighlightEnd = syncVisibleHighlights(
 		ed,
 		ts,
+		state,
 		state.openPath,
 		state.langName,
 		state.highlightEnabled,

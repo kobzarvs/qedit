@@ -755,6 +755,101 @@ func (b *HugeFileBuffer) TryLine(row int) ([]rune, bool) {
 	return b.Line(row), true
 }
 
+func (b *HugeFileBuffer) TryCachedLine(row int) ([]rune, bool) {
+	if b == nil || b.reader == nil {
+		return nil, false
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 {
+		return nil, false
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= lineCount {
+		row = lineCount - 1
+	}
+	if cached, ok := b.cachedLine(row); ok {
+		return cached, true
+	}
+	span, ok := b.peekLineSpan(row)
+	if !ok {
+		return nil, false
+	}
+	if line, ok := b.cachedPageLine(row, span); ok {
+		return line, true
+	}
+	return nil, false
+}
+
+func (b *HugeFileBuffer) TryCachedLineInfo(row int) (hugeFileLineInfo, bool) {
+	if b == nil || b.reader == nil {
+		return hugeFileLineInfo{}, false
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 {
+		return hugeFileLineInfo{}, false
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= lineCount {
+		row = lineCount - 1
+	}
+	if info, ok := b.cachedLineInfo(row); ok {
+		return info, true
+	}
+	span, ok := b.peekLineSpan(row)
+	if !ok {
+		return hugeFileLineInfo{}, false
+	}
+	return b.cachedPageLineInfo(row, span)
+}
+
+func (b *HugeFileBuffer) TryCachedLineSegment(row, startCol, maxCols int) ([]rune, bool) {
+	if b == nil || b.reader == nil {
+		return nil, false
+	}
+	lineCount := b.LineCount()
+	if lineCount <= 0 {
+		return nil, false
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= lineCount {
+		row = lineCount - 1
+	}
+	if maxCols <= 0 {
+		return []rune{}, true
+	}
+	info, ok := b.TryCachedLineInfo(row)
+	if !ok || !info.asciiOnly || info.hasTabs {
+		return nil, false
+	}
+	if startCol < 0 {
+		startCol = 0
+	}
+	if startCol > info.runeLen {
+		startCol = info.runeLen
+	}
+	endCol := startCol + maxCols
+	if endCol > info.runeLen {
+		endCol = info.runeLen
+	}
+	if endCol <= startCol {
+		return []rune{}, true
+	}
+	if cached, ok := b.cachedLine(row); ok {
+		return append([]rune(nil), cached[startCol:endCol]...), true
+	}
+	page, ok := b.cachedPageData(row)
+	if !ok {
+		return nil, false
+	}
+	return b.cachedPageLineSegment(row, page, startCol, endCol)
+}
+
 func (b *HugeFileBuffer) WaitForIndexing() {
 	if b == nil || b.indexDone == nil {
 		return
