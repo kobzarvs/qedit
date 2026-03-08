@@ -52,11 +52,12 @@ func TestClipHighlightSpansAndWalker(t *testing.T) {
 		{StartCol: 150, EndCol: 170, Kind: "comment"},
 	})
 	clipped := clipHighlightSpans(spans, 110, 160)
-	if len(clipped) != 3 {
-		t.Fatalf("len(clipped) = %d, want 3", len(clipped))
+	// After flattening overlaps: [110,120)=plain, [120,140)=keyword, [140,150)=plain, [150,160)=comment
+	if len(clipped) != 4 {
+		t.Fatalf("len(clipped) = %d, want 4; spans=%#v", len(clipped), clipped)
 	}
-	if clipped[0].StartCol != 110 || clipped[0].EndCol != 160 {
-		t.Fatalf("first clipped span = %#v, want [110,160)", clipped[0])
+	if clipped[0].StartCol != 110 || clipped[0].EndCol != 120 || clipped[0].Kind != "plain" {
+		t.Fatalf("clipped[0] = %#v, want [110,120) plain", clipped[0])
 	}
 
 	walker := newHighlightWalker(clipped)

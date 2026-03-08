@@ -404,29 +404,19 @@ func newHighlightWalker(spans []HighlightSpan) highlightWalker {
 }
 
 func (w *highlightWalker) kindAt(col int) (string, bool) {
+	// Spans are pre-flattened (non-overlapping, priority-resolved).
+	// Just advance past expired spans and check if current span covers col.
 	for w.first < len(w.spans) && w.spans[w.first].EndCol <= col {
 		w.first++
 	}
-	bestKind := ""
-	bestPriority := 0
-	for i := w.first; i < len(w.spans); i++ {
-		span := w.spans[i]
-		if span.StartCol > col {
-			break
-		}
-		if col >= span.EndCol {
-			continue
-		}
-		priority := highlightPriority(span.Kind)
-		if priority > bestPriority {
-			bestPriority = priority
-			bestKind = span.Kind
-		}
-	}
-	if bestKind == "" {
+	if w.first >= len(w.spans) {
 		return "", false
 	}
-	return bestKind, true
+	span := w.spans[w.first]
+	if col >= span.StartCol && col < span.EndCol {
+		return span.Kind, true
+	}
+	return "", false
 }
 
 func clipHighlightSpans(spans []HighlightSpan, startCol, endCol int) []HighlightSpan {
@@ -442,7 +432,7 @@ func clipHighlightSpans(spans []HighlightSpan, startCol, endCol int) []Highlight
 	endIdx := sort.Search(len(spans), func(i int) bool {
 		return spans[i].StartCol >= endCol
 	})
-	out := make([]HighlightSpan, 0, max(0, endIdx-startIdx+1))
+	clipped := make([]HighlightSpan, 0, max(0, endIdx-startIdx+1))
 	for i := startIdx; i < len(spans); i++ {
 		span := spans[i]
 		if i >= endIdx && span.StartCol >= endCol {
@@ -454,17 +444,136 @@ func clipHighlightSpans(spans []HighlightSpan, startCol, endCol int) []Highlight
 		if span.StartCol >= endCol {
 			break
 		}
-		clipped := span
-		if clipped.StartCol < startCol {
-			clipped.StartCol = startCol
+		s := span
+		if s.StartCol < startCol {
+			s.StartCol = startCol
 		}
-		if clipped.EndCol > endCol {
-			clipped.EndCol = endCol
+		if s.EndCol > endCol {
+			s.EndCol = endCol
 		}
-		if clipped.EndCol > clipped.StartCol {
-			out = append(out, clipped)
+		if s.EndCol > s.StartCol {
+			clipped = append(clipped, s)
 		}
 	}
+	return flattenHighlightSpans(clipped)
+}
+
+// flattenHighlightSpans resolves overlapping spans by priority, producing a
+// non-overlapping sequence. This makes kindAt() O(1) — just advance first.
+func flattenHighlightSpans(spans []HighlightSpan) []HighlightSpan {
+	if len(spans) <= 1 {
+		return spans
+	}
+	// Quick check: if no overlaps exist, return as-is.
+	hasOverlap := false
+	for i := 1; i < len(spans); i++ {
+		if spans[i].StartCol < spans[i-1].EndCol {
+			hasOverlap = true
+			break
+		}
+	}
+	if !hasOverlap {
+		return spans
+	}
+
+	// Collect all boundary events (span start/end) and sweep left-to-right.
+	type event struct {
+		col      int
+		priority int
+		kind     string
+		isEnd    bool
+	}
+	events := make([]event, 0, len(spans)*2)
+	for _, s := range spans {
+		p := highlightPriority(s.Kind)
+		events = append(events,
+			event{col: s.StartCol, priority: p, kind: s.Kind},
+			event{col: s.EndCol, priority: p, kind: s.Kind, isEnd: true},
+		)
+	}
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].col != events[j].col {
+			return events[i].col < events[j].col
+		}
+		// Ends before starts at the same column.
+		if events[i].isEnd != events[j].isEnd {
+			return events[i].isEnd
+		}
+		return false
+	})
+
+	// Sweep: maintain active set as a small priority-ordered slice.
+	type activeEntry struct {
+		kind     string
+		priority int
+		count    int
+	}
+	var active []activeEntry
+	topKind := ""
+	topPriority := 0
+
+	updateTop := func() {
+		topKind = ""
+		topPriority = 0
+		for _, a := range active {
+			if a.priority > topPriority {
+				topPriority = a.priority
+				topKind = a.kind
+			}
+		}
+	}
+
+	out := make([]HighlightSpan, 0, len(spans))
+	prevCol := -1
+	prevKind := ""
+
+	flush := func(col int) {
+		if prevKind != "" && col > prevCol {
+			out = append(out, HighlightSpan{StartCol: prevCol, EndCol: col, Kind: prevKind})
+		}
+	}
+
+	for _, evt := range events {
+		if evt.col != prevCol && prevCol >= 0 {
+			flush(evt.col)
+			prevCol = evt.col
+			prevKind = topKind
+		}
+		if prevCol < 0 {
+			prevCol = evt.col
+		}
+
+		if evt.isEnd {
+			for i := range active {
+				if active[i].kind == evt.kind {
+					active[i].count--
+					if active[i].count <= 0 {
+						active = append(active[:i], active[i+1:]...)
+					}
+					break
+				}
+			}
+		} else {
+			found := false
+			for i := range active {
+				if active[i].kind == evt.kind {
+					active[i].count++
+					found = true
+					break
+				}
+			}
+			if !found {
+				active = append(active, activeEntry{kind: evt.kind, priority: evt.priority, count: 1})
+			}
+		}
+		updateTop()
+		if topKind != prevKind {
+			flush(evt.col)
+			prevCol = evt.col
+			prevKind = topKind
+		}
+	}
+
 	return out
 }
 func clampRange(value, min, max int) int {
