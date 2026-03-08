@@ -593,10 +593,19 @@ func (e *Editor) hugeLineSegment(row, startCol, maxCols int) ([]rune, int, int, 
 		return hugeOverlaySegment(line, startCol, maxCols)
 	}
 	info, ok := e.huge.buffer.LineInfo(ref.baseStart)
-	if !ok || !info.asciiOnly || info.hasTabs {
+	if !ok || info.hasTabs {
 		return nil, 0, 0, false
 	}
-	segment, ok := e.huge.buffer.LineSegment(ref.baseStart, startCol, maxCols)
+	if info.asciiOnly {
+		segment, ok := e.huge.buffer.LineSegment(ref.baseStart, startCol, maxCols)
+		if !ok {
+			return nil, 0, 0, false
+		}
+		return segment, startCol, startCol, true
+	}
+	// Non-ASCII line without tabs: try partial ASCII segment if the visible
+	// byte window is entirely within an ASCII region of the line.
+	segment, ok := e.huge.buffer.LineSegmentASCIIWindow(ref.baseStart, startCol, maxCols)
 	if !ok {
 		return nil, 0, 0, false
 	}

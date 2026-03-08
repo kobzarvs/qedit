@@ -1627,6 +1627,63 @@ func (b *HugeFileBuffer) LineSegment(row, startCol, maxCols int) ([]rune, bool) 
 	return segment, true
 }
 
+// LineSegmentASCIIWindow returns a column segment for non-ASCII lines when the
+// visible byte window happens to be entirely ASCII. This avoids loading the full
+// multi-megabyte line for files like minified JS where non-ASCII chars are rare.
+// Returns (nil, false) if any byte in the window is non-ASCII or tabs are present.
+func (b *HugeFileBuffer) LineSegmentASCIIWindow(row, startCol, maxCols int) ([]rune, bool) {
+	if b == nil || (b.reader == nil && b.mmapData == nil) || maxCols <= 0 {
+		return nil, false
+	}
+	span, err := b.resolveLineSpan(row)
+	if err != nil {
+		return nil, false
+	}
+	lineBytes := span.end - span.start
+	if lineBytes <= 0 {
+		return []rune{}, true
+	}
+
+	// For non-ASCII lines, rune positions don't match byte positions.
+	// We can only use byte-slicing if every byte before endCol is single-byte
+	// (ASCII). Check bytes [0, startCol+maxCols) to confirm rune==byte mapping.
+	checkEnd := int64(startCol + maxCols)
+	if checkEnd > lineBytes {
+		checkEnd = lineBytes
+	}
+	// Also need to verify bytes [0, startCol) are ASCII so that column
+	// positions are correct. For very large startCol this could be expensive,
+	// so limit to reasonable window — if startCol > 1MB, bail out.
+	if int64(startCol) > 1<<20 {
+		return nil, false
+	}
+
+	data, err := b.readBytesAt(b.reader, span.start, span.start+checkEnd)
+	if err != nil || len(data) == 0 {
+		return nil, false
+	}
+	// Verify all bytes in the range are ASCII (< 0x80) and no tabs.
+	for _, ch := range data {
+		if ch >= 0x80 || ch == '\t' {
+			return nil, false
+		}
+	}
+
+	// All bytes are ASCII — byte positions == rune positions.
+	if startCol >= len(data) {
+		return []rune{}, true
+	}
+	end := startCol + maxCols
+	if end > len(data) {
+		end = len(data)
+	}
+	segment := make([]rune, end-startCol)
+	for i, ch := range data[startCol:end] {
+		segment[i] = rune(ch)
+	}
+	return segment, true
+}
+
 func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
 	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil, false
