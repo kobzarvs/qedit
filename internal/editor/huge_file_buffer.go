@@ -2088,6 +2088,14 @@ func (b *HugeFileBuffer) WarmLines(startRow, count int) {
 		b.warmCachedPageRange(startRow, endRow)
 		return
 	}
+
+	// mmap fast path: all reads come from memory, no reader needed.
+	// Run synchronously — no goroutine or file handle overhead.
+	if b.mmapData != nil {
+		_ = b.prefetchLinesFromReader(nil, startRow, count)
+		return
+	}
+
 	warmKey := startRow / hugeFileLinePrefetch
 
 	b.mu.Lock()
@@ -2146,7 +2154,7 @@ func (b *HugeFileBuffer) warmCachedPageRange(startRow, endRow int) {
 }
 
 func (b *HugeFileBuffer) prefetchLinesFromReader(reader io.ReadSeeker, startRow, count int) error {
-	if b == nil || reader == nil || count <= 0 {
+	if b == nil || (reader == nil && b.mmapData == nil) || count <= 0 {
 		return nil
 	}
 	if startRow < 0 {
@@ -2171,7 +2179,7 @@ func (b *HugeFileBuffer) prefetchLinesFromReader(reader io.ReadSeeker, startRow,
 }
 
 func (b *HugeFileBuffer) cacheLinesFromCachedSpans(reader io.ReadSeeker, startRow, endRow int) error {
-	if b == nil || reader == nil {
+	if b == nil || (reader == nil && b.mmapData == nil) {
 		return nil
 	}
 	startSpan, ok := b.peekLineSpan(startRow)
@@ -2440,7 +2448,7 @@ func (b *HugeFileBuffer) cacheLineSpansFromMmap(startRow, endRow int) error {
 }
 
 func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row int) error {
-	if b == nil || reader == nil {
+	if b == nil || (reader == nil && b.mmapData == nil) {
 		return nil
 	}
 	lineCount := b.LineCount()
@@ -2458,6 +2466,13 @@ func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row 
 	}
 	if start.offset == end.offset && start.row == end.row && start.lineStart == end.lineStart {
 		return b.cacheLineSpansFromReader(reader, row, row+hugeFileLinePrefetch)
+	}
+	// mmap fast path: delegate to cacheLineSpansFromReader which uses mmap directly.
+	if b.mmapData != nil {
+		return b.cacheLineSpansFromReader(reader, start.row, end.row)
+	}
+	if reader == nil {
+		return nil
 	}
 	if _, err := reader.Seek(start.offset, io.SeekStart); err != nil {
 		return err
@@ -2583,7 +2598,7 @@ func (b *HugeFileBuffer) cachePageLinesFromReader(reader io.ReadSeeker, row int)
 }
 
 func (b *HugeFileBuffer) primePageDataForRange(reader io.ReadSeeker, startRow, endRow int) {
-	if b == nil || reader == nil || startRow > endRow {
+	if b == nil || (reader == nil && b.mmapData == nil) || startRow > endRow {
 		return
 	}
 	currentRow := startRow
@@ -2604,7 +2619,7 @@ func (b *HugeFileBuffer) primePageDataForRange(reader io.ReadSeeker, startRow, e
 }
 
 func (b *HugeFileBuffer) cachePageDataFromReader(reader io.ReadSeeker, row int) error {
-	if b == nil || reader == nil {
+	if b == nil || (reader == nil && b.mmapData == nil) {
 		return nil
 	}
 	lineCount := b.LineCount()
