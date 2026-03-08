@@ -1082,6 +1082,7 @@ func TestHugeFileScanStartAnchorUsesCachedSpan(t *testing.T) {
 			1598: {start: 24000, end: 24004},
 			1599: {start: 24005, end: 24009},
 		},
+		spanSorted: []int{1598, 1599},
 	}
 
 	anchor := buf.scanStartAnchor(1700)

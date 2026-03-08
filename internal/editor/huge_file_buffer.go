@@ -189,6 +189,7 @@ type HugeFileBuffer struct {
 
 	lineSpans   map[int]hugeFileLineSpan
 	spanLRU     lruTracker
+	spanSorted  []int // sorted row keys for O(log n) nearest-span lookup
 	lineCache   map[int][]rune
 	cacheLRU    lruTracker
 	lineInfo    map[int]hugeFileLineInfo
@@ -1142,6 +1143,7 @@ func (b *HugeFileBuffer) Close() error {
 	b.cancelIndex = nil
 	b.lineSpans = nil
 	b.spanLRU = lruTracker{}
+	b.spanSorted = nil
 	b.lineCache = nil
 	b.cacheLRU = lruTracker{}
 	b.lineInfo = nil
@@ -1981,28 +1983,24 @@ func (b *HugeFileBuffer) nearestCachedSpanScanAnchor(row int) (hugeFileScanAncho
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if len(b.lineSpans) == 0 {
+	if len(b.spanSorted) == 0 {
 		return hugeFileScanAnchor{}, false
 	}
 
-	bestRow := -1
-	var bestSpan hugeFileLineSpan
-	for cachedRow, span := range b.lineSpans {
-		if cachedRow < 0 || cachedRow > row {
-			continue
-		}
-		if bestRow < 0 || cachedRow > bestRow || (cachedRow == bestRow && span.start > bestSpan.start) {
-			bestRow = cachedRow
-			bestSpan = span
-		}
+	// Binary search: find the largest cached row ≤ target row. O(log n).
+	idx := sort.SearchInts(b.spanSorted, row+1) - 1
+	if idx < 0 {
+		return hugeFileScanAnchor{}, false
 	}
-	if bestRow < 0 {
+	bestRow := b.spanSorted[idx]
+	span, ok := b.lineSpans[bestRow]
+	if !ok {
 		return hugeFileScanAnchor{}, false
 	}
 	return hugeFileScanAnchor{
 		row:       bestRow,
-		offset:    bestSpan.start,
-		lineStart: bestSpan.start,
+		offset:    span.start,
+		lineStart: span.start,
 	}, true
 }
 
@@ -3072,6 +3070,25 @@ func (b *HugeFileBuffer) storeCachedPageData(page hugeFileCachedPageData) {
 	b.pageLRU.add(page.startRow)
 }
 
+// spanSortedInsert adds row to the sorted slice in O(log n).
+func (b *HugeFileBuffer) spanSortedInsert(row int) {
+	idx := sort.SearchInts(b.spanSorted, row)
+	if idx < len(b.spanSorted) && b.spanSorted[idx] == row {
+		return // already present
+	}
+	b.spanSorted = append(b.spanSorted, 0)
+	copy(b.spanSorted[idx+1:], b.spanSorted[idx:])
+	b.spanSorted[idx] = row
+}
+
+// spanSortedRemove removes row from the sorted slice in O(log n + shift).
+func (b *HugeFileBuffer) spanSortedRemove(row int) {
+	idx := sort.SearchInts(b.spanSorted, row)
+	if idx < len(b.spanSorted) && b.spanSorted[idx] == row {
+		b.spanSorted = append(b.spanSorted[:idx], b.spanSorted[idx+1:]...)
+	}
+}
+
 func (b *HugeFileBuffer) storeLineSpan(row int, span hugeFileLineSpan) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -3090,10 +3107,12 @@ func (b *HugeFileBuffer) storeLineSpan(row int, span hugeFileLineSpan) {
 	if b.spanLRU.len() >= hugeFileSpanCacheSize {
 		if evict, ok := b.spanLRU.evictOldest(); ok {
 			delete(b.lineSpans, evict)
+			b.spanSortedRemove(evict)
 		}
 	}
 	b.lineSpans[row] = span
 	b.spanLRU.add(row)
+	b.spanSortedInsert(row)
 }
 
 func (b *HugeFileBuffer) storeLineSpansBatch(entries []hugeFileLineSpanEntry) {
@@ -3118,10 +3137,12 @@ func (b *HugeFileBuffer) storeLineSpansBatch(entries []hugeFileLineSpanEntry) {
 		if b.spanLRU.len() >= hugeFileSpanCacheSize {
 			if evict, ok := b.spanLRU.evictOldest(); ok {
 				delete(b.lineSpans, evict)
+				b.spanSortedRemove(evict)
 			}
 		}
 		b.lineSpans[entry.row] = entry.span
 		b.spanLRU.add(entry.row)
+		b.spanSortedInsert(entry.row)
 	}
 }
 
