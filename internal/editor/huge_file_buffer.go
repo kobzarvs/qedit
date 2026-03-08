@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -220,10 +221,19 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		return b, nil
 	}
 
-	initial, err := buildInitialHugeFileIndex(reader, meta.Size, byteAnchorSpacing)
-	if err != nil {
+	var initial hugeFileInitialIndex
+	var initErr error
+	if mdata != nil {
+		initial, initErr = buildInitialHugeFileIndexFromMmap(mdata, meta.Size, byteAnchorSpacing)
+	} else {
+		initial, initErr = buildInitialHugeFileIndex(reader, meta.Size, byteAnchorSpacing)
+	}
+	if initErr != nil {
+		if mdata != nil {
+			_ = munmapFile(mdata)
+		}
 		_ = reader.Close()
-		return nil, err
+		return nil, initErr
 	}
 
 	b := &HugeFileBuffer{
@@ -414,6 +424,124 @@ func buildInitialHugeFileIndex(reader io.ReadSeeker, sizeBytes, byteAnchorSpacin
 	}, nil
 }
 
+// buildInitialHugeFileIndexFromMmap builds the initial index from mmap'd data
+// using bytes.IndexByte for fast newline scanning. Same logic as the reader-based
+// version but without any I/O syscalls.
+func buildInitialHugeFileIndexFromMmap(data []byte, sizeBytes, byteAnchorSpacing int64) (hugeFileInitialIndex, error) {
+	limit := hugeFileInitialSampleBytes
+	if limit <= 0 || (sizeBytes > 0 && limit > sizeBytes) {
+		limit = sizeBytes
+	}
+	if limit > int64(len(data)) {
+		limit = int64(len(data))
+	}
+
+	checkpoints := []hugeFileCheckpoint{{row: 0, offset: 0}}
+	byteAnchors := []hugeFileCheckpoint{{row: 0, offset: 0}}
+	pageAnchors := []hugeFilePageAnchor{{row: 0, offset: 0, lineStart: 0}}
+	lineSpans := make([]hugeFileLineSpanEntry, 0, minInt(hugeFileInitialSpanCacheLimit, 256))
+	nextByteAnchorOffset := byteAnchorSpacing
+	nextPageAnchorOffset := byteAnchorSpacing
+	lineCount := 1
+	currentRow := 0
+	lineStart := int64(0)
+	fullyIndexed := false
+
+	pos := int64(0)
+	scanData := data
+	if limit > 0 && limit < int64(len(scanData)) {
+		scanData = data[:limit]
+	}
+
+	for pos < int64(len(scanData)) {
+		idx := bytes.IndexByte(scanData[pos:], '\n')
+		if idx < 0 {
+			// Advance page anchors for remaining data.
+			endOffset := int64(len(scanData))
+			for nextPageAnchorOffset > 0 && nextPageAnchorOffset <= endOffset {
+				pageAnchors = append(pageAnchors, hugeFilePageAnchor{
+					row:       currentRow,
+					offset:    nextPageAnchorOffset,
+					lineStart: lineStart,
+				})
+				nextPageAnchorOffset += byteAnchorSpacing
+			}
+			break
+		}
+
+		nlOffset := pos + int64(idx)
+		nextOffset := nlOffset + 1
+
+		// Advance page anchors up to this newline.
+		for nextPageAnchorOffset > 0 && nextPageAnchorOffset <= nextOffset {
+			pageAnchors = append(pageAnchors, hugeFilePageAnchor{
+				row:       currentRow,
+				offset:    nextPageAnchorOffset,
+				lineStart: lineStart,
+			})
+			nextPageAnchorOffset += byteAnchorSpacing
+		}
+
+		if len(lineSpans) < hugeFileInitialSpanCacheLimit {
+			lineSpans = append(lineSpans, hugeFileLineSpanEntry{
+				row:  currentRow,
+				span: hugeFileLineSpan{start: lineStart, end: nlOffset},
+			})
+		}
+		lineCount++
+		currentRow = lineCount - 1
+		lineStart = nextOffset
+		if (lineCount-1)%hugeFileCheckpointSpacing == 0 {
+			checkpoints = append(checkpoints, hugeFileCheckpoint{
+				row:    currentRow,
+				offset: nextOffset,
+			})
+		}
+		if nextByteAnchorOffset > 0 && nextOffset >= nextByteAnchorOffset {
+			byteAnchors = append(byteAnchors, hugeFileCheckpoint{
+				row:    currentRow,
+				offset: nextOffset,
+			})
+			for nextByteAnchorOffset > 0 && nextOffset >= nextByteAnchorOffset {
+				nextByteAnchorOffset += byteAnchorSpacing
+			}
+		}
+
+		pos = nextOffset
+	}
+
+	if sizeBytes > 0 && (limit <= 0 || limit >= sizeBytes) {
+		fullyIndexed = true
+	}
+
+	estimated := lineCount
+	if !fullyIndexed {
+		sampledBytes := limit
+		if sampledBytes <= 0 {
+			sampledBytes = int64(len(scanData))
+		}
+		estimated = estimateHugeFileLineCount(sizeBytes, sampledBytes, lineCount)
+	} else if len(lineSpans) < hugeFileInitialSpanCacheLimit {
+		lineSpans = append(lineSpans, hugeFileLineSpanEntry{
+			row:  currentRow,
+			span: hugeFileLineSpan{start: lineStart, end: sizeBytes},
+		})
+	}
+
+	sampleOffset := int64(len(scanData))
+
+	return hugeFileInitialIndex{
+		checkpoints:        checkpoints,
+		byteAnchors:        byteAnchors,
+		pageAnchors:        pageAnchors,
+		lineSpans:          lineSpans,
+		lineCount:          lineCount,
+		estimatedLineCount: estimated,
+		sampleOffset:       sampleOffset,
+		fullyIndexed:       fullyIndexed,
+	}, nil
+}
+
 func buildHugeFileLineIndex(reader io.ReadSeeker, byteAnchorSpacing int64) ([]hugeFileCheckpoint, []hugeFileCheckpoint, []hugeFilePageAnchor, int, error) {
 	initial, err := buildInitialHugeFileIndex(reader, 0, byteAnchorSpacing)
 	if err != nil {
@@ -574,8 +702,8 @@ func (b *HugeFileBuffer) buildFullIndex(reader io.ReadSeekCloser, startOffset in
 	}
 }
 
-// buildFullIndexFromMmap scans the mmap'd data directly — no reader needed.
-// This is significantly faster than chunked reading for large files.
+// buildFullIndexFromMmap scans the mmap'd data directly using bytes.IndexByte
+// for SIMD-accelerated newline search. Much faster than byte-by-byte iteration.
 func (b *HugeFileBuffer) buildFullIndexFromMmap(startOffset int64, startLineCount int) {
 	data := b.mmapData
 	size := int64(len(data))
@@ -590,62 +718,73 @@ func (b *HugeFileBuffer) buildFullIndexFromMmap(startOffset int64, startLineCoun
 	nextPageAnchorOffset := b.nextPageAnchorOffset(startOffset)
 	lastPersist := time.Now()
 
-	scanStart := startOffset
-	if scanStart < 0 {
-		scanStart = 0
+	pos := startOffset
+	if pos < 0 {
+		pos = 0
 	}
 
-	for offset := scanStart; offset < size; offset++ {
-		if offset&0xFFFFF == 0 { // check cancel every ~1MB
-			select {
-			case <-b.cancelIndex:
-				if len(pending) > 0 {
-					b.appendCheckpoints(pending, lineCount)
-				}
-				_ = b.persistIndexCache()
-				return
-			default:
+	for pos < size {
+		// Check cancel periodically.
+		select {
+		case <-b.cancelIndex:
+			if len(pending) > 0 {
+				b.appendCheckpoints(pending, lineCount)
 			}
+			_ = b.persistIndexCache()
+			return
+		default:
 		}
 
-		nextOffset := offset + 1
-		if data[offset] != '\n' {
-			for nextPageAnchorOffset > 0 && nextOffset >= nextPageAnchorOffset {
+		// Use bytes.IndexByte for SIMD-accelerated newline search.
+		chunk := data[pos:]
+		idx := bytes.IndexByte(chunk, '\n')
+		if idx < 0 {
+			// No more newlines — rest of file is the last line.
+			// Advance page anchors for the remaining data.
+			endOffset := size
+			for nextPageAnchorOffset > 0 && nextPageAnchorOffset <= endOffset {
 				b.appendPageAnchor(currentRow, nextPageAnchorOffset, lineStart)
 				nextPageAnchorOffset += b.byteAnchorSpacing
 			}
-			continue
+			break
 		}
-		lineCount++
-		currentRow = lineCount - 1
-		nextLineOffset := nextOffset
-		lineStart = nextLineOffset
-		if (lineCount-1)%hugeFileCheckpointSpacing == 0 {
-			pending = append(pending, hugeFileCheckpoint{
-				row:    currentRow,
-				offset: nextLineOffset,
-			})
-		}
-		if nextByteAnchorOffset > 0 && nextLineOffset >= nextByteAnchorOffset {
-			b.appendByteAnchor(currentRow, nextLineOffset)
-			for nextByteAnchorOffset > 0 && nextLineOffset >= nextByteAnchorOffset {
-				nextByteAnchorOffset += b.byteAnchorSpacing
-			}
-		}
-		for nextPageAnchorOffset > 0 && nextOffset >= nextPageAnchorOffset {
+
+		nlOffset := pos + int64(idx)
+		nextOffset := nlOffset + 1
+
+		// Advance page anchors up to this newline.
+		for nextPageAnchorOffset > 0 && nextPageAnchorOffset <= nextOffset {
 			b.appendPageAnchor(currentRow, nextPageAnchorOffset, lineStart)
 			nextPageAnchorOffset += b.byteAnchorSpacing
 		}
-		b.setIndexedLineCount(lineCount)
+
+		lineCount++
+		currentRow = lineCount - 1
+		lineStart = nextOffset
+		if (lineCount-1)%hugeFileCheckpointSpacing == 0 {
+			pending = append(pending, hugeFileCheckpoint{
+				row:    currentRow,
+				offset: nextOffset,
+			})
+		}
+		if nextByteAnchorOffset > 0 && nextOffset >= nextByteAnchorOffset {
+			b.appendByteAnchor(currentRow, nextOffset)
+			for nextByteAnchorOffset > 0 && nextOffset >= nextByteAnchorOffset {
+				nextByteAnchorOffset += b.byteAnchorSpacing
+			}
+		}
 
 		if len(pending) >= hugeFileIndexCheckpointBatch {
 			b.appendCheckpoints(pending, lineCount)
 			pending = pending[:0]
+			b.setIndexedLineCount(lineCount)
 			if time.Since(lastPersist) >= hugeFileIndexPersistInterval {
 				_ = b.persistIndexCache()
 				lastPersist = time.Now()
 			}
 		}
+
+		pos = nextOffset
 	}
 	if len(pending) > 0 {
 		b.appendCheckpoints(pending, lineCount)
@@ -2084,6 +2223,8 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 
 // cacheLineSpansFromMmap scans the mmap'd data directly to find line spans.
 // Much faster than the reader path: no syscalls, no buffer copies.
+// cacheLineSpansFromMmap scans the mmap'd data using bytes.IndexByte
+// for SIMD-accelerated newline search to find line boundaries.
 func (b *HugeFileBuffer) cacheLineSpansFromMmap(startRow, endRow int) error {
 	anchor := b.scanStartAnchor(startRow)
 	currentRow := anchor.row
@@ -2102,26 +2243,44 @@ func (b *HugeFileBuffer) cacheLineSpansFromMmap(startRow, endRow int) error {
 		pending = pending[:0]
 	}
 
-	scanStart := anchor.offset
-	if scanStart < 0 {
-		scanStart = 0
+	pos := anchor.offset
+	if pos < 0 {
+		pos = 0
 	}
-	for offset := scanStart; offset < size; offset++ {
+
+	for pos < size {
 		if b.isCanceled() {
 			flushPending()
 			return nil
 		}
-		nextOffset := offset + 1
-		if data[offset] != '\n' {
-			b.observeScanOffset(currentRow, nextOffset, lineStart, &nextPageAnchorOffset)
-			continue
+
+		idx := bytes.IndexByte(data[pos:], '\n')
+		if idx < 0 {
+			// No more newlines — last line spans to EOF.
+			for nextPageAnchorOffset > 0 && nextPageAnchorOffset <= size {
+				b.appendPageAnchor(currentRow, nextPageAnchorOffset, lineStart)
+				nextPageAnchorOffset += b.byteAnchorSpacing
+			}
+			pending = append(pending, hugeFileLineSpanEntry{
+				row:  currentRow,
+				span: hugeFileLineSpan{start: lineStart, end: size},
+			})
+			flushPending()
+			return nil
 		}
+
+		nlOffset := pos + int64(idx)
+		nextOffset := nlOffset + 1
+
+		// Advance page anchors up to this position.
+		for nextPageAnchorOffset > 0 && nextPageAnchorOffset <= nextOffset {
+			b.appendPageAnchor(currentRow, nextPageAnchorOffset, lineStart)
+			nextPageAnchorOffset += b.byteAnchorSpacing
+		}
+
 		pending = append(pending, hugeFileLineSpanEntry{
-			row: currentRow,
-			span: hugeFileLineSpan{
-				start: lineStart,
-				end:   offset,
-			},
+			row:  currentRow,
+			span: hugeFileLineSpan{start: lineStart, end: nlOffset},
 		})
 		nextRow := currentRow + 1
 		nextLineStart := nextOffset
@@ -2135,14 +2294,12 @@ func (b *HugeFileBuffer) cacheLineSpansFromMmap(startRow, endRow int) error {
 		}
 		currentRow = nextRow
 		lineStart = nextLineStart
+		pos = nextOffset
 	}
-	// Last line (no trailing newline).
+	// Last line (no trailing newline, pos reached EOF).
 	pending = append(pending, hugeFileLineSpanEntry{
-		row: currentRow,
-		span: hugeFileLineSpan{
-			start: lineStart,
-			end:   size,
-		},
+		row:  currentRow,
+		span: hugeFileLineSpan{start: lineStart, end: size},
 	})
 	flushPending()
 	return nil
