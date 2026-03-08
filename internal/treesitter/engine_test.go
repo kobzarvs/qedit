@@ -1,6 +1,7 @@
 package treesitter
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -139,6 +140,81 @@ func runeIndex(haystack, needle string) int {
 		}
 	}
 	return -1
+}
+
+func TestLongLinePerLineQuery(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	// Build a multi-line file where one line is very long (> 4096 bytes).
+	shortLine := "var x = 1;\n"
+	longLine := "var longVar=" + strings.Repeat("foo()+", 1000) + "bar;\n"
+	if len(longLine) < 4096 {
+		t.Fatalf("long line should exceed threshold, got %d", len(longLine))
+	}
+	text := shortLine + longLine + shortLine
+	path := "longline.js"
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+	// Query all 3 lines with column window clipping.
+	spans := e.HighlightsWindow(path, 0, 2, 0, 20)
+	if spans == nil {
+		t.Fatalf("expected spans, got nil")
+	}
+	// The long line (row 1) should only have spans within [0, 20).
+	for _, span := range spans[1] {
+		if span.StartCol >= 20 {
+			t.Fatalf("long line span %#v should be clipped to [0,20)", span)
+		}
+	}
+	// Short lines (row 0, 2) should have spans too.
+	if len(spans[0]) == 0 {
+		t.Fatalf("expected spans for short line 0")
+	}
+}
+
+func TestLongLinePerLineQueryNonASCIIFile(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	// File where one line has non-ASCII (making asciiOnly=false globally)
+	// but the long line is pure ASCII — per-line ASCII should still optimize it.
+	unicodeLine := "var name = '\u0424\u0443\u043d\u043a\u0446\u0438\u044f';\n"
+	longLine := "var longVar=" + strings.Repeat("foo()+", 1000) + "bar;\n"
+	shortLine := "var x = 1;\n"
+	text := unicodeLine + longLine + shortLine
+	path := "mixed.js"
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+	// Query all 3 lines with column window in the middle of the long line.
+	spans := e.HighlightsWindow(path, 0, 2, 100, 200)
+	if spans == nil {
+		t.Fatalf("expected spans, got nil")
+	}
+	// The long line (row 1) should have spans clipped to [100, 200).
+	for _, span := range spans[1] {
+		if span.StartCol >= 200 {
+			t.Fatalf("long line span %#v should be clipped to [100,200)", span)
+		}
+	}
 }
 
 func spanCoversKind(spans []HighlightSpan, col int, kind string) bool {

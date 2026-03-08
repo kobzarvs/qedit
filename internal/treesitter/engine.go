@@ -36,9 +36,10 @@ type Engine struct {
 	parsers       map[string]*sitter.Parser
 	trees         map[string]*sitter.Tree
 	queries       map[string]*sitter.Query
-	sources       map[string][]byte
-	sourceLines   map[string][][]byte
-	sourceASCII   map[string]bool
+	sources         map[string][]byte
+	sourceLines     map[string][][]byte
+	sourceASCII     map[string]bool
+	sourceLineASCII map[string][]bool
 	mdInlineQuery *sitter.Query
 	reqCh         chan parseRequest
 	events        chan Event
@@ -94,28 +95,37 @@ func New(langs config.Languages) *Engine {
 		parsers:     make(map[string]*sitter.Parser),
 		trees:       make(map[string]*sitter.Tree),
 		queries:     make(map[string]*sitter.Query),
-		sources:     make(map[string][]byte),
-		sourceLines: make(map[string][][]byte),
-		sourceASCII: make(map[string]bool),
+		sources:         make(map[string][]byte),
+		sourceLines:     make(map[string][][]byte),
+		sourceASCII:     make(map[string]bool),
+		sourceLineASCII: make(map[string][]bool),
 		reqCh:       make(chan parseRequest, 8),
 		events:      make(chan Event, 16),
 		stopCh:      make(chan struct{}),
 	}
 }
 
-func buildSourceMetadata(source []byte) ([][]byte, bool) {
+func buildSourceMetadata(source []byte) ([][]byte, bool, []bool) {
 	if source == nil {
-		return nil, true
+		return nil, true, nil
 	}
 	lines := bytes.Split(source, []byte("\n"))
-	asciiOnly := true
-	for _, b := range source {
-		if b >= utf8.RuneSelf {
-			asciiOnly = false
-			break
+	fileASCII := true
+	lineASCII := make([]bool, len(lines))
+	for i, line := range lines {
+		ascii := true
+		for _, b := range line {
+			if b >= utf8.RuneSelf {
+				ascii = false
+				if fileASCII {
+					fileASCII = false
+				}
+				break
+			}
 		}
+		lineASCII[i] = ascii
 	}
-	return lines, asciiOnly
+	return lines, fileASCII, lineASCII
 }
 
 func (e *Engine) Start() error {
@@ -187,10 +197,11 @@ func (e *Engine) OpenFile(path, text string) {
 		e.opMu.Lock()
 		e.mu.Lock()
 		source := []byte(text)
-		lines, asciiOnly := buildSourceMetadata(source)
+		lines, asciiOnly, lineASCII := buildSourceMetadata(source)
 		e.sources[path] = source
 		e.sourceLines[path] = lines
 		e.sourceASCII[path] = asciiOnly
+		e.sourceLineASCII[path] = lineASCII
 		e.mu.Unlock()
 		e.opMu.Unlock()
 		e.sendEvent("parsed", path)
@@ -230,11 +241,12 @@ func (e *Engine) loop() {
 			e.mu.Lock()
 			tree, err := parser.ParseCtx(context.Background(), nil, []byte(req.text))
 			source := []byte(req.text)
-			lines, asciiOnly := buildSourceMetadata(source)
+			lines, asciiOnly, lineASCII := buildSourceMetadata(source)
 			e.trees[req.path] = tree
 			e.sources[req.path] = source
 			e.sourceLines[req.path] = lines
 			e.sourceASCII[req.path] = asciiOnly
+			e.sourceLineASCII[req.path] = lineASCII
 			e.mu.Unlock()
 			e.opMu.Unlock()
 			if err != nil {
@@ -282,10 +294,11 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 		e.opMu.Lock()
 		e.mu.Lock()
 		source := []byte(text)
-		lines, asciiOnly := buildSourceMetadata(source)
+		lines, asciiOnly, lineASCII := buildSourceMetadata(source)
 		e.sources[path] = source
 		e.sourceLines[path] = lines
 		e.sourceASCII[path] = asciiOnly
+		e.sourceLineASCII[path] = lineASCII
 		e.mu.Unlock()
 		e.opMu.Unlock()
 		e.sendEvent("parsed", path)
@@ -334,11 +347,12 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	}
 	tree, err := parser.ParseCtx(context.Background(), prev, []byte(text))
 	source := []byte(text)
-	lines, asciiOnly := buildSourceMetadata(source)
+	lines, asciiOnly, lineASCII := buildSourceMetadata(source)
 	e.trees[path] = tree
 	e.sources[path] = source
 	e.sourceLines[path] = lines
 	e.sourceASCII[path] = asciiOnly
+		e.sourceLineASCII[path] = lineASCII
 	e.mu.Unlock()
 	e.opMu.Unlock()
 	if err != nil {
@@ -410,8 +424,9 @@ func (e *Engine) highlights(path string, startLine, endLine int, startCol, endCo
 				source := e.sources[path]
 				lines := e.sourceLines[path]
 				asciiOnly := e.sourceASCII[path]
+				lineASCIIFlags := e.sourceLineASCII[path]
 				e.mu.RUnlock()
-				out = queryHighlights(query, tree, source, lines, asciiOnly, startLine, endLine, startCol, endCol)
+				out = queryHighlights(query, tree, source, lines, asciiOnly, lineASCIIFlags, startLine, endLine, startCol, endCol)
 			}
 		}
 	}
@@ -423,27 +438,90 @@ func (e *Engine) highlights(path string, startLine, endLine int, startCol, endCo
 	return out
 }
 
-func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, lines [][]byte, asciiOnly bool, startLine, endLine int, clipStartCol, clipEndCol int) map[int][]HighlightSpan {
+func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, lines [][]byte, asciiOnly bool, lineASCIIFlags []bool, startLine, endLine int, clipStartCol, clipEndCol int) map[int][]HighlightSpan {
 	if query == nil || tree == nil {
 		return nil
 	}
 	useColClip := clipStartCol >= 0 && clipEndCol > clipStartCol
+
+	// For multi-line ranges with column clipping, split long lines into
+	// per-line queries.  SetPointRange column constraints only clip the
+	// boundary rows of a range; middle rows get ALL nodes traversed.
+	// Querying long lines individually lets tree-sitter skip nodes outside
+	// the visible column window at the C level.
+	const longLineBytes = 4096
+	if useColClip && lines != nil && startLine != endLine {
+		hasLongLine := false
+		for row := startLine; row <= endLine && row < len(lines); row++ {
+			if len(lines[row]) > longLineBytes {
+				hasLongLine = true
+				break
+			}
+		}
+		if hasLongLine {
+			out := make(map[int][]HighlightSpan)
+			row := startLine
+			for row <= endLine {
+				lineLen := 0
+				if row >= 0 && row < len(lines) {
+					lineLen = len(lines[row])
+				}
+				if lineLen > longLineBytes {
+					// Long line: individual query with column constraints.
+					// For ASCII lines, byte col == rune col so SetPointRange
+					// column clip works directly.  For non-ASCII lines, we
+					// add margin to account for multi-byte characters.
+					rowASCII := asciiOnly || (lineASCIIFlags != nil && row < len(lineASCIIFlags) && lineASCIIFlags[row])
+					colStart := clipStartCol
+					colEnd := clipEndCol
+					if !rowASCII {
+						// Rune cols undercount byte offsets; widen end to avoid
+						// missing nodes near viewport edge.
+						const nonASCIIMargin = 4096
+						colEnd += nonASCIIMargin
+					}
+					queryHighlightsInto(query, tree, source, lines, asciiOnly, lineASCIIFlags, row, row, colStart, colEnd, out)
+					row++
+				} else {
+					// Batch contiguous short lines without column constraints.
+					batchEnd := row
+					for batchEnd < endLine {
+						nextLen := 0
+						if batchEnd+1 >= 0 && batchEnd+1 < len(lines) {
+							nextLen = len(lines[batchEnd+1])
+						}
+						if nextLen > longLineBytes {
+							break
+						}
+						batchEnd++
+					}
+					queryHighlightsInto(query, tree, source, lines, asciiOnly, lineASCIIFlags, row, batchEnd, -1, -1, out)
+					row = batchEnd + 1
+				}
+			}
+			return out
+		}
+	}
+
+	out := make(map[int][]HighlightSpan)
+	queryHighlightsInto(query, tree, source, lines, asciiOnly, lineASCIIFlags, startLine, endLine, clipStartCol, clipEndCol, out)
+	return out
+}
+
+func queryHighlightsInto(query *sitter.Query, tree *sitter.Tree, source []byte, lines [][]byte, asciiOnly bool, lineASCIIFlags []bool, startLine, endLine int, clipStartCol, clipEndCol int, out map[int][]HighlightSpan) {
+	useColClip := clipStartCol >= 0 && clipEndCol > clipStartCol
 	rangeStart := sitter.Point{Row: uint32(startLine), Column: 0}
 	rangeEnd := sitter.Point{Row: uint32(endLine + 1), Column: 0}
-	if useColClip && asciiOnly {
+	allASCII := asciiOnly || allLinesASCII(lineASCIIFlags, startLine, endLine)
+	if useColClip && allASCII {
 		rangeStart.Column = uint32(clipStartCol)
-		if startLine == endLine {
-			rangeEnd = sitter.Point{Row: uint32(endLine), Column: uint32(clipEndCol)}
-		} else {
-			rangeEnd = sitter.Point{Row: uint32(endLine), Column: uint32(clipEndCol)}
-		}
+		rangeEnd = sitter.Point{Row: uint32(endLine), Column: uint32(clipEndCol)}
 	}
 	cursor := sitter.NewQueryCursor()
 	defer cursor.Close()
 	cursor.SetPointRange(rangeStart, rangeEnd)
 	cursor.Exec(query, tree.RootNode())
 
-	out := make(map[int][]HighlightSpan)
 	for {
 		match, ok := cursor.NextMatch()
 		if !ok {
@@ -479,7 +557,8 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, line
 				}
 				if lines != nil && row >= 0 && row < len(lines) {
 					line := lines[row]
-					if asciiOnly {
+					rowASCII := asciiOnly || (lineASCIIFlags != nil && row < len(lineASCIIFlags) && lineASCIIFlags[row])
+					if rowASCII {
 						if startCol > len(line) {
 							startCol = len(line)
 						}
@@ -510,7 +589,24 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, line
 			}
 		}
 	}
-	return out
+}
+
+func allLinesASCII(flags []bool, start, end int) bool {
+	if flags == nil {
+		return false
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end >= len(flags) {
+		end = len(flags) - 1
+	}
+	for i := start; i <= end; i++ {
+		if !flags[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func byteColToRuneCol(line []byte, col int) int {
@@ -534,13 +630,14 @@ func (e *Engine) markdownHighlights(path string, startLine, endLine int) map[int
 	source := e.sources[path]
 	sourceLines := e.sourceLines[path]
 	sourceASCII := e.sourceASCII[path]
+	sourceLineASCII := e.sourceLineASCII[path]
 	e.mu.RUnlock()
 
 	if query == nil || tree == nil || source == nil {
 		return map[int][]HighlightSpan{}
 	}
 
-	out := queryHighlights(query, tree, source, sourceLines, sourceASCII, startLine, endLine, -1, -1)
+	out := queryHighlights(query, tree, source, sourceLines, sourceASCII, sourceLineASCII, startLine, endLine, -1, -1)
 	if out == nil {
 		out = make(map[int][]HighlightSpan)
 	}
@@ -591,7 +688,7 @@ func (e *Engine) markdownHighlights(path string, startLine, endLine int) map[int
 			continue
 		}
 		lineBytes := []byte(line)
-		lineSpans := queryHighlights(inlineQuery, inlineTree, lineBytes, [][]byte{lineBytes}, false, 0, 0, -1, -1)
+		lineSpans := queryHighlights(inlineQuery, inlineTree, lineBytes, [][]byte{lineBytes}, false, nil, 0, 0, -1, -1)
 		if len(lineSpans) == 0 {
 			continue
 		}
@@ -972,7 +1069,7 @@ func (e *Engine) applyFencedBlockHighlights(out map[int][]HighlightSpan, block m
 		return
 	}
 	textBytes := []byte(text)
-	spans := queryHighlights(query, tree, textBytes, bytes.Split(textBytes, []byte("\n")), false, 0, lineCount-1, -1, -1)
+	spans := queryHighlights(query, tree, textBytes, bytes.Split(textBytes, []byte("\n")), false, nil, 0, lineCount-1, -1, -1)
 	for line, lineSpans := range spans {
 		globalRow := block.contentStartRow + line
 		if globalRow < startLine || globalRow > endLine {

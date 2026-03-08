@@ -8,10 +8,12 @@ type highlightRange struct {
 }
 
 type editorHighlightState struct {
-	spans  map[int][]HighlightSpan
-	start  int
-	end    int
-	ranges []highlightRange
+	spans    map[int][]HighlightSpan
+	start    int
+	end      int
+	ranges   []highlightRange
+	colStart int // column window used when spans were queried (-1 = all columns)
+	colEnd   int
 }
 
 func (h *editorHighlightState) reset() {
@@ -19,6 +21,8 @@ func (h *editorHighlightState) reset() {
 	h.start = -1
 	h.end = -1
 	h.ranges = nil
+	h.colStart = -1
+	h.colEnd = -1
 }
 
 func (h *editorHighlightState) has() bool {
@@ -47,6 +51,43 @@ func (h *editorHighlightState) lineCovered(line int) bool {
 		}
 	}
 	return false
+}
+
+func (h *editorHighlightState) columnsCover(colStart, colEnd int) bool {
+	if h.colStart < 0 || h.colEnd <= h.colStart {
+		return true // no column constraint stored — spans cover all columns
+	}
+	return h.colStart <= colStart && h.colEnd >= colEnd
+}
+
+// columnsHaveSpans checks whether every visible line that has cached spans
+// also has at least one span in the [colStart, colEnd) column range.
+// Lines with no spans at all are considered covered (blank/no-syntax).
+func (h *editorHighlightState) columnsHaveSpans(startLine, endLine, colStart, colEnd int) bool {
+	if !h.has() {
+		return false
+	}
+	for line := startLine; line <= endLine; line++ {
+		spans := h.spans[line]
+		if len(spans) == 0 {
+			continue
+		}
+		// Spans are sorted by StartCol. Find any span overlapping [colStart, colEnd).
+		found := false
+		for _, s := range spans {
+			if s.StartCol >= colEnd {
+				break
+			}
+			if s.EndCol > colStart {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *editorHighlightState) covers(startLine, endLine int) bool {
@@ -89,7 +130,29 @@ func (h *editorHighlightState) merge(startLine, endLine int, spans map[int][]Hig
 		h.spans = make(map[int][]HighlightSpan, len(spans))
 	}
 	for line, lineSpans := range spans {
-		h.spans[line] = normalizeHighlightSpans(lineSpans)
+		existing := h.spans[line]
+		if len(existing) == 0 {
+			h.spans[line] = normalizeHighlightSpans(lineSpans)
+			continue
+		}
+		// Additive merge: combine existing spans with new ones.
+		// New spans replace any existing spans in their column range,
+		// but existing spans outside the new range are preserved.
+		newNorm := normalizeHighlightSpans(lineSpans)
+		if len(newNorm) == 0 {
+			continue // keep existing
+		}
+		newMin := newNorm[0].StartCol
+		newMax := newNorm[len(newNorm)-1].EndCol
+		// Keep existing spans outside [newMin, newMax), add all new spans.
+		combined := make([]HighlightSpan, 0, len(existing)+len(newNorm))
+		for _, s := range existing {
+			if s.EndCol <= newMin || s.StartCol >= newMax {
+				combined = append(combined, s)
+			}
+		}
+		combined = append(combined, newNorm...)
+		h.spans[line] = normalizeHighlightSpans(combined)
 	}
 	h.mergeRange(startLine, endLine)
 }

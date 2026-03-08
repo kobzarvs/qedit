@@ -228,6 +228,19 @@ func (e *Editor) HighlightsCover(startLine, endLine int) bool {
 	return e.highlight.covers(startLine, endLine)
 }
 
+func (e *Editor) HighlightsColumnsCover(colStart, colEnd int) bool {
+	return e.highlight.columnsCover(colStart, colEnd)
+}
+
+func (e *Editor) HighlightsColumnsHaveSpans(startLine, endLine, colStart, colEnd int) bool {
+	return e.highlight.columnsHaveSpans(startLine, endLine, colStart, colEnd)
+}
+
+func (e *Editor) SetHighlightColumns(colStart, colEnd int) {
+	e.highlight.colStart = colStart
+	e.highlight.colEnd = colEnd
+}
+
 func (e *Editor) HighlightRange() (int, int, bool) {
 	if !e.HasHighlights() {
 		return -1, -1, false

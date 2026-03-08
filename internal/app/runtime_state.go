@@ -40,7 +40,7 @@ type editorRuntimeState struct {
 func newEditorRuntimeState(ed *editor.Editor) editorRuntimeState {
 	return editorRuntimeState{
 		highlightEnabled:   true,
-		highlightResults:   make(chan asyncHighlightResult, 4),
+		highlightResults:   make(chan asyncHighlightResult, 16),
 		lastVisibleStart:   -1,
 		lastGitCheck:       time.Now(),
 		lastChangeTick:     ed.ChangeTick(),

@@ -7,7 +7,7 @@ import (
 	"github.com/kobzarvs/qedit/internal/treesitter"
 )
 
-func launchHugeHighlightJob(ts *treesitter.Engine, state *editorRuntimeState, path string, visibleStart, visibleEnd, prefetchStart, prefetchEnd, colStart, colEnd int) {
+func launchHugeHighlightJob(ts *treesitter.Engine, state *editorRuntimeState, path string, visibleStart, visibleEnd, prefetchStart, prefetchEnd, colStart, colEnd, totalLines int) {
 	if ts == nil || state == nil || path == "" || visibleStart < 0 || visibleEnd < visibleStart {
 		return
 	}
@@ -44,12 +44,54 @@ func launchHugeHighlightJob(ts *treesitter.Engine, state *editorRuntimeState, pa
 				return true
 			}
 		}
+		// 1. Visible range — highest priority.
 		if !sendRange(visibleStart, visibleEnd) {
 			return
 		}
+		// 2. Prefetch range in scroll direction.
 		if prefetchStart >= 0 && prefetchEnd >= prefetchStart && (prefetchStart != visibleStart || prefetchEnd != visibleEnd) {
 			if !sendRange(prefetchStart, prefetchEnd) {
 				return
+			}
+		}
+		// 3. Background expansion — cover the rest of the file in chunks.
+		//    Small chunks so the opMu lock is released frequently, allowing
+		//    cancel to take effect and new jobs to start quickly.
+		if totalLines > 0 {
+			const chunkSize = 20
+			coveredStart := prefetchStart
+			if coveredStart < 0 || coveredStart > visibleStart {
+				coveredStart = visibleStart
+			}
+			coveredEnd := prefetchEnd
+			if coveredEnd < visibleEnd {
+				coveredEnd = visibleEnd
+			}
+			for coveredStart > 0 || coveredEnd < totalLines-1 {
+				// Expand forward.
+				if coveredEnd < totalLines-1 {
+					chunkStart := coveredEnd + 1
+					chunkEnd := chunkStart + chunkSize - 1
+					if chunkEnd >= totalLines {
+						chunkEnd = totalLines - 1
+					}
+					if !sendRange(chunkStart, chunkEnd) {
+						return
+					}
+					coveredEnd = chunkEnd
+				}
+				// Expand backward.
+				if coveredStart > 0 {
+					chunkEnd := coveredStart - 1
+					chunkStart := chunkEnd - chunkSize + 1
+					if chunkStart < 0 {
+						chunkStart = 0
+					}
+					if !sendRange(chunkStart, chunkEnd) {
+						return
+					}
+					coveredStart = chunkStart
+				}
 			}
 		}
 		select {
@@ -188,21 +230,32 @@ func syncVisibleHighlights(
 		if state == nil || !state.highlightParsed {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
-		if ed.HighlightsCover(start, end) {
+		colStart, colEnd := ed.HighlightWindowCols()
+		linesCovered := ed.HighlightsCover(start, end)
+		colsCovered := linesCovered && ed.HighlightsColumnsHaveSpans(start, end, colStart, colEnd)
+		if linesCovered && colsCovered {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
 		visibleStart, visibleEnd, prefetchStart, prefetchEnd := hugeHighlightTargetRange(ed, start, end, state.lastVisibleStart)
-		if state.highlightJobActive && rangeCovers(state.highlightJobStart, state.highlightJobEnd, start, end) {
+		// Only skip re-launch if the running job covers both lines AND columns.
+		if colsCovered && state.highlightJobActive && rangeCovers(state.highlightJobStart, state.highlightJobEnd, start, end) {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
 		if ts == nil {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
-		if state.highlightJobActive && state.highlightJobStart == visibleStart && state.highlightJobEnd == visibleEnd {
+		if colsCovered && state.highlightJobActive && state.highlightJobStart == visibleStart && state.highlightJobEnd == visibleEnd {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
-		colStart, colEnd := ed.HighlightWindowCols()
-		launchHugeHighlightJob(ts, state, openPath, visibleStart, visibleEnd, prefetchStart, prefetchEnd, colStart, colEnd)
+		// Add overscan so horizontal scrolling within the window doesn't re-query.
+		const colOverscan = 1024
+		queryColStart := colStart - colOverscan
+		if queryColStart < 0 {
+			queryColStart = 0
+		}
+		queryColEnd := colEnd + colOverscan
+		ed.SetHighlightColumns(queryColStart, queryColEnd)
+		launchHugeHighlightJob(ts, state, openPath, visibleStart, visibleEnd, prefetchStart, prefetchEnd, queryColStart, queryColEnd, ed.LineCount())
 		return lastChangeTick, lastHighlightStart, lastHighlightEnd
 	}
 
