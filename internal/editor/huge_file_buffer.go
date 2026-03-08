@@ -84,6 +84,11 @@ var hugeFileIndexPersistInterval = 250 * time.Millisecond
 
 var errHugeFileLineOutOfRange = errors.New("huge file line out of range")
 
+// hugeFileScanBufPool reuses 64KB read buffers for non-mmap scan paths.
+var hugeFileScanBufPool = sync.Pool{
+	New: func() any { b := make([]byte, 64<<10); return &b },
+}
+
 // bytesToRunes converts bytes to runes. For pure-ASCII data, avoids the
 // intermediate string allocation of []rune(string(data)) — single pass,
 // single allocation.
@@ -1843,7 +1848,9 @@ func (b *HugeFileBuffer) analyzeLineSpan(row int, span hugeFileLineSpan) (hugeFi
 		return hugeFileLineInfo{}, err
 	}
 
-	buf := make([]byte, 64<<10)
+	bufp := hugeFileScanBufPool.Get().(*[]byte)
+	buf := *bufp
+	defer hugeFileScanBufPool.Put(bufp)
 	pending := make([]byte, 0, utf8.UTFMax)
 	info := hugeFileLineInfo{asciiOnly: true}
 	var read int64
@@ -2511,7 +2518,9 @@ func (b *HugeFileBuffer) cacheLineSpansFromReader(reader io.ReadSeeker, startRow
 	fileOffset := anchor.offset
 	nextByteAnchorOffset := b.nextByteAnchorOffset(anchor.offset)
 	nextPageAnchorOffset := b.nextPageAnchorOffset(anchor.offset)
-	buf := make([]byte, 64<<10)
+	bufp := hugeFileScanBufPool.Get().(*[]byte)
+	buf := *bufp
+	defer hugeFileScanBufPool.Put(bufp)
 	pending := make([]hugeFileLineSpanEntry, 0, 256)
 
 	flushPending := func() {
@@ -2696,7 +2705,9 @@ func (b *HugeFileBuffer) cachePageLineSpansFromReader(reader io.ReadSeeker, row 
 	fileOffset := start.offset
 	nextByteAnchorOffset := b.nextByteAnchorOffset(start.offset)
 	nextPageAnchorOffset := b.nextPageAnchorOffset(start.offset)
-	buf := make([]byte, 64<<10)
+	bufp := hugeFileScanBufPool.Get().(*[]byte)
+	buf := *bufp
+	defer hugeFileScanBufPool.Put(bufp)
 	pending := make([]hugeFileLineSpanEntry, 0, 256)
 
 	flushPending := func() {
