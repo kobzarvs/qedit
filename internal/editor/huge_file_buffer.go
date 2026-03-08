@@ -1684,6 +1684,79 @@ func (b *HugeFileBuffer) LineSegmentASCIIWindow(row, startCol, maxCols int) ([]r
 	return segment, true
 }
 
+// LineSegmentWithTabs returns the visible column segment for an ASCII line
+// that contains tabs, performing lazy tab expansion. Instead of decoding the
+// entire line to []rune, it reads raw bytes and walks forward tracking visual
+// column position. Only the visible window [startVisualCol, startVisualCol+maxCols)
+// is materialized. Returns (segment, logicalStart, visualStart, ok).
+func (b *HugeFileBuffer) LineSegmentWithTabs(row, startVisualCol, maxCols, tabWidth int) ([]rune, int, int, bool) {
+	if b == nil || (b.reader == nil && b.mmapData == nil) || maxCols <= 0 || tabWidth < 1 {
+		return nil, 0, 0, false
+	}
+	span, err := b.resolveLineSpan(row)
+	if err != nil {
+		return nil, 0, 0, false
+	}
+	lineBytes := span.end - span.start
+	if lineBytes <= 0 {
+		return []rune{}, 0, 0, true
+	}
+	// Strip trailing CR.
+	data, err := b.readBytesAt(b.reader, span.start, span.end)
+	if err != nil {
+		return nil, 0, 0, false
+	}
+	if len(data) > 0 && data[len(data)-1] == '\r' {
+		data = data[:len(data)-1]
+	}
+
+	var segment []rune
+	visualCol := 0
+	logicalStart := -1
+	visualStart := 0
+	collecting := false
+
+	for _, ch := range data {
+		if ch == '\t' {
+			nextStop := ((visualCol / tabWidth) + 1) * tabWidth
+			tabSpaces := nextStop - visualCol
+			for j := 0; j < tabSpaces; j++ {
+				if visualCol >= startVisualCol {
+					if !collecting {
+						collecting = true
+						logicalStart = visualCol
+						visualStart = visualCol
+						segment = make([]rune, 0, maxCols)
+					}
+					segment = append(segment, ' ')
+					if len(segment) >= maxCols {
+						return segment, logicalStart, visualStart, true
+					}
+				}
+				visualCol++
+			}
+		} else {
+			if visualCol >= startVisualCol {
+				if !collecting {
+					collecting = true
+					logicalStart = visualCol
+					visualStart = visualCol
+					segment = make([]rune, 0, maxCols)
+				}
+				segment = append(segment, rune(ch))
+				if len(segment) >= maxCols {
+					return segment, logicalStart, visualStart, true
+				}
+			}
+			visualCol++
+		}
+	}
+	if !collecting {
+		return []rune{}, startVisualCol, startVisualCol, true
+	}
+	return segment, logicalStart, visualStart, true
+}
+
 func (b *HugeFileBuffer) LinePrefix(row, maxBytes int) ([]rune, bool) {
 	if b == nil || (b.reader == nil && b.mmapData == nil) {
 		return nil, false

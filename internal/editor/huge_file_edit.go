@@ -593,7 +593,18 @@ func (e *Editor) hugeLineSegment(row, startCol, maxCols int) ([]rune, int, int, 
 		return hugeOverlaySegment(line, startCol, maxCols)
 	}
 	info, ok := e.huge.buffer.LineInfo(ref.baseStart)
-	if !ok || info.hasTabs {
+	if !ok {
+		return nil, 0, 0, false
+	}
+	// ASCII line with tabs: lazy tab expansion over the visible window only.
+	if info.hasTabs && info.asciiOnly {
+		segment, logicalStart, visualStart, ok := e.huge.buffer.LineSegmentWithTabs(ref.baseStart, startCol, maxCols, e.display.tabWidth)
+		if ok {
+			return segment, logicalStart, visualStart, true
+		}
+		return nil, 0, 0, false
+	}
+	if info.hasTabs {
 		return nil, 0, 0, false
 	}
 	if info.asciiOnly {
