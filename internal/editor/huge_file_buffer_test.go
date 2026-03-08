@@ -698,11 +698,11 @@ func TestHugeFileBufferPrefetchLinesCachesViewport(t *testing.T) {
 
 	buf.mu.Lock()
 	buf.lineCache = map[int][]rune{}
-	buf.cacheOrder = nil
+	buf.cacheLRU = lruTracker{}
 	buf.lineEndings = map[int]string{}
-	buf.endingOrder = nil
+	buf.endingLRU = lruTracker{}
 	buf.lineSpans = map[int]hugeFileLineSpan{}
-	buf.spanOrder = nil
+	buf.spanLRU = lruTracker{}
 	buf.mu.Unlock()
 
 	if line, ok := buf.TryLine(50); !ok || string(line) != "line" {
@@ -1195,7 +1195,7 @@ func TestHugeFileWarmLinesReusesCachedPageData(t *testing.T) {
 
 	buf.mu.Lock()
 	buf.lineCache = map[int][]rune{}
-	buf.cacheOrder = nil
+	buf.cacheLRU = lruTracker{}
 	buf.mu.Unlock()
 
 	buf.WarmLines(targetRow, 12)
@@ -1283,7 +1283,7 @@ func TestHugeFileLongLineHorizontalHelpersAvoidFullDecode(t *testing.T) {
 
 	e.huge.buffer.mu.Lock()
 	e.huge.buffer.lineCache = map[int][]rune{}
-	e.huge.buffer.cacheOrder = nil
+	e.huge.buffer.cacheLRU = lruTracker{}
 	e.huge.buffer.mu.Unlock()
 
 	e.clampCursorCol()
@@ -1368,7 +1368,7 @@ func TestRenderHugeLongLineUsesVisibleSegment(t *testing.T) {
 
 	e.huge.buffer.mu.Lock()
 	e.huge.buffer.lineCache = map[int][]rune{}
-	e.huge.buffer.cacheOrder = nil
+	e.huge.buffer.cacheLRU = lruTracker{}
 	e.huge.buffer.mu.Unlock()
 
 	if _, ok := e.hugeLinePrefix(0, conflictMarkerProbeBytes); !ok {
@@ -1829,7 +1829,7 @@ func TestHugeFilePageDataSurvivesLineCacheEviction(t *testing.T) {
 	}
 	buf.mu.Lock()
 	buf.lineCache = map[int][]rune{}
-	buf.cacheOrder = nil
+	buf.cacheLRU = lruTracker{}
 	buf.mu.Unlock()
 
 	if got := string(buf.Line(targetRow)); got != "row-25" {
@@ -1934,7 +1934,7 @@ func TestHugeFilePageDataSurvivesLineEndingCacheEviction(t *testing.T) {
 	}
 	buf.mu.Lock()
 	buf.lineEndings = map[int]string{}
-	buf.endingOrder = nil
+	buf.endingLRU = lruTracker{}
 	buf.mu.Unlock()
 
 	if got := buf.LineEnding(1); got != "\r\n" {
@@ -1997,7 +1997,7 @@ func TestHugeFilePageDataSurvivesSpanCacheEviction(t *testing.T) {
 
 	buf.mu.Lock()
 	buf.lineSpans = map[int]hugeFileLineSpan{}
-	buf.spanOrder = nil
+	buf.spanLRU = lruTracker{}
 	buf.mu.Unlock()
 
 	span, err := buf.resolveLineSpan(targetRow)

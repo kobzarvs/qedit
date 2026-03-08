@@ -2,6 +2,7 @@ package editor
 
 import (
 	"bytes"
+	"container/list"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,58 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+// lruTracker provides O(1) touch/add/evict for LRU caches using a doubly-linked
+// list + map instead of the previous O(n) linear-scan slice approach.
+type lruTracker struct {
+	order *list.List
+	index map[int]*list.Element
+}
+
+func newLRUTracker() lruTracker {
+	return lruTracker{
+		order: list.New(),
+		index: make(map[int]*list.Element),
+	}
+}
+
+// touch moves the key to the back (most recently used). O(1).
+func (t *lruTracker) touch(key int) {
+	if el, ok := t.index[key]; ok {
+		t.order.MoveToBack(el)
+	}
+}
+
+// add appends the key to the back. O(1). Caller must check for duplicates.
+func (t *lruTracker) add(key int) {
+	el := t.order.PushBack(key)
+	t.index[key] = el
+}
+
+// evictOldest removes and returns the oldest key. O(1).
+func (t *lruTracker) evictOldest() (int, bool) {
+	front := t.order.Front()
+	if front == nil {
+		return 0, false
+	}
+	key := front.Value.(int)
+	t.order.Remove(front)
+	delete(t.index, key)
+	return key, true
+}
+
+// remove deletes a specific key. O(1).
+func (t *lruTracker) remove(key int) {
+	if el, ok := t.index[key]; ok {
+		t.order.Remove(el)
+		delete(t.index, key)
+	}
+}
+
+// len returns the number of tracked keys.
+func (t *lruTracker) len() int {
+	return t.order.Len()
+}
 
 const hugeFileLineCacheSize = 256
 const hugeFileSpanCacheSize = 4096
@@ -112,16 +165,16 @@ type HugeFileBuffer struct {
 	cancelIndex        chan struct{}
 	indexDone          chan struct{}
 
-	lineSpans    map[int]hugeFileLineSpan
-	spanOrder    []int
-	lineCache    map[int][]rune
-	cacheOrder   []int
-	lineInfo     map[int]hugeFileLineInfo
-	infoOrder    []int
-	lineEndings  map[int]string
-	endingOrder  []int
-	pageData     map[int]hugeFileCachedPageData
-	pageOrder    []int
+	lineSpans   map[int]hugeFileLineSpan
+	spanLRU     lruTracker
+	lineCache   map[int][]rune
+	cacheLRU    lruTracker
+	lineInfo    map[int]hugeFileLineInfo
+	infoLRU     lruTracker
+	lineEndings map[int]string
+	endingLRU   lruTracker
+	pageData    map[int]hugeFileCachedPageData
+	pageLRU     lruTracker
 	warmInFlight map[int]struct{}
 	closed       bool
 
@@ -196,12 +249,17 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 			fullyIndexed:       cachedIndex.FullyIndexed,
 			cancelIndex:        make(chan struct{}),
 			indexDone:          make(chan struct{}),
-			lineSpans:          make(map[int]hugeFileLineSpan),
-			lineCache:          make(map[int][]rune),
-			lineInfo:           make(map[int]hugeFileLineInfo),
-			lineEndings:        make(map[int]string),
-			pageData:           make(map[int]hugeFileCachedPageData),
-			warmInFlight:       make(map[int]struct{}),
+			lineSpans:    make(map[int]hugeFileLineSpan),
+			spanLRU:      newLRUTracker(),
+			lineCache:    make(map[int][]rune),
+			cacheLRU:     newLRUTracker(),
+			lineInfo:     make(map[int]hugeFileLineInfo),
+			infoLRU:      newLRUTracker(),
+			lineEndings:  make(map[int]string),
+			endingLRU:    newLRUTracker(),
+			pageData:     make(map[int]hugeFileCachedPageData),
+			pageLRU:      newLRUTracker(),
+			warmInFlight: make(map[int]struct{}),
 		}
 		if cachedIndex.FullyIndexed {
 			close(b.indexDone)
@@ -255,12 +313,17 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		fullyIndexed:       initial.fullyIndexed,
 		cancelIndex:        make(chan struct{}),
 		indexDone:          make(chan struct{}),
-		lineSpans:          make(map[int]hugeFileLineSpan),
-		lineCache:          make(map[int][]rune),
-		lineInfo:           make(map[int]hugeFileLineInfo),
-		lineEndings:        make(map[int]string),
-		pageData:           make(map[int]hugeFileCachedPageData),
-		warmInFlight:       make(map[int]struct{}),
+		lineSpans:    make(map[int]hugeFileLineSpan),
+		spanLRU:      newLRUTracker(),
+		lineCache:    make(map[int][]rune),
+		cacheLRU:     newLRUTracker(),
+		lineInfo:     make(map[int]hugeFileLineInfo),
+		infoLRU:      newLRUTracker(),
+		lineEndings:  make(map[int]string),
+		endingLRU:    newLRUTracker(),
+		pageData:     make(map[int]hugeFileCachedPageData),
+		pageLRU:      newLRUTracker(),
+		warmInFlight: make(map[int]struct{}),
 	}
 	b.storeLineSpansBatch(initial.lineSpans)
 
@@ -1056,15 +1119,15 @@ func (b *HugeFileBuffer) Close() error {
 	b.openReader = nil
 	b.cancelIndex = nil
 	b.lineSpans = nil
-	b.spanOrder = nil
+	b.spanLRU = lruTracker{}
 	b.lineCache = nil
-	b.cacheOrder = nil
+	b.cacheLRU = lruTracker{}
 	b.lineInfo = nil
-	b.infoOrder = nil
+	b.infoLRU = lruTracker{}
 	b.lineEndings = nil
-	b.endingOrder = nil
+	b.endingLRU = lruTracker{}
 	b.pageData = nil
-	b.pageOrder = nil
+	b.pageLRU = lruTracker{}
 	b.warmInFlight = nil
 	b.mu.Unlock()
 	return err
@@ -2774,14 +2837,33 @@ func (b *HugeFileBuffer) hasCachedPageRange(startRow, endRow int) bool {
 	return true
 }
 
-func (b *HugeFileBuffer) touchCacheLocked(row int) {
-	for i, cached := range b.cacheOrder {
-		if cached != row {
-			continue
-		}
-		copy(b.cacheOrder[i:], b.cacheOrder[i+1:])
-		b.cacheOrder[len(b.cacheOrder)-1] = row
-		return
+func (b *HugeFileBuffer) ensureCacheLRU() {
+	if b.cacheLRU.order == nil {
+		b.cacheLRU = newLRUTracker()
+	}
+}
+
+func (b *HugeFileBuffer) ensureInfoLRU() {
+	if b.infoLRU.order == nil {
+		b.infoLRU = newLRUTracker()
+	}
+}
+
+func (b *HugeFileBuffer) ensureEndingLRU() {
+	if b.endingLRU.order == nil {
+		b.endingLRU = newLRUTracker()
+	}
+}
+
+func (b *HugeFileBuffer) ensurePageLRU() {
+	if b.pageLRU.order == nil {
+		b.pageLRU = newLRUTracker()
+	}
+}
+
+func (b *HugeFileBuffer) ensureSpanLRU() {
+	if b.spanLRU.order == nil {
+		b.spanLRU = newLRUTracker()
 	}
 }
 
@@ -2794,18 +2876,19 @@ func (b *HugeFileBuffer) storeCachedLine(row int, line []rune) {
 	if b.lineCache == nil {
 		b.lineCache = make(map[int][]rune)
 	}
+	b.ensureCacheLRU()
 	if _, ok := b.lineCache[row]; ok {
 		b.lineCache[row] = line
-		b.touchCacheLocked(row)
+		b.cacheLRU.touch(row)
 		return
 	}
-	if len(b.cacheOrder) >= hugeFileLineCacheSize {
-		evict := b.cacheOrder[0]
-		delete(b.lineCache, evict)
-		b.cacheOrder = b.cacheOrder[1:]
+	if b.cacheLRU.len() >= hugeFileLineCacheSize {
+		if evict, ok := b.cacheLRU.evictOldest(); ok {
+			delete(b.lineCache, evict)
+		}
 	}
 	b.lineCache[row] = line
-	b.cacheOrder = append(b.cacheOrder, row)
+	b.cacheLRU.add(row)
 }
 
 func (b *HugeFileBuffer) storeCachedLines(entries []hugeFileCachedLineEntry) {
@@ -2820,30 +2903,20 @@ func (b *HugeFileBuffer) storeCachedLines(entries []hugeFileCachedLineEntry) {
 	if b.lineCache == nil {
 		b.lineCache = make(map[int][]rune)
 	}
+	b.ensureCacheLRU()
 	for _, entry := range entries {
 		if _, ok := b.lineCache[entry.row]; ok {
 			b.lineCache[entry.row] = entry.line
-			b.touchCacheLocked(entry.row)
+			b.cacheLRU.touch(entry.row)
 			continue
 		}
-		if len(b.cacheOrder) >= hugeFileLineCacheSize {
-			evict := b.cacheOrder[0]
-			delete(b.lineCache, evict)
-			b.cacheOrder = b.cacheOrder[1:]
+		if b.cacheLRU.len() >= hugeFileLineCacheSize {
+			if evict, ok := b.cacheLRU.evictOldest(); ok {
+				delete(b.lineCache, evict)
+			}
 		}
 		b.lineCache[entry.row] = entry.line
-		b.cacheOrder = append(b.cacheOrder, entry.row)
-	}
-}
-
-func (b *HugeFileBuffer) touchInfoCacheLocked(row int) {
-	for i, cached := range b.infoOrder {
-		if cached != row {
-			continue
-		}
-		copy(b.infoOrder[i:], b.infoOrder[i+1:])
-		b.infoOrder[len(b.infoOrder)-1] = row
-		return
+		b.cacheLRU.add(entry.row)
 	}
 }
 
@@ -2856,18 +2929,19 @@ func (b *HugeFileBuffer) storeCachedLineInfo(row int, info hugeFileLineInfo) {
 	if b.lineInfo == nil {
 		b.lineInfo = make(map[int]hugeFileLineInfo)
 	}
+	b.ensureInfoLRU()
 	if _, ok := b.lineInfo[row]; ok {
 		b.lineInfo[row] = info
-		b.touchInfoCacheLocked(row)
+		b.infoLRU.touch(row)
 		return
 	}
-	if len(b.infoOrder) >= hugeFileLineCacheSize {
-		evict := b.infoOrder[0]
-		delete(b.lineInfo, evict)
-		b.infoOrder = b.infoOrder[1:]
+	if b.infoLRU.len() >= hugeFileLineCacheSize {
+		if evict, ok := b.infoLRU.evictOldest(); ok {
+			delete(b.lineInfo, evict)
+		}
 	}
 	b.lineInfo[row] = info
-	b.infoOrder = append(b.infoOrder, row)
+	b.infoLRU.add(row)
 }
 
 func (b *HugeFileBuffer) storeCachedLineInfos(entries []hugeFileCachedLineInfoEntry) {
@@ -2882,30 +2956,20 @@ func (b *HugeFileBuffer) storeCachedLineInfos(entries []hugeFileCachedLineInfoEn
 	if b.lineInfo == nil {
 		b.lineInfo = make(map[int]hugeFileLineInfo)
 	}
+	b.ensureInfoLRU()
 	for _, entry := range entries {
 		if _, ok := b.lineInfo[entry.row]; ok {
 			b.lineInfo[entry.row] = entry.info
-			b.touchInfoCacheLocked(entry.row)
+			b.infoLRU.touch(entry.row)
 			continue
 		}
-		if len(b.infoOrder) >= hugeFileLineCacheSize {
-			evict := b.infoOrder[0]
-			delete(b.lineInfo, evict)
-			b.infoOrder = b.infoOrder[1:]
+		if b.infoLRU.len() >= hugeFileLineCacheSize {
+			if evict, ok := b.infoLRU.evictOldest(); ok {
+				delete(b.lineInfo, evict)
+			}
 		}
 		b.lineInfo[entry.row] = entry.info
-		b.infoOrder = append(b.infoOrder, entry.row)
-	}
-}
-
-func (b *HugeFileBuffer) touchEndingCacheLocked(row int) {
-	for i, cached := range b.endingOrder {
-		if cached != row {
-			continue
-		}
-		copy(b.endingOrder[i:], b.endingOrder[i+1:])
-		b.endingOrder[len(b.endingOrder)-1] = row
-		return
+		b.infoLRU.add(entry.row)
 	}
 }
 
@@ -2918,18 +2982,19 @@ func (b *HugeFileBuffer) storeCachedLineEnding(row int, eol string) {
 	if b.lineEndings == nil {
 		b.lineEndings = make(map[int]string)
 	}
+	b.ensureEndingLRU()
 	if _, ok := b.lineEndings[row]; ok {
 		b.lineEndings[row] = eol
-		b.touchEndingCacheLocked(row)
+		b.endingLRU.touch(row)
 		return
 	}
-	if len(b.endingOrder) >= hugeFileLineCacheSize {
-		evict := b.endingOrder[0]
-		delete(b.lineEndings, evict)
-		b.endingOrder = b.endingOrder[1:]
+	if b.endingLRU.len() >= hugeFileLineCacheSize {
+		if evict, ok := b.endingLRU.evictOldest(); ok {
+			delete(b.lineEndings, evict)
+		}
 	}
 	b.lineEndings[row] = eol
-	b.endingOrder = append(b.endingOrder, row)
+	b.endingLRU.add(row)
 }
 
 func (b *HugeFileBuffer) storeCachedLineEndings(entries []hugeFileCachedLineEndingEntry) {
@@ -2944,30 +3009,20 @@ func (b *HugeFileBuffer) storeCachedLineEndings(entries []hugeFileCachedLineEndi
 	if b.lineEndings == nil {
 		b.lineEndings = make(map[int]string)
 	}
+	b.ensureEndingLRU()
 	for _, entry := range entries {
 		if _, ok := b.lineEndings[entry.row]; ok {
 			b.lineEndings[entry.row] = entry.eol
-			b.touchEndingCacheLocked(entry.row)
+			b.endingLRU.touch(entry.row)
 			continue
 		}
-		if len(b.endingOrder) >= hugeFileLineCacheSize {
-			evict := b.endingOrder[0]
-			delete(b.lineEndings, evict)
-			b.endingOrder = b.endingOrder[1:]
+		if b.endingLRU.len() >= hugeFileLineCacheSize {
+			if evict, ok := b.endingLRU.evictOldest(); ok {
+				delete(b.lineEndings, evict)
+			}
 		}
 		b.lineEndings[entry.row] = entry.eol
-		b.endingOrder = append(b.endingOrder, entry.row)
-	}
-}
-
-func (b *HugeFileBuffer) touchPageDataLocked(startRow int) {
-	for i, cached := range b.pageOrder {
-		if cached != startRow {
-			continue
-		}
-		copy(b.pageOrder[i:], b.pageOrder[i+1:])
-		b.pageOrder[len(b.pageOrder)-1] = startRow
-		return
+		b.endingLRU.add(entry.row)
 	}
 }
 
@@ -2980,29 +3035,19 @@ func (b *HugeFileBuffer) storeCachedPageData(page hugeFileCachedPageData) {
 	if b.pageData == nil {
 		b.pageData = make(map[int]hugeFileCachedPageData)
 	}
+	b.ensurePageLRU()
 	if _, ok := b.pageData[page.startRow]; ok {
 		b.pageData[page.startRow] = page
-		b.touchPageDataLocked(page.startRow)
+		b.pageLRU.touch(page.startRow)
 		return
 	}
-	if len(b.pageOrder) >= hugeFilePageDataCacheSize {
-		evict := b.pageOrder[0]
-		delete(b.pageData, evict)
-		b.pageOrder = b.pageOrder[1:]
+	if b.pageLRU.len() >= hugeFilePageDataCacheSize {
+		if evict, ok := b.pageLRU.evictOldest(); ok {
+			delete(b.pageData, evict)
+		}
 	}
 	b.pageData[page.startRow] = page
-	b.pageOrder = append(b.pageOrder, page.startRow)
-}
-
-func (b *HugeFileBuffer) touchSpanCacheLocked(row int) {
-	for i, cached := range b.spanOrder {
-		if cached != row {
-			continue
-		}
-		copy(b.spanOrder[i:], b.spanOrder[i+1:])
-		b.spanOrder[len(b.spanOrder)-1] = row
-		return
-	}
+	b.pageLRU.add(page.startRow)
 }
 
 func (b *HugeFileBuffer) storeLineSpan(row int, span hugeFileLineSpan) {
@@ -3014,18 +3059,19 @@ func (b *HugeFileBuffer) storeLineSpan(row int, span hugeFileLineSpan) {
 	if b.lineSpans == nil {
 		b.lineSpans = make(map[int]hugeFileLineSpan)
 	}
+	b.ensureSpanLRU()
 	if _, ok := b.lineSpans[row]; ok {
 		b.lineSpans[row] = span
-		b.touchSpanCacheLocked(row)
+		b.spanLRU.touch(row)
 		return
 	}
-	if len(b.spanOrder) >= hugeFileSpanCacheSize {
-		evict := b.spanOrder[0]
-		delete(b.lineSpans, evict)
-		b.spanOrder = b.spanOrder[1:]
+	if b.spanLRU.len() >= hugeFileSpanCacheSize {
+		if evict, ok := b.spanLRU.evictOldest(); ok {
+			delete(b.lineSpans, evict)
+		}
 	}
 	b.lineSpans[row] = span
-	b.spanOrder = append(b.spanOrder, row)
+	b.spanLRU.add(row)
 }
 
 func (b *HugeFileBuffer) storeLineSpansBatch(entries []hugeFileLineSpanEntry) {
@@ -3040,19 +3086,20 @@ func (b *HugeFileBuffer) storeLineSpansBatch(entries []hugeFileLineSpanEntry) {
 	if b.lineSpans == nil {
 		b.lineSpans = make(map[int]hugeFileLineSpan)
 	}
+	b.ensureSpanLRU()
 	for _, entry := range entries {
 		if _, ok := b.lineSpans[entry.row]; ok {
 			b.lineSpans[entry.row] = entry.span
-			b.touchSpanCacheLocked(entry.row)
+			b.spanLRU.touch(entry.row)
 			continue
 		}
-		if len(b.spanOrder) >= hugeFileSpanCacheSize {
-			evict := b.spanOrder[0]
-			delete(b.lineSpans, evict)
-			b.spanOrder = b.spanOrder[1:]
+		if b.spanLRU.len() >= hugeFileSpanCacheSize {
+			if evict, ok := b.spanLRU.evictOldest(); ok {
+				delete(b.lineSpans, evict)
+			}
 		}
 		b.lineSpans[entry.row] = entry.span
-		b.spanOrder = append(b.spanOrder, entry.row)
+		b.spanLRU.add(entry.row)
 	}
 }
 
@@ -3076,7 +3123,7 @@ func (b *HugeFileBuffer) cachedLine(row int) ([]rune, bool) {
 	if !ok {
 		return nil, false
 	}
-	b.touchCacheLocked(row)
+	b.cacheLRU.touch(row)
 	return cached, true
 }
 
@@ -3090,7 +3137,7 @@ func (b *HugeFileBuffer) cachedLineEnding(row int) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	b.touchEndingCacheLocked(row)
+	b.endingLRU.touch(row)
 	return eol, true
 }
 
@@ -3104,7 +3151,7 @@ func (b *HugeFileBuffer) cachedLineInfo(row int) (hugeFileLineInfo, bool) {
 	if !ok {
 		return hugeFileLineInfo{}, false
 	}
-	b.touchInfoCacheLocked(row)
+	b.infoLRU.touch(row)
 	return info, true
 }
 
@@ -3119,7 +3166,7 @@ func (b *HugeFileBuffer) cachedPageData(row int) (hugeFileCachedPageData, bool) 
 	if !ok {
 		return hugeFileCachedPageData{}, false
 	}
-	b.touchPageDataLocked(start)
+	b.pageLRU.touch(start)
 	return page, true
 }
 
@@ -3317,7 +3364,7 @@ func (b *HugeFileBuffer) cachedLineSpan(row int) (hugeFileLineSpan, bool) {
 	if !ok {
 		return hugeFileLineSpan{}, false
 	}
-	b.touchSpanCacheLocked(row)
+	b.spanLRU.touch(row)
 	return span, true
 }
 
