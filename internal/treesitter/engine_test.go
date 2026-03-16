@@ -268,6 +268,227 @@ func TestMultiLineTemplateStringHighlightsCrossChunkBoundary(t *testing.T) {
 	}
 }
 
+func TestTemplateStringAfterLongLineHighlightsWindow(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	// Simulate mermaid.min.js: a very long minified line followed by a
+	// template literal whose content is on short lines.  When queried via
+	// HighlightsWindow (huge file mode path), the short lines inside the
+	// template should still get "string" spans even though the template
+	// literal starts on the preceding long line.
+	var sb strings.Builder
+	// Line 0: very long minified JS (>4096 bytes) ending with template start.
+	sb.WriteString("var x=" + strings.Repeat("foo()+", 1000) + "0;var css=`\n")
+	// Lines 1-5: short CSS lines inside the template.
+	for i := 0; i < 5; i++ {
+		sb.WriteString("  .item" + string(rune('a'+i)) + " { color: red; }\n")
+	}
+	// Line 6: template end + more code.
+	sb.WriteString("`;var y=1;\n")
+
+	path := "minified_tpl.js"
+	text := sb.String()
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+
+	// Query lines 1-5 (short lines inside template) via HighlightsWindow —
+	// this is the code path used in huge file mode.
+	spans := e.HighlightsWindow(path, 1, 5, 0, 40)
+	if spans == nil {
+		t.Fatalf("expected spans, got nil")
+	}
+	for row := 1; row <= 5; row++ {
+		lineSpans := spans[row]
+		found := false
+		for _, s := range lineSpans {
+			if s.Kind == "string" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("line %d: expected 'string' span inside template literal (after long line), got %v", row, lineSpans)
+		}
+	}
+}
+
+func TestLongLineInsideTemplateLiteralGetsStringSpan(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	// A template literal whose interior contains a long line (>4096 bytes).
+	// The individual long-line query must still capture the template_string
+	// node starting on a previous row.
+	var sb strings.Builder
+	sb.WriteString("var css = `\n")                                        // line 0: template start
+	sb.WriteString("  .short { color: red; }\n")                           // line 1: short
+	sb.WriteString("  .long { content: '" + strings.Repeat("x", 5000) + "'; }\n") // line 2: long (>4096 bytes)
+	sb.WriteString("  .another { color: blue; }\n")                        // line 3: short
+	sb.WriteString("`;\n")                                                 // line 4: template end
+
+	path := "long_in_tpl.js"
+	text := sb.String()
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+
+	// Query line 2 (long line inside template) via HighlightsWindow.
+	spans := e.HighlightsWindow(path, 1, 3, 0, 40)
+	if spans == nil {
+		t.Fatalf("expected spans, got nil")
+	}
+	// Line 2 (long, inside template) should have a "string" span.
+	found := false
+	for _, s := range spans[2] {
+		if s.Kind == "string" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("line 2 (long line inside template literal): expected 'string' span, got %v", spans[2])
+	}
+}
+
+func TestHighlightsWindowPerformanceNoDeepLookback(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	// Build a file with 100 long minified lines followed by short lines.
+	// Querying the short lines at the end must NOT scan back through all
+	// the long lines — that would be catastrophically slow.
+	var sb strings.Builder
+	for i := 0; i < 100; i++ {
+		sb.WriteString("var v" + string(rune('a'+(i%26))) + "=" + strings.Repeat("foo()+", 800) + "0;\n")
+	}
+	// Lines 100-105: short lines.
+	for i := 0; i < 5; i++ {
+		sb.WriteString("var short" + string(rune('a'+i)) + " = " + string(rune('0'+i)) + ";\n")
+	}
+	sb.WriteString("\n") // line 106
+
+	path := "perf_test.js"
+	text := sb.String()
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+
+	// Query only the short lines at the end (100-105) with column clipping.
+	// This should complete in <500ms; with a naive lookback to row 0 it would
+	// take seconds because it scans 100 * ~5KB = ~500KB of minified nodes.
+	start := time.Now()
+	spans := e.HighlightsWindow(path, 100, 105, 0, 30)
+	elapsed := time.Since(start)
+	if spans == nil {
+		t.Fatalf("HighlightsWindow returned nil")
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("HighlightsWindow took %v (>500ms) — lookback may be scanning too many lines", elapsed)
+	}
+	// Short lines should have spans.
+	if len(spans[100]) == 0 {
+		t.Errorf("line 100 has no spans")
+	}
+	t.Logf("HighlightsWindow for lines 100-105 took %v", elapsed)
+}
+
+func TestEndOfFileHighlightsAfterCommentBlock(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	// Simulate end of mermaid.min.js: long minified lines, then a comment
+	// block, then a last code line.  All highlight methods should produce
+	// spans for the last code line.
+	var sb strings.Builder
+	// Lines 0-2: long minified JS lines.
+	for i := 0; i < 3; i++ {
+		sb.WriteString("var v" + string(rune('a'+i)) + "=" + strings.Repeat("foo()+", 1000) + "0;\n")
+	}
+	// Lines 3-8: multi-line comment block (short lines).
+	sb.WriteString("/*\n")
+	sb.WriteString(" * Copyright 2024\n")
+	sb.WriteString(" * Licensed under MIT\n")
+	sb.WriteString(" * http://example.com\n")
+	sb.WriteString(" */\n")
+	// Line 8: last code line (short).
+	sb.WriteString("globalThis[\"mermaid\"] = require(\"mermaid\");\n")
+	// Line 9: empty final line.
+
+	path := "end_of_file.js"
+	text := sb.String()
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+
+	// Test 1: Highlights (no column clipping) — lines 3-9.
+	spans := e.Highlights(path, 3, 9)
+	if spans == nil {
+		t.Fatalf("Highlights returned nil")
+	}
+	// Line 8 should have spans (string "mermaid", identifier, etc.).
+	if len(spans[8]) == 0 {
+		t.Errorf("Highlights: line 8 has no spans; expected highlights for code line")
+	}
+	// Comment lines (3-7) should have comment spans.
+	for row := 3; row <= 7; row++ {
+		found := false
+		for _, s := range spans[row] {
+			if s.Kind == "comment" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Highlights: line %d has no comment span; spans=%v", row, spans[row])
+		}
+	}
+
+	// Test 2: HighlightsWindow (with column clipping) — lines 3-9.
+	spansW := e.HighlightsWindow(path, 3, 9, 0, 50)
+	if spansW == nil {
+		t.Fatalf("HighlightsWindow returned nil")
+	}
+	if len(spansW[8]) == 0 {
+		t.Errorf("HighlightsWindow: line 8 has no spans; expected highlights for code line")
+	}
+	t.Logf("Line 8 spans (Highlights):       %v", spans[8])
+	t.Logf("Line 8 spans (HighlightsWindow): %v", spansW[8])
+}
+
 func spanCoversKind(spans []HighlightSpan, col int, kind string) bool {
 	for _, span := range spans {
 		if span.Kind != kind {

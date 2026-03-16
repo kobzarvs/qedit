@@ -510,25 +510,34 @@ func queryHighlights(query *sitter.Query, tree *sitter.Tree, source []byte, line
 
 func queryHighlightsInto(query *sitter.Query, tree *sitter.Tree, source []byte, lines [][]byte, asciiOnly bool, lineASCIIFlags []bool, startLine, endLine int, clipStartCol, clipEndCol int, out map[int][]HighlightSpan) {
 	useColClip := clipStartCol >= 0 && clipEndCol > clipStartCol
+
+	rangeStartRow := startLine
 	// Extend range start backward to capture multi-line nodes (template
 	// literals, multi-line comments, strings) that begin before startLine
 	// but extend into the query range.  tree-sitter's SetPointRange filters
 	// by capture START position, so without this lookback we would miss
 	// parent nodes and leave their interior lines unhighlighted.
-	const multiLineLookback = 500
-	rangeStartRow := startLine
-	if rangeStartRow > multiLineLookback {
-		rangeStartRow -= multiLineLookback
-	} else {
-		rangeStartRow = 0
+	//
+	// Use the DEEPEST named node at (startLine, 0) to find the exact start
+	// row.  For multi-line strings/comments the deepest node IS the
+	// template_string / comment itself — no parent walk needed.  Walking
+	// parents would reach the root "program" node at row 0 and force
+	// tree-sitter to scan the entire file.
+	if tree != nil && startLine > 0 {
+		pt := sitter.Point{Row: uint32(startLine), Column: 0}
+		node := tree.RootNode().NamedDescendantForPointRange(pt, pt)
+		if node != nil {
+			sr := int(node.StartPoint().Row)
+			if sr < rangeStartRow {
+				rangeStartRow = sr
+			}
+		}
 	}
+
 	rangeStart := sitter.Point{Row: uint32(rangeStartRow), Column: 0}
 	rangeEnd := sitter.Point{Row: uint32(endLine + 1), Column: 0}
 	allASCII := asciiOnly || allLinesASCII(lineASCIIFlags, startLine, endLine)
 	if useColClip && allASCII {
-		// Only apply column constraint on start when NOT using lookback,
-		// otherwise we'd exclude multi-line nodes starting at earlier
-		// columns on the lookback row.
 		if rangeStartRow == startLine {
 			rangeStart.Column = uint32(clipStartCol)
 		}
