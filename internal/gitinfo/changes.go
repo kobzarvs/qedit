@@ -29,6 +29,7 @@ type Hunk struct {
 	Path      string // repo-relative, slash-separated
 	StartLine int
 	EndLine   int
+	Sign      rune
 }
 
 // Diff returns the unified diff for a single file relative to HEAD.
@@ -54,7 +55,7 @@ func Diff(root, path string) (string, error) {
 		"diff",
 		"--no-color",
 		"--no-ext-diff",
-		"--unified=3",
+		"--unified=0",
 		"HEAD",
 		"--",
 		pathspec,
@@ -133,6 +134,7 @@ func Changes(root string) ([]FileChange, []Hunk, error) {
 				Path:      ch.Path,
 				StartLine: 0,
 				EndLine:   0,
+				Sign:      '+',
 			})
 		}
 	}
@@ -144,7 +146,13 @@ func Changes(root string) ([]FileChange, []Hunk, error) {
 		if hunks[i].Path != hunks[j].Path {
 			return hunks[i].Path < hunks[j].Path
 		}
-		return hunks[i].StartLine < hunks[j].StartLine
+		if hunks[i].StartLine != hunks[j].StartLine {
+			return hunks[i].StartLine < hunks[j].StartLine
+		}
+		if hunks[i].EndLine != hunks[j].EndLine {
+			return hunks[i].EndLine < hunks[j].EndLine
+		}
+		return hunkSectionOrder(hunks[i].Sign) < hunkSectionOrder(hunks[j].Sign)
 	})
 	return changes, hunks, nil
 }
@@ -251,7 +259,7 @@ func numstatMap(root string) (map[string]numstat, error) {
 	return m, nil
 }
 
-var hunkHeaderRe = regexp.MustCompile(`@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@`)
+var hunkHeaderRe = regexp.MustCompile(`@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 var braceRenameRe = regexp.MustCompile(`\{([^{}]*?) => ([^{}]*?)\}`)
 
 func diffHunks(root string) ([]Hunk, error) {
@@ -270,51 +278,107 @@ func diffHunks(root string) ([]Hunk, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	currentPath := ""
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "diff --git ") {
-			currentPath = parseDiffGitPath(line)
-			continue
+	inHunk := false
+	currentSign := rune(0)
+	currentNewLine := 0
+	sectionNewStart := 0
+	sectionNewCount := 0
+	flushSection := func() {
+		if currentPath == "" || currentSign == 0 {
+			return
 		}
-		if !strings.HasPrefix(line, "@@ ") || currentPath == "" {
-			continue
+		hunk := Hunk{
+			Path: currentPath,
+			Sign: currentSign,
 		}
-		matches := hunkHeaderRe.FindStringSubmatch(line)
-		if len(matches) < 2 {
-			continue
-		}
-		startLine, err := strconv.Atoi(matches[1])
-		if err != nil || startLine < 1 {
-			continue
-		}
-		count := 1
-		if len(matches) > 2 && matches[2] != "" {
-			if v, err := strconv.Atoi(matches[2]); err == nil {
-				count = v
+		if currentSign == '+' {
+			if sectionNewCount == 0 {
+				currentSign = 0
+				return
 			}
-		}
-		if count == 0 {
-			anchor := startLine - 1
+			hunk.StartLine = sectionNewStart - 1
+			if hunk.StartLine < 0 {
+				hunk.StartLine = 0
+			}
+			hunk.EndLine = hunk.StartLine + sectionNewCount - 1
+		} else {
+			anchor := sectionNewStart - 1
 			if anchor < 0 {
 				anchor = 0
 			}
-			hunks = append(hunks, Hunk{
-				Path:      currentPath,
-				StartLine: anchor,
-				EndLine:   anchor,
-			})
+			hunk.StartLine = anchor
+			hunk.EndLine = anchor
+		}
+		hunks = append(hunks, hunk)
+		currentSign = 0
+		sectionNewStart = 0
+		sectionNewCount = 0
+	}
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "diff --git ") {
+			flushSection()
+			currentPath = parseDiffGitPath(line)
+			inHunk = false
 			continue
 		}
-		hunks = append(hunks, Hunk{
-			Path:      currentPath,
-			StartLine: startLine - 1,
-			EndLine:   startLine - 1 + count - 1,
-		})
+		if strings.HasPrefix(line, "@@ ") && currentPath != "" {
+			flushSection()
+			matches := hunkHeaderRe.FindStringSubmatch(line)
+			if len(matches) < 5 {
+				currentSign = 0
+				inHunk = false
+				continue
+			}
+			newStart, err := strconv.Atoi(matches[3])
+			if err != nil || newStart < 1 {
+				currentSign = 0
+				inHunk = false
+				continue
+			}
+			currentNewLine = newStart
+			inHunk = true
+			continue
+		}
+		if currentPath == "" || !inHunk || len(line) == 0 {
+			continue
+		}
+		switch line[0] {
+		case '-':
+			if currentSign != '-' {
+				flushSection()
+				currentSign = '-'
+				sectionNewStart = currentNewLine
+			}
+			continue
+		case '+':
+			if currentSign != '+' {
+				flushSection()
+				currentSign = '+'
+				sectionNewStart = currentNewLine
+			}
+			currentNewLine++
+			sectionNewCount++
+		default:
+			flushSection()
+		}
 	}
+	flushSection()
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	return hunks, nil
+}
+
+func hunkSectionOrder(sign rune) int {
+	switch sign {
+	case '-':
+		return 0
+	case '+':
+		return 1
+	default:
+		return 2
+	}
 }
 
 func parseDiffGitPath(line string) string {

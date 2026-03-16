@@ -590,28 +590,77 @@ func (e *Editor) gitDiffPreviewRowForHighlight() int {
 		return -1
 	}
 	for _, hunk := range e.git.diffPreview.hunks {
-		rangeStart := hunk.newStart - 1
-		if rangeStart < 0 {
-			rangeStart = 0
+		if !gitDiffPreviewHunkMatchesHighlight(hunk, *highlight) {
+			continue
 		}
-		rangeEnd := rangeStart
-		if hunk.newCount > 0 {
-			rangeEnd = rangeStart + hunk.newCount - 1
+		fallback := -1
+		for row := hunk.rowStart; row <= hunk.rowEnd && row < len(e.git.diffPreview.lines); row++ {
+			line := e.git.diffPreview.lines[row]
+			if line.sign == ' ' {
+				continue
+			}
+			if highlight.Sign != 0 && line.sign != highlight.Sign {
+				continue
+			}
+			if highlight.Sign == '-' {
+				return row
+			}
+			if line.actualLine >= highlight.StartLine && line.actualLine <= highlight.EndLine {
+				return row
+			}
+			if fallback < 0 {
+				fallback = row
+			}
 		}
-		if rangeStart == highlight.StartLine && rangeEnd == highlight.EndLine {
-			if hunk.rowStart <= hunk.rowEnd {
-				return hunk.rowStart
-			}
-			if hunk.rowStart < len(e.git.diffPreview.lines) {
-				return hunk.rowStart
-			}
-			if len(e.git.diffPreview.lines) > 0 {
-				return len(e.git.diffPreview.lines) - 1
-			}
-			return -1
+		if fallback >= 0 {
+			return fallback
 		}
+		if hunk.rowStart <= hunk.rowEnd {
+			return hunk.rowStart
+		}
+		if hunk.rowStart < len(e.git.diffPreview.lines) {
+			return hunk.rowStart
+		}
+		if len(e.git.diffPreview.lines) > 0 {
+			return len(e.git.diffPreview.lines) - 1
+		}
+		return -1
 	}
 	return -1
+}
+
+func gitDiffPreviewHunkMatchesHighlight(hunk gitDiffPreviewHunk, highlight GitChangeHunk) bool {
+	rangeStart := hunk.newStart - 1
+	if rangeStart < 0 {
+		rangeStart = 0
+	}
+	rangeEnd := rangeStart
+	if hunk.newCount > 0 {
+		rangeEnd = rangeStart + hunk.newCount - 1
+	}
+	if highlight.Sign == '-' {
+		return highlight.StartLine >= rangeStart && highlight.StartLine <= rangeEnd
+	}
+	return highlight.StartLine >= rangeStart && highlight.EndLine <= rangeEnd
+}
+
+func (e *Editor) focusGitDiffPreviewHighlight() bool {
+	if !e.gitDiffPreviewActive() {
+		return false
+	}
+	row := e.gitDiffPreviewRowForHighlight()
+	if row < 0 {
+		highlight := e.git.diffHighlight
+		if highlight != nil {
+			row = e.gitDiffPreviewRowForActual(highlight.StartLine)
+		}
+	}
+	if row < 0 {
+		return false
+	}
+	e.cursor.Row = row
+	e.clampCursorCol()
+	return true
 }
 
 func (e *Editor) gitDiffPreviewRowForActual(actualRow int) int {

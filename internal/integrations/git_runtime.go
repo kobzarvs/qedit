@@ -77,6 +77,7 @@ func (GitInfoRuntime) Changes(root string) ([]editor.GitFileChange, []editor.Git
 			AbsPath:   filepath.Join(root, filepath.FromSlash(h.Path)),
 			StartLine: h.StartLine,
 			EndLine:   h.EndLine,
+			Sign:      h.Sign,
 		})
 	}
 	return editorChanges, editorHunks, nil

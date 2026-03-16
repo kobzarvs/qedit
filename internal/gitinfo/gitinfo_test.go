@@ -90,3 +90,39 @@ func TestListBranchesNotRepo(t *testing.T) {
 		t.Fatalf("expected error for non-repo")
 	}
 }
+
+func TestChangesSplitsReplacementIntoDeleteAndAddSections(t *testing.T) {
+	if !gitAvailable() {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test")
+	runGit(t, dir, "config", "commit.gpgsign", "false")
+
+	path := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(path, []byte("keep\nold\nolder\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	runGit(t, dir, "add", "file.txt")
+	runGit(t, dir, "commit", "-m", "init")
+
+	if err := os.WriteFile(path, []byte("keep\nnew\nnewer\n"), 0o644); err != nil {
+		t.Fatalf("rewrite file: %v", err)
+	}
+
+	_, hunks, err := Changes(dir)
+	if err != nil {
+		t.Fatalf("Changes error: %v", err)
+	}
+	if len(hunks) != 2 {
+		t.Fatalf("hunks = %+v, want 2 sections", hunks)
+	}
+	if hunks[0].Path != "file.txt" || hunks[0].Sign != '-' || hunks[0].StartLine != 1 || hunks[0].EndLine != 1 {
+		t.Fatalf("first hunk = %+v, want delete section at line 1", hunks[0])
+	}
+	if hunks[1].Path != "file.txt" || hunks[1].Sign != '+' || hunks[1].StartLine != 1 || hunks[1].EndLine != 2 {
+		t.Fatalf("second hunk = %+v, want add section at lines 1..2", hunks[1])
+	}
+}

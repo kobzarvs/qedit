@@ -24,6 +24,7 @@ type GitChangeHunk struct {
 	AbsPath   string
 	StartLine int
 	EndLine   int
+	Sign      rune
 }
 
 // SetGitRoot sets the current git root for the editor.
@@ -101,7 +102,13 @@ func (e *Editor) applyGitChanges(changes []GitFileChange, hunks []GitChangeHunk)
 		if e.git.changeHunks[i].AbsPath != e.git.changeHunks[j].AbsPath {
 			return e.git.changeHunks[i].AbsPath < e.git.changeHunks[j].AbsPath
 		}
-		return e.git.changeHunks[i].StartLine < e.git.changeHunks[j].StartLine
+		if e.git.changeHunks[i].StartLine != e.git.changeHunks[j].StartLine {
+			return e.git.changeHunks[i].StartLine < e.git.changeHunks[j].StartLine
+		}
+		if e.git.changeHunks[i].EndLine != e.git.changeHunks[j].EndLine {
+			return e.git.changeHunks[i].EndLine < e.git.changeHunks[j].EndLine
+		}
+		return gitChangeSectionOrder(e.git.changeHunks[i].Sign) < gitChangeSectionOrder(e.git.changeHunks[j].Sign)
 	})
 
 	e.git.changesUpdated = time.Now()
@@ -122,7 +129,7 @@ func (e *Editor) gotoGitChange(forward bool) {
 	}
 	e.git.pendingDiffJump = true
 	currentPath := e.normalizedPath(e.document.filename)
-	target := e.findGitChangeHunk(currentPath, e.cursor.Row, forward)
+	target := e.findGitChangeHunk(currentPath, e.gitChangeCursorRow(), forward)
 	if target == nil {
 		e.setStatus("no git changes")
 		e.git.diffHighlight = nil
@@ -141,10 +148,20 @@ func (e *Editor) gotoGitChange(forward bool) {
 	if currentPath != "" && target.AbsPath == currentPath {
 		e.JumpToLocation(target.StartLine, 0)
 		e.activateGitDiffPreview()
+		e.focusGitDiffPreviewHighlight()
+		e.cursor.Col = 0
 		e.git.pendingDiffJump = false
 		return
 	}
 	e.requestOpenLocation(target.AbsPath, target.StartLine, 0)
+}
+
+func (e *Editor) gitChangeCursorRow() int {
+	if e.gitDiffPreviewActive() {
+		row, _ := e.gitDiffPreviewActualCursor()
+		return row
+	}
+	return e.cursor.Row
 }
 
 func (e *Editor) prepareGitChangeOpen(path string) (int, int, bool) {
@@ -276,11 +293,25 @@ func (e *Editor) findGitChangeHunk(currentPath string, cursorRow int, forward bo
 	if len(hunks) == 0 {
 		return nil
 	}
+	if idx := e.currentGitChangeHunkIndex(currentPath); idx >= 0 {
+		if forward {
+			idx++
+			if idx >= len(hunks) {
+				idx = 0
+			}
+			return &hunks[idx]
+		}
+		idx--
+		if idx < 0 {
+			idx = len(hunks) - 1
+		}
+		return &hunks[idx]
+	}
 	if forward {
 		if currentPath != "" {
 			for i := range hunks {
 				h := &hunks[i]
-				if h.AbsPath == currentPath && h.StartLine > cursorRow {
+				if h.AbsPath == currentPath && (h.StartLine > cursorRow || (h.StartLine == cursorRow && gitChangeSectionOrder(h.Sign) == gitChangeSectionOrder('-'))) {
 					return h
 				}
 			}
@@ -308,6 +339,38 @@ func (e *Editor) findGitChangeHunk(currentPath string, cursorRow int, forward bo
 		}
 	}
 	return &hunks[len(hunks)-1]
+}
+
+func (e *Editor) currentGitChangeHunkIndex(currentPath string) int {
+	if currentPath == "" {
+		return -1
+	}
+	highlight := e.git.diffHighlight
+	if highlight == nil || highlight.AbsPath != currentPath {
+		return -1
+	}
+	for i := range e.git.changeHunks {
+		hunk := &e.git.changeHunks[i]
+		if hunk.AbsPath != highlight.AbsPath {
+			continue
+		}
+		if hunk.StartLine != highlight.StartLine || hunk.EndLine != highlight.EndLine || hunk.Sign != highlight.Sign {
+			continue
+		}
+		return i
+	}
+	return -1
+}
+
+func gitChangeSectionOrder(sign rune) int {
+	switch sign {
+	case '-':
+		return 0
+	case '+':
+		return 1
+	default:
+		return 2
+	}
 }
 
 func (e *Editor) requestOpenLocation(path string, line, col int) {

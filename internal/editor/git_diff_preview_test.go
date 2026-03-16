@@ -39,7 +39,8 @@ func TestBuildGitDiffPreviewIncludesDeletedLines(t *testing.T) {
 		" tail",
 	}, "\n")
 
-	preview, ok := buildGitDiffPreview("/repo/a.go", patch, "", false)
+	content := strings.Join([]string{"keep", "new", "tail"}, "\n")
+	preview, ok := buildGitDiffPreview("/repo/a.go", patch, content, false)
 	if !ok {
 		t.Fatalf("buildGitDiffPreview returned ok=false")
 	}
@@ -71,7 +72,8 @@ func TestActivateGitDiffPreviewAnchorsDeletionOnlyHunk(t *testing.T) {
 		"-older",
 	}, "\n")
 
-	preview, ok := buildGitDiffPreview("/repo/a.go", patch, "", false)
+	content := strings.Join([]string{"keep", "tail"}, "\n")
+	preview, ok := buildGitDiffPreview("/repo/a.go", patch, content, false)
 	if !ok {
 		t.Fatalf("buildGitDiffPreview returned ok=false")
 	}
@@ -80,7 +82,7 @@ func TestActivateGitDiffPreviewAnchorsDeletionOnlyHunk(t *testing.T) {
 	e.document.filename = "/repo/a.go"
 	e.mode = ModeMerge
 	e.git.diffPreview = preview
-	e.git.diffHighlight = &GitChangeHunk{AbsPath: "/repo/a.go", StartLine: 1, EndLine: 1}
+	e.git.diffHighlight = &GitChangeHunk{AbsPath: "/repo/a.go", StartLine: 1, EndLine: 1, Sign: '-'}
 
 	if !e.activateGitDiffPreview() {
 		t.Fatalf("activateGitDiffPreview returned false")
@@ -91,6 +93,43 @@ func TestActivateGitDiffPreviewAnchorsDeletionOnlyHunk(t *testing.T) {
 	}
 	if line.sign != '-' || string(line.text) != "old" {
 		t.Fatalf("cursor line = (%q,%q), want ('-','old')", string(line.sign), string(line.text))
+	}
+}
+
+func TestActivateGitDiffPreviewAnchorsReplacementToFirstAddedLine(t *testing.T) {
+	patch := strings.Join([]string{
+		"diff --git a/a.go b/a.go",
+		"index 1111111..2222222 100644",
+		"--- a/a.go",
+		"+++ b/a.go",
+		"@@ -2,2 +2,2 @@",
+		"-old",
+		"-older",
+		"+new",
+		"+newer",
+	}, "\n")
+
+	content := strings.Join([]string{"keep", "new", "newer", "tail"}, "\n")
+	preview, ok := buildGitDiffPreview("/repo/a.go", patch, content, false)
+	if !ok {
+		t.Fatalf("buildGitDiffPreview returned ok=false")
+	}
+
+	e := newTestEditor("keep", "new", "newer", "tail")
+	e.document.filename = "/repo/a.go"
+	e.mode = ModeMerge
+	e.git.diffPreview = preview
+	e.git.diffHighlight = &GitChangeHunk{AbsPath: "/repo/a.go", StartLine: 1, EndLine: 2, Sign: '+'}
+
+	if !e.activateGitDiffPreview() {
+		t.Fatalf("activateGitDiffPreview returned false")
+	}
+	line, ok := e.gitDiffPreviewLine(e.cursor.Row)
+	if !ok {
+		t.Fatalf("no preview line at cursor row %d", e.cursor.Row)
+	}
+	if line.sign != '+' || string(line.text) != "new" {
+		t.Fatalf("cursor line = (%q,%q), want ('+','new')", string(line.sign), string(line.text))
 	}
 }
 
@@ -206,11 +245,17 @@ func TestEnsureGitDiffPreviewPreservesDeletedLineCursorOnRefresh(t *testing.T) {
 	if !e.activateGitDiffPreview() {
 		t.Fatalf("activateGitDiffPreview returned false")
 	}
-
-	if e.cursor.Row != 0 {
-		t.Fatalf("initial cursor row = %d, want 0", e.cursor.Row)
+	deletedRow := -1
+	for i, line := range e.git.diffPreview.lines {
+		if line.sign == '-' && string(line.text) == "old" {
+			deletedRow = i
+			break
+		}
 	}
-	e.moveDown()
+	if deletedRow < 0 {
+		t.Fatalf("deleted preview row not found")
+	}
+	e.cursor.Row = deletedRow
 	line, ok := e.gitDiffPreviewLine(e.cursor.Row)
 	if !ok {
 		t.Fatalf("no preview line at cursor row %d", e.cursor.Row)
