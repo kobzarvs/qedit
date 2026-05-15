@@ -520,6 +520,62 @@ func TestHighlightsWindowPerformanceNoDeepLookback(t *testing.T) {
 	t.Logf("HighlightsWindow for lines 100-105 took %v", elapsed)
 }
 
+func TestHighlightsWindowNonASCIILongLineClipsBeforeConvertingColumns(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	var sb strings.Builder
+	sb.WriteString("const first = 1;")
+	for i := 0; i < 20000; i++ {
+		sb.WriteString("var repeated")
+		sb.WriteString(string(rune('a' + (i % 26))))
+		sb.WriteString("=1;")
+	}
+	sb.WriteString(`const nonASCII = "Ж";`)
+
+	path := "non_ascii_long_line.js"
+	text := sb.String()
+	if ok := e.ParseSync(path, "javascript", text); !ok {
+		t.Fatalf("ParseSync failed")
+	}
+
+	start := time.Now()
+	spans := e.HighlightsWindow(path, 0, 0, 0, 80)
+	elapsed := time.Since(start)
+	if spans == nil {
+		t.Fatalf("HighlightsWindow returned nil")
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("HighlightsWindow took %v (>500ms) for clipped non-ASCII long line", elapsed)
+	}
+	if len(spans[0]) == 0 {
+		t.Fatalf("line 0 has no spans")
+	}
+	if !spanCoversKind(spans[0], 0, "keyword") {
+		t.Fatalf("expected keyword span near line start, got %v", spans[0])
+	}
+}
+
+func TestByteColConverterMatchesRuneCountOutOfOrder(t *testing.T) {
+	line := []byte("aЖb🙂c")
+	converter := newByteColConverter(line)
+	for _, col := range []int{len(line), 0, 3, 1, 6, 2, 8, 4, 100} {
+		got := converter.runeCol(col)
+		want := byteColToRuneCol(line, col)
+		if got != want {
+			t.Fatalf("runeCol(%d) = %d, want %d", col, got, want)
+		}
+	}
+}
+
 func TestEndOfFileHighlightsAfterCommentBlock(t *testing.T) {
 	langs := config.Languages{
 		Languages: []config.Language{

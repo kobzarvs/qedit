@@ -5,6 +5,7 @@ import (
 	"context"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -599,6 +600,18 @@ func queryHighlightsInto(query *sitter.Query, tree *sitter.Tree, source []byte, 
 	defer cursor.Close()
 	cursor.SetPointRange(rangeStart, rangeEnd)
 	cursor.Exec(query, tree.RootNode())
+	var converters map[int]*byteColConverter
+	converterForRow := func(row int, line []byte) *byteColConverter {
+		if converters == nil {
+			converters = make(map[int]*byteColConverter)
+		}
+		if converter, ok := converters[row]; ok {
+			return converter
+		}
+		converter := newByteColConverter(line)
+		converters[row] = converter
+		return converter
+	}
 
 	for {
 		match, ok := cursor.NextMatch()
@@ -644,8 +657,27 @@ func queryHighlightsInto(query *sitter.Query, tree *sitter.Tree, source []byte, 
 							endCol = len(line)
 						}
 					} else {
-						startCol = byteColToRuneCol(line, startCol)
-						endCol = byteColToRuneCol(line, endCol)
+						byteStartCol := startCol
+						byteEndCol := endCol
+						if useColClip {
+							if byteEndCol <= clipStartCol {
+								continue
+							}
+							if byteStartCol >= byteClipUpperBound(clipEndCol) {
+								continue
+							}
+						}
+						converter := converterForRow(row, line)
+						if useColClip && byteStartCol <= clipStartCol {
+							startCol = clipStartCol
+						} else {
+							startCol = converter.runeCol(byteStartCol)
+						}
+						if useColClip && byteEndCol >= byteClipUpperBound(clipEndCol) {
+							endCol = clipEndCol
+						} else {
+							endCol = converter.runeCol(byteEndCol)
+						}
 					}
 				}
 				if useColClip {
@@ -695,6 +727,77 @@ func byteColToRuneCol(line []byte, col int) int {
 		col = len(line)
 	}
 	return utf8.RuneCount(line[:col])
+}
+
+func byteClipUpperBound(runeCol int) int {
+	if runeCol <= 0 {
+		return 0
+	}
+	maxInt := int(^uint(0) >> 1)
+	if runeCol > maxInt/utf8.UTFMax {
+		return maxInt
+	}
+	return runeCol * utf8.UTFMax
+}
+
+type byteColConverter struct {
+	line     []byte
+	byteCols []int
+	runeCols []int
+}
+
+func newByteColConverter(line []byte) *byteColConverter {
+	return &byteColConverter{
+		line:     line,
+		byteCols: []int{0},
+		runeCols: []int{0},
+	}
+}
+
+func (c *byteColConverter) runeCol(byteCol int) int {
+	if byteCol <= 0 {
+		return 0
+	}
+	if byteCol > len(c.line) {
+		byteCol = len(c.line)
+	}
+	if !isRuneBoundary(c.line, byteCol) {
+		return byteColToRuneCol(c.line, byteCol)
+	}
+	idx := sort.SearchInts(c.byteCols, byteCol)
+	if idx < len(c.byteCols) && c.byteCols[idx] == byteCol {
+		return c.runeCols[idx]
+	}
+	startIdx := idx - 1
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	currentByte := c.byteCols[startIdx]
+	currentRune := c.runeCols[startIdx]
+	for currentByte < byteCol {
+		_, size := utf8.DecodeRune(c.line[currentByte:])
+		if size <= 0 {
+			size = 1
+		}
+		if currentByte+size > byteCol {
+			currentRune += utf8.RuneCount(c.line[currentByte:byteCol])
+			currentByte = byteCol
+			break
+		}
+		currentByte += size
+		currentRune++
+	}
+	c.byteCols = append(c.byteCols, 0)
+	copy(c.byteCols[idx+1:], c.byteCols[idx:])
+	c.byteCols[idx] = byteCol
+	c.runeCols = append(c.runeCols, 0)
+	copy(c.runeCols[idx+1:], c.runeCols[idx:])
+	c.runeCols[idx] = currentRune
+	return currentRune
+}
+
+func isRuneBoundary(line []byte, col int) bool {
+	return col <= 0 || col >= len(line) || utf8.RuneStart(line[col])
 }
 
 func (e *Engine) markdownHighlights(path string, startLine, endLine int) map[int][]HighlightSpan {
