@@ -80,7 +80,7 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 		flags += "[RO]"
 	}
 	if e.hugeFileActive() {
-		flags += "[HUGE]"
+		flags += e.hugeFileStatusFlag()
 	}
 	if e.file.externalChange != ExternalChangeNone {
 		flags += "[!]"

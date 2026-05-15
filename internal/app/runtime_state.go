@@ -22,6 +22,8 @@ type editorRuntimeState struct {
 	highlightEnabled      bool
 	highlightExpected     bool
 	highlightParsed       bool
+	hugeFileKind          editor.HugeFileKind
+	highlightMaxBytes     int64
 	highlightParseVersion uint64
 	highlightJobSeq       int64
 	highlightJobActive    bool
@@ -64,6 +66,8 @@ func (s *editorRuntimeState) applyActiveFile(state activeFileState) {
 	s.highlightEnabled = state.highlightEnabled
 	s.highlightExpected = state.highlightExpected
 	s.highlightParsed = false
+	s.hugeFileKind = state.hugeFileKind
+	s.highlightMaxBytes = state.highlightMaxBytes
 	s.highlightParseVersion = state.highlightParseVersion
 	s.highlightJobSeq++
 	s.highlightJobActive = false

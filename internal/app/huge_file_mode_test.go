@@ -43,6 +43,9 @@ func TestOpenRuntimeFileUsesHugeFileMode(t *testing.T) {
 	if !ed.HugeFileMode() {
 		t.Fatalf("expected editor to enter huge file mode")
 	}
+	if got := ed.HugeFileKind(); got != editor.HugeFileKindLargeFile {
+		t.Fatalf("huge file kind = %q, want %q", got, editor.HugeFileKindLargeFile)
+	}
 	if ed.LineCount() != 4 {
 		t.Fatalf("line count = %d, want 4", ed.LineCount())
 	}
@@ -78,6 +81,9 @@ func TestOpenRuntimeFileUsesHugeModeForLongLine(t *testing.T) {
 	}
 	if !ed.HugeFileMode() {
 		t.Fatalf("expected editor to enter huge file mode for long line")
+	}
+	if got := ed.HugeFileKind(); got != editor.HugeFileKindLongLine {
+		t.Fatalf("huge file kind = %q, want %q", got, editor.HugeFileKindLongLine)
 	}
 }
 

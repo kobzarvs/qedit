@@ -87,6 +87,13 @@ func (e *Editor) LoadFileContent(path string, data []byte) error {
 }
 
 func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) error {
+	return e.LoadHugeFileWithKind(path, store, meta, HugeFileKindLargeFile)
+}
+
+func (e *Editor) LoadHugeFileWithKind(path string, store FileStore, meta FileMetadata, kind HugeFileKind) error {
+	if kind == "" {
+		kind = HugeFileKindLargeFile
+	}
 	if e.OpenExistingBuffer(path) {
 		return nil
 	}
@@ -108,6 +115,7 @@ func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) e
 	e.text = nil
 	e.huge = editorHugeFileState{
 		active:                   true,
+		kind:                     kind,
 		sizeBytes:                meta.Size,
 		buffer:                   buffer,
 		deferInitialViewportWarm: true,
@@ -144,6 +152,9 @@ func (e *Editor) LoadHugeFile(path string, store FileStore, meta FileMetadata) e
 		e.buffers.SetActive(newIdx)
 	}
 	status := fmt.Sprintf("huge file mode: limited edit (%.1f MB)", float64(meta.Size)/(1024*1024))
+	if kind == HugeFileKindLongLine {
+		status = fmt.Sprintf("long-line mode: optimized rendering (%.1f MB)", float64(meta.Size)/(1024*1024))
+	}
 	if !buffer.IndexingComplete() {
 		status += ", indexing..."
 	}

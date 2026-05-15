@@ -1,7 +1,15 @@
 package editor
 
+type HugeFileKind string
+
+const (
+	HugeFileKindLargeFile HugeFileKind = "large_file"
+	HugeFileKindLongLine  HugeFileKind = "long_line"
+)
+
 type editorHugeFileState struct {
 	active                   bool
+	kind                     HugeFileKind
 	sizeBytes                int64
 	buffer                   *HugeFileBuffer
 	edits                    map[int][]rune
@@ -29,6 +37,34 @@ func (e *Editor) hugeFileActive() bool {
 
 func (e *Editor) HugeFileMode() bool {
 	return e.hugeFileActive()
+}
+
+func (e *Editor) HugeFileKind() HugeFileKind {
+	if !e.hugeFileActive() {
+		return ""
+	}
+	if e.huge.kind == "" {
+		return HugeFileKindLargeFile
+	}
+	return e.huge.kind
+}
+
+func (e *Editor) hugeFileModeLabel() string {
+	switch e.HugeFileKind() {
+	case HugeFileKindLongLine:
+		return "LONG"
+	default:
+		return "HUGE"
+	}
+}
+
+func (e *Editor) hugeFileStatusFlag() string {
+	switch e.HugeFileKind() {
+	case HugeFileKindLongLine:
+		return "[LONG-LINE]"
+	default:
+		return "[HUGE]"
+	}
 }
 
 func (e *Editor) skipHeavyHugeFirstPaint() bool {

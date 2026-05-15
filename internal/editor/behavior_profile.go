@@ -163,12 +163,12 @@ func (e *Editor) currentModeLabel() string {
 	switch e.BehaviorProfile() {
 	case BehaviorProfileBasic:
 		if e.hugeFileActive() {
-			return "HUGE"
+			return e.hugeFileModeLabel()
 		}
 		return "BASIC"
 	case BehaviorProfileVim:
 		if e.hugeFileActive() {
-			return "HUGE"
+			return e.hugeFileModeLabel()
 		}
 		if e.profile.vim.visual {
 			return "VISUAL"
@@ -179,7 +179,7 @@ func (e *Editor) currentModeLabel() string {
 		return "NORMAL"
 	default:
 		if e.hugeFileActive() {
-			return "HUGE"
+			return e.hugeFileModeLabel()
 		}
 		if e.mode == ModeInsert {
 			return "INSERT"

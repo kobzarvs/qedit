@@ -22,6 +22,8 @@ type activeFileState struct {
 	langName              string
 	highlightEnabled      bool
 	highlightExpected     bool
+	hugeFileKind          editor.HugeFileKind
+	highlightMaxBytes     int64
 	highlightParseVersion uint64
 	lastChangeTick        uint64
 	lastHighlightStart    int
@@ -35,24 +37,30 @@ func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts
 	}
 	if !ed.OpenExistingBuffer(path) {
 		if fileStore != nil {
-			if info, err := fileStore.Stat(path); err == nil && shouldUseHugeFileMode(path, fileStore, info) {
-				langName, highlightEnabled := detectHighlightLanguage(fileStore, path, langs, highlightMaxBytes)
-				highlightAsync := highlightEnabled && langName != "" && isAsyncParseLang(langName) && ts != nil && fileStore != nil
-				startHugeFileLanguageServices(ls, ts, fileStore, langs, path, langName, highlightAsync)
-				if err := ed.LoadHugeFile(path, fileStore, info); err != nil {
-					return activeFileState{}, err
+			if info, err := fileStore.Stat(path); err == nil {
+				hugeKind, useHuge := hugeFileKindForRuntimeOpen(path, fileStore, info)
+				if useHuge {
+					langName, highlightEnabled := detectHighlightLanguage(fileStore, path, langs, highlightMaxBytes)
+					highlightAsync := highlightEnabled && langName != "" && isAsyncParseLang(langName) && ts != nil && fileStore != nil
+					lspAllowed := hugeKind == editor.HugeFileKindLongLine && (highlightMaxBytes <= 0 || info.Size <= highlightMaxBytes)
+					startHugeFileLanguageServices(ls, ts, fileStore, langs, path, langName, lspAllowed, highlightAsync)
+					if err := ed.LoadHugeFileWithKind(path, fileStore, info, hugeKind); err != nil {
+						return activeFileState{}, err
+					}
+					ed.SetHighlights(-1, -1, nil)
+					return activeFileState{
+						openPath:           path,
+						gitPath:            path,
+						langName:           langName,
+						highlightEnabled:   highlightAsync,
+						highlightExpected:  highlightAsync,
+						hugeFileKind:       hugeKind,
+						highlightMaxBytes:  highlightMaxBytes,
+						lastChangeTick:     ed.ChangeTick(),
+						lastHighlightStart: -1,
+						lastHighlightEnd:   -1,
+					}, nil
 				}
-				ed.SetHighlights(-1, -1, nil)
-				return activeFileState{
-					openPath:           path,
-					gitPath:            path,
-					langName:           langName,
-					highlightEnabled:   highlightAsync,
-					highlightExpected:  highlightAsync,
-					lastChangeTick:     ed.ChangeTick(),
-					lastHighlightStart: -1,
-					lastHighlightEnd:   -1,
-				}, nil
 			}
 		}
 		data, err := fileStore.Read(path)
@@ -67,13 +75,21 @@ func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts
 }
 
 func shouldUseHugeFileMode(path string, fileStore editor.FileStore, info editor.FileMetadata) bool {
+	_, ok := hugeFileKindForRuntimeOpen(path, fileStore, info)
+	return ok
+}
+
+func hugeFileKindForRuntimeOpen(path string, fileStore editor.FileStore, info editor.FileMetadata) (editor.HugeFileKind, bool) {
 	if hugeFileThresholdBytes > 0 && info.Size >= hugeFileThresholdBytes {
-		return true
+		return editor.HugeFileKindLargeFile, true
 	}
 	if hugeFileLongLineThresholdBytes <= 0 || hugeFileLongLineSampleBytes == 0 || fileStore == nil {
-		return false
+		return "", false
 	}
-	return fileHasLongLine(path, fileStore, hugeFileLongLineThresholdBytes, hugeFileLongLineSampleBytes)
+	if fileHasLongLine(path, fileStore, hugeFileLongLineThresholdBytes, hugeFileLongLineSampleBytes) {
+		return editor.HugeFileKindLongLine, true
+	}
+	return "", false
 }
 
 func fileHasLongLine(path string, fileStore editor.FileStore, threshold int, sampleBytes int64) bool {
@@ -143,6 +159,8 @@ func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager,
 			gitPath:            path,
 			highlightEnabled:   true,
 			highlightExpected:  false,
+			hugeFileKind:       "",
+			highlightMaxBytes:  highlightMaxBytes,
 			lastChangeTick:     ed.ChangeTick(),
 			lastHighlightStart: -1,
 			lastHighlightEnd:   -1,
@@ -173,6 +191,8 @@ func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager,
 		gitPath:            path,
 		highlightEnabled:   false,
 		highlightExpected:  false,
+		hugeFileKind:       ed.HugeFileKind(),
+		highlightMaxBytes:  highlightMaxBytes,
 		lastChangeTick:     ed.ChangeTick(),
 		lastHighlightStart: -1,
 		lastHighlightEnd:   -1,
@@ -200,11 +220,11 @@ func hasConfiguredLSP(ls *lsp.Manager, langs config.Languages, path string) bool
 	return ok && strings.TrimSpace(serverCfg.Command) != ""
 }
 
-func startHugeFileLanguageServices(ls *lsp.Manager, ts *treesitter.Engine, fileStore editor.FileStore, langs config.Languages, path, langName string, highlightAsync bool) {
+func startHugeFileLanguageServices(ls *lsp.Manager, ts *treesitter.Engine, fileStore editor.FileStore, langs config.Languages, path, langName string, lspAllowed bool, highlightAsync bool) {
 	if fileStore == nil || path == "" {
 		return
 	}
-	startLSP := hasConfiguredLSP(ls, langs, path)
+	startLSP := lspAllowed && hasConfiguredLSP(ls, langs, path)
 	startHighlight := highlightAsync && ts != nil && langName != ""
 	if !startLSP && !startHighlight {
 		return

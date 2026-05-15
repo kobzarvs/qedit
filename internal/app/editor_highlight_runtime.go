@@ -7,6 +7,8 @@ import (
 	"github.com/kobzarvs/qedit/internal/treesitter"
 )
 
+const invalidHighlightParseVersion = ^uint64(0)
+
 func launchHugeHighlightJob(ts *treesitter.Engine, state *editorRuntimeState, path string, visibleStart, visibleEnd, prefetchStart, prefetchEnd, colStart, colEnd, totalLines int) {
 	if ts == nil || state == nil || path == "" || visibleStart < 0 || visibleEnd < visibleStart {
 		return
@@ -125,6 +127,23 @@ func rangeCovers(coverStart, coverEnd, start, end int) bool {
 	return coverStart >= 0 && coverEnd >= coverStart && coverStart <= start && coverEnd >= end
 }
 
+func resetHugeHighlightJob(state *editorRuntimeState) {
+	if state == nil {
+		return
+	}
+	state.highlightParsed = false
+	state.highlightJobSeq++
+	state.highlightJobActive = false
+	state.highlightJobStart = -1
+	state.highlightJobEnd = -1
+	state.highlightJobColStart = -1
+	state.highlightJobColEnd = -1
+	if state.highlightJobCancel != nil {
+		close(state.highlightJobCancel)
+		state.highlightJobCancel = nil
+	}
+}
+
 func hugeHighlightTargetRange(ed *editor.Editor, start, end, lastVisibleStart int) (int, int, int, int) {
 	if ed == nil {
 		return start, end, start, end
@@ -182,8 +201,9 @@ func syncVisibleHighlights(
 	tick := ed.ChangeTick()
 	asyncLang := isAsyncParseLang(langName)
 	if ed.HugeFileMode() {
+		changed := tick != lastChangeTick
 		if state != nil {
-			if parsedEvent && (state.highlightParseVersion == 0 || parsedVersion == state.highlightParseVersion) {
+			if parsedEvent && (parsedVersion == state.highlightParseVersion || (state.highlightParseVersion == 0 && !ed.IsDirty())) {
 				state.highlightParsed = true
 			}
 		drain:
@@ -210,25 +230,31 @@ func syncVisibleHighlights(
 				}
 			}
 		}
-		if tick != lastChangeTick {
+		if changed {
 			lastChangeTick = tick
 		}
 		if ed.IsDirty() {
-			if state != nil {
-				state.highlightParsed = false
-				state.highlightJobSeq++
-				state.highlightJobActive = false
-				state.highlightJobStart = -1
-				state.highlightJobEnd = -1
-				state.highlightJobColStart = -1
-				state.highlightJobColEnd = -1
-				if state.highlightJobCancel != nil {
-					close(state.highlightJobCancel)
-					state.highlightJobCancel = nil
-				}
+			if state == nil || ts == nil || !asyncLang {
+				resetHugeHighlightJob(state)
+				ed.SetHighlights(-1, -1, nil)
+				return lastChangeTick, -1, -1
 			}
-			ed.SetHighlights(-1, -1, nil)
-			return lastChangeTick, -1, -1
+			if changed || state.highlightParseVersion == 0 {
+				resetHugeHighlightJob(state)
+				content, ok := ed.HighlightContent(state.highlightMaxBytes)
+				if !ok {
+					state.highlightParseVersion = invalidHighlightParseVersion
+					ed.SetHighlights(-1, -1, nil)
+					return lastChangeTick, -1, -1
+				}
+				state.highlightParseVersion = ts.Parse(openPath, langName, content)
+				state.highlightParsed = false
+				ed.SetHighlights(-1, -1, nil)
+				return lastChangeTick, -1, -1
+			}
+			if !state.highlightParsed {
+				return lastChangeTick, lastHighlightStart, lastHighlightEnd
+			}
 		}
 		start, end := ed.VisibleRange()
 		if state != nil {
