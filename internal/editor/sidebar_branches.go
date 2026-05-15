@@ -1,7 +1,5 @@
 package editor
 
-
-
 // SidebarBranchesContent implements SidebarContent for git branches
 type SidebarBranchesContent struct {
 	branches []string

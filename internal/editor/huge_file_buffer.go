@@ -192,17 +192,17 @@ type HugeFileBuffer struct {
 	cancelIndex        chan struct{}
 	indexDone          chan struct{}
 
-	lineSpans   map[int]hugeFileLineSpan
-	spanLRU     lruTracker
-	spanSorted  []int // sorted row keys for O(log n) nearest-span lookup
-	lineCache   map[int][]rune
-	cacheLRU    lruTracker
-	lineInfo    map[int]hugeFileLineInfo
-	infoLRU     lruTracker
-	lineEndings map[int]string
-	endingLRU   lruTracker
-	pageData    map[int]hugeFileCachedPageData
-	pageLRU     lruTracker
+	lineSpans    map[int]hugeFileLineSpan
+	spanLRU      lruTracker
+	spanSorted   []int // sorted row keys for O(log n) nearest-span lookup
+	lineCache    map[int][]rune
+	cacheLRU     lruTracker
+	lineInfo     map[int]hugeFileLineInfo
+	infoLRU      lruTracker
+	lineEndings  map[int]string
+	endingLRU    lruTracker
+	pageData     map[int]hugeFileCachedPageData
+	pageLRU      lruTracker
 	warmInFlight map[int]struct{}
 	closed       bool
 
@@ -277,17 +277,17 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 			fullyIndexed:       cachedIndex.FullyIndexed,
 			cancelIndex:        make(chan struct{}),
 			indexDone:          make(chan struct{}),
-			lineSpans:    make(map[int]hugeFileLineSpan),
-			spanLRU:      newLRUTracker(),
-			lineCache:    make(map[int][]rune),
-			cacheLRU:     newLRUTracker(),
-			lineInfo:     make(map[int]hugeFileLineInfo),
-			infoLRU:      newLRUTracker(),
-			lineEndings:  make(map[int]string),
-			endingLRU:    newLRUTracker(),
-			pageData:     make(map[int]hugeFileCachedPageData),
-			pageLRU:      newLRUTracker(),
-			warmInFlight: make(map[int]struct{}),
+			lineSpans:          make(map[int]hugeFileLineSpan),
+			spanLRU:            newLRUTracker(),
+			lineCache:          make(map[int][]rune),
+			cacheLRU:           newLRUTracker(),
+			lineInfo:           make(map[int]hugeFileLineInfo),
+			infoLRU:            newLRUTracker(),
+			lineEndings:        make(map[int]string),
+			endingLRU:          newLRUTracker(),
+			pageData:           make(map[int]hugeFileCachedPageData),
+			pageLRU:            newLRUTracker(),
+			warmInFlight:       make(map[int]struct{}),
 		}
 		if cachedIndex.FullyIndexed {
 			close(b.indexDone)
@@ -341,17 +341,17 @@ func OpenHugeFileBuffer(path string, meta FileMetadata, fs FileStore) (*HugeFile
 		fullyIndexed:       initial.fullyIndexed,
 		cancelIndex:        make(chan struct{}),
 		indexDone:          make(chan struct{}),
-		lineSpans:    make(map[int]hugeFileLineSpan),
-		spanLRU:      newLRUTracker(),
-		lineCache:    make(map[int][]rune),
-		cacheLRU:     newLRUTracker(),
-		lineInfo:     make(map[int]hugeFileLineInfo),
-		infoLRU:      newLRUTracker(),
-		lineEndings:  make(map[int]string),
-		endingLRU:    newLRUTracker(),
-		pageData:     make(map[int]hugeFileCachedPageData),
-		pageLRU:      newLRUTracker(),
-		warmInFlight: make(map[int]struct{}),
+		lineSpans:          make(map[int]hugeFileLineSpan),
+		spanLRU:            newLRUTracker(),
+		lineCache:          make(map[int][]rune),
+		cacheLRU:           newLRUTracker(),
+		lineInfo:           make(map[int]hugeFileLineInfo),
+		infoLRU:            newLRUTracker(),
+		lineEndings:        make(map[int]string),
+		endingLRU:          newLRUTracker(),
+		pageData:           make(map[int]hugeFileCachedPageData),
+		pageLRU:            newLRUTracker(),
+		warmInFlight:       make(map[int]struct{}),
 	}
 	b.storeLineSpansBatch(initial.lineSpans)
 

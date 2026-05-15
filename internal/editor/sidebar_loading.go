@@ -1,7 +1,5 @@
 package editor
 
-
-
 // SidebarLoadingContent shows a non-interactive loading placeholder.
 type SidebarLoadingContent struct {
 	title string

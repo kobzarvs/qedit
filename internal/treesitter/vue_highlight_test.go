@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	sitter "github.com/smacker/go-tree-sitter"
 	tree_sitter_vue "github.com/kobzarvs/qedit/internal/treesitter/vue"
+	sitter "github.com/smacker/go-tree-sitter"
 )
 
 func TestVueHighlightQueryCompiles(t *testing.T) {

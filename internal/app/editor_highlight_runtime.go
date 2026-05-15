@@ -20,6 +20,8 @@ func launchHugeHighlightJob(ts *treesitter.Engine, state *editorRuntimeState, pa
 	state.highlightJobActive = true
 	state.highlightJobStart = visibleStart
 	state.highlightJobEnd = visibleEnd
+	state.highlightJobColStart = colStart
+	state.highlightJobColEnd = colEnd
 	cancel := make(chan struct{})
 	state.highlightJobCancel = cancel
 	results := state.highlightResults
@@ -101,20 +103,22 @@ func launchHugeHighlightJob(ts *treesitter.Engine, state *editorRuntimeState, pa
 	}()
 }
 
-func drainParsedEvent(ts *treesitter.Engine, path string) bool {
+func drainParsedEvent(ts *treesitter.Engine, path string) (uint64, bool) {
 	parsed := false
+	version := uint64(0)
 drain:
 	for {
 		select {
 		case evt := <-ts.Events():
 			if evt.Kind == "parsed" && evt.Path == path {
 				parsed = true
+				version = evt.Version
 			}
 		default:
 			break drain
 		}
 	}
-	return parsed
+	return version, parsed
 }
 
 func rangeCovers(coverStart, coverEnd, start, end int) bool {
@@ -174,11 +178,12 @@ func syncVisibleHighlights(
 		return lastChangeTick, lastHighlightStart, lastHighlightEnd
 	}
 
-	tsParsed := drainParsedEvent(ts, openPath)
+	parsedVersion, parsedEvent := drainParsedEvent(ts, openPath)
 	tick := ed.ChangeTick()
+	asyncLang := isAsyncParseLang(langName)
 	if ed.HugeFileMode() {
 		if state != nil {
-			if tsParsed {
+			if parsedEvent && (state.highlightParseVersion == 0 || parsedVersion == state.highlightParseVersion) {
 				state.highlightParsed = true
 			}
 		drain:
@@ -192,6 +197,8 @@ func syncVisibleHighlights(
 						state.highlightJobActive = false
 						state.highlightJobStart = -1
 						state.highlightJobEnd = -1
+						state.highlightJobColStart = -1
+						state.highlightJobColEnd = -1
 						state.highlightJobCancel = nil
 						continue
 					}
@@ -213,6 +220,8 @@ func syncVisibleHighlights(
 				state.highlightJobActive = false
 				state.highlightJobStart = -1
 				state.highlightJobEnd = -1
+				state.highlightJobColStart = -1
+				state.highlightJobColEnd = -1
 				if state.highlightJobCancel != nil {
 					close(state.highlightJobCancel)
 					state.highlightJobCancel = nil
@@ -232,19 +241,25 @@ func syncVisibleHighlights(
 		}
 		colStart, colEnd := ed.HighlightWindowCols()
 		linesCovered := ed.HighlightsCover(start, end)
-		colsCovered := linesCovered && ed.HighlightsColumnsHaveSpans(start, end, colStart, colEnd)
+		columnsQueried := ed.HighlightsColumnsCover(colStart, colEnd)
+		colsCovered := linesCovered && columnsQueried && ed.HighlightsColumnsHaveSpans(start, end, colStart, colEnd)
 		if linesCovered && colsCovered {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
 		visibleStart, visibleEnd, prefetchStart, prefetchEnd := hugeHighlightTargetRange(ed, start, end, state.lastVisibleStart)
-		// Only skip re-launch if the running job covers both lines AND columns.
-		if colsCovered && state.highlightJobActive && rangeCovers(state.highlightJobStart, state.highlightJobEnd, start, end) {
+		jobCoversWindow := state.highlightJobActive &&
+			rangeCovers(state.highlightJobStart, state.highlightJobEnd, start, end) &&
+			rangeCovers(state.highlightJobColStart, state.highlightJobColEnd, colStart, colEnd)
+		if jobCoversWindow {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
 		if ts == nil {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
-		if colsCovered && state.highlightJobActive && state.highlightJobStart == visibleStart && state.highlightJobEnd == visibleEnd {
+		if state.highlightJobActive &&
+			state.highlightJobStart == visibleStart &&
+			state.highlightJobEnd == visibleEnd &&
+			rangeCovers(state.highlightJobColStart, state.highlightJobColEnd, colStart, colEnd) {
 			return lastChangeTick, lastHighlightStart, lastHighlightEnd
 		}
 		// Add overscan so horizontal scrolling within the window doesn't re-query.
@@ -261,14 +276,25 @@ func syncVisibleHighlights(
 
 	changed := tick != lastChangeTick
 	asyncChanged := false
+	if asyncLang && parsedEvent && state != nil && parsedVersion == state.highlightParseVersion {
+		state.highlightParsed = true
+	}
 	if changed {
 		lastChangeTick = tick
-		if isAsyncParseLang(langName) {
+		if asyncLang {
 			// Adjust current visible highlights before async reparse completes.
 			if edit, ok := ed.PeekLastEdit(); ok {
 				ed.AdjustHighlights(edit.StartRow, edit.OldEndRow, edit.NewEndRow)
+			} else {
+				ed.SetHighlights(-1, -1, nil)
+				lastHighlightStart = -1
+				lastHighlightEnd = -1
 			}
-			ts.Parse(openPath, langName, ed.Content())
+			parseVersion := ts.Parse(openPath, langName, ed.Content())
+			if state != nil {
+				state.highlightParseVersion = parseVersion
+				state.highlightParsed = false
+			}
 			asyncChanged = true
 		} else if edit, ok := ed.ConsumeLastEdit(); ok {
 			tsEdit := sitter.EditInput{
@@ -295,7 +321,11 @@ func syncVisibleHighlights(
 	}
 
 	start, end := ed.VisibleRange()
-	if asyncChanged && !tsParsed {
+	if asyncChanged {
+		return lastChangeTick, lastHighlightStart, lastHighlightEnd
+	}
+	tsParsed := parsedEvent && (state == nil || state.highlightParseVersion == 0 || parsedVersion == state.highlightParseVersion)
+	if asyncLang && state != nil && !state.highlightParsed {
 		return lastChangeTick, lastHighlightStart, lastHighlightEnd
 	}
 	if changed || tsParsed || start != lastHighlightStart || end != lastHighlightEnd {

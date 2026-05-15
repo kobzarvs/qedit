@@ -320,9 +320,6 @@ func (e *Editor) drawLineSegment(s Screen, y, w, startX int, line []rune, logica
 	renderSpans := clipHighlightSpans(spans, spanClipStart, spanClipEnd)
 	walker := newHighlightWalker(renderSpans)
 	fallbackStyle := e.styleMain
-	if highlightActive && len(renderSpans) > 0 {
-		fallbackStyle = e.styleSyntaxUnknown
-	}
 	conflictBg, conflictActive := e.conflictBackground(conflictKind)
 	if conflictActive {
 		fg, _, _ := fallbackStyle.Decompose()

@@ -17,14 +17,15 @@ var hugeFileLongLineThresholdBytes = 128 << 10
 var hugeFileLongLineSampleBytes int64 = 1 << 20
 
 type activeFileState struct {
-	openPath           string
-	gitPath            string
-	langName           string
-	highlightEnabled   bool
-	highlightExpected  bool
-	lastChangeTick     uint64
-	lastHighlightStart int
-	lastHighlightEnd   int
+	openPath              string
+	gitPath               string
+	langName              string
+	highlightEnabled      bool
+	highlightExpected     bool
+	highlightParseVersion uint64
+	lastChangeTick        uint64
+	lastHighlightStart    int
+	lastHighlightEnd      int
 }
 
 func openRuntimeFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager, ts *treesitter.Engine, langs config.Languages, fileStore editor.FileStore, path string, highlightMaxBytes int64) (activeFileState, error) {
@@ -151,7 +152,7 @@ func activateEditorFile(ed *editor.Editor, screen tcell.Screen, ls *lsp.Manager,
 
 		if state.highlightEnabled && state.langName != "" {
 			if isAsyncParseLang(state.langName) {
-				ts.Parse(path, state.langName, content)
+				state.highlightParseVersion = ts.Parse(path, state.langName, content)
 			} else if ts.ParseSync(path, state.langName, content) {
 				if _, end, ok := applyInitialScreenHighlights(ed, screen, ts, path); ok {
 					state.lastHighlightStart = 0

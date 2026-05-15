@@ -24,6 +24,27 @@ mechanical code splits and future feature work move toward the same end state.
 - `editor.profile` is now explicit runtime configuration and can also be
   changed from inside the editor via `:profile basic|helix|vim`.
 
+## Current Implementation
+
+The current codebase has not been physically split into the target packages
+below. The actual package layout is:
+- `cmd/qedit`: binary entry point.
+- `internal/app`: runtime orchestration, screen setup, file monitoring, git,
+  LSP, tree-sitter, and editor runtime requests.
+- `internal/editor`: editor state, input/profile behavior, rendering helpers,
+  buffer management, command/sidebar/language/git registries, and runtime
+  request creation.
+- `internal/ui`: tcell style and event adapters.
+- `internal/treesitter`: parser/highlight engine. Async parse requests are
+  versioned and coalesced by active path so the runtime can ignore stale parsed
+  events.
+- `internal/lsp`, `internal/gitinfo`, `internal/integrations`,
+  `internal/config`, `internal/session`, and `internal/plugins`: external
+  service and persistence boundaries.
+
+`internal/editor` still contains UI-adjacent rendering and input code. Treat the
+layering below as the desired direction, not the current directory structure.
+
 ## Target Layers
 
 ### `internal/editor/core`

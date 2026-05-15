@@ -141,3 +141,37 @@ func TestRenderSyntaxHighlightStyle(t *testing.T) {
 		t.Fatalf("highlight foreground not applied")
 	}
 }
+
+func TestRenderUncoveredHighlightedTextUsesMainStyle(t *testing.T) {
+	cfg := config.Default()
+	cfg.Editor.LineNumbers = "off"
+	e := New(optionsFromConfig(cfg))
+	applyTestStyles(e)
+	e.text = NewTextBufferFromString("var esbuild = 1")
+	e.SetHighlights(0, 0, map[int][]HighlightSpan{
+		0: {
+			{StartCol: 0, EndCol: 3, Kind: "keyword"},
+			{StartCol: 14, EndCol: 15, Kind: "number"},
+		},
+	})
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(30, 3)
+
+	e.Render(wrapScreen(s))
+	cells, w, _ := s.GetContents()
+	uncoveredStyle := cells[0*w+4].Style
+	mainFg, _, _ := e.styleMain.Decompose()
+	uncoveredFg, _, _ := uncoveredStyle.Decompose()
+	if Color(uncoveredFg) != mainFg {
+		t.Fatalf("uncovered highlighted text fg = %v, want main fg %v", uncoveredFg, mainFg)
+	}
+	unknownFg, _, _ := e.styleSyntaxUnknown.Decompose()
+	if Color(uncoveredFg) == unknownFg {
+		t.Fatalf("uncovered highlighted text should not use syntax unknown style")
+	}
+}

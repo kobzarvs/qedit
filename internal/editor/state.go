@@ -248,24 +248,28 @@ func (e *Editor) HighlightRange() (int, int, bool) {
 	return e.highlight.start, e.highlight.end, true
 }
 
-// AdjustHighlights shifts the cached highlight map in-place after an edit.
-// Lines in [editStart, oldEnd) are removed; lines >= oldEnd shift by (newEnd - oldEnd).
+// AdjustHighlights shifts the cached highlight map after an edit and drops
+// the edited rows so stale spans are not rendered while async parsing catches up.
 func (e *Editor) AdjustHighlights(editStart, oldEnd, newEnd int) {
 	if e.highlight.spans == nil {
 		return
 	}
-	delta := newEnd - oldEnd // negative for deletions, positive for insertions
-	if delta == 0 && editStart == oldEnd {
-		return
+	if editStart < 0 {
+		editStart = 0
 	}
+	if oldEnd < editStart {
+		oldEnd = editStart
+	}
+	delta := newEnd - oldEnd // negative for deletions, positive for insertions
 	updated := make(map[int][]HighlightSpan, len(e.highlight.spans))
 	for line, spans := range e.highlight.spans {
 		if line < editStart {
 			updated[line] = spans
-		} else if line >= oldEnd {
+		} else if line > oldEnd {
 			updated[line+delta] = spans
 		}
-		// lines in [editStart, oldEnd) are dropped
+		// Lines in [editStart, oldEnd] are dropped because their spans may
+		// describe text that was edited, split, or joined.
 	}
 	e.highlight.spans = updated
 	e.highlight.rebuildRangesFromSpans()

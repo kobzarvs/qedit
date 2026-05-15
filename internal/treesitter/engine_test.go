@@ -1,6 +1,7 @@
 package treesitter
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -54,6 +55,65 @@ func TestEngineOpenFileUnknown(t *testing.T) {
 	}
 }
 
+func TestAsyncParseKeepsLatestQueuedText(t *testing.T) {
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	e := New(langs)
+
+	path := "sample.js"
+	const requests = 20
+	for i := 0; i < requests; i++ {
+		version := e.Parse(path, "javascript", fmt.Sprintf("const value = %d;\n", i))
+		if version != uint64(i+1) {
+			t.Fatalf("parse version = %d, want %d", version, i+1)
+		}
+	}
+
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	defer func() { _ = e.Stop() }()
+
+	select {
+	case ev := <-e.Events():
+		if ev.Kind != "parsed" || ev.Path != path {
+			t.Fatalf("event = %#v, want parsed event for %s", ev, path)
+		}
+		if ev.Version != requests {
+			t.Fatalf("event version = %d, want %d", ev.Version, requests)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for parse event")
+	}
+
+	e.mu.RLock()
+	got := string(e.sources[path])
+	e.mu.RUnlock()
+	want := fmt.Sprintf("const value = %d;\n", requests-1)
+	if got != want {
+		t.Fatalf("stored source = %q, want %q", got, want)
+	}
+}
+
+func TestJSONHighlightsUsePlainFallbackForInvalidLine(t *testing.T) {
+	e := New(config.Languages{})
+	line := `{"event_type":"bi`
+
+	spans := e.highlightJSONLine(line)
+	if len(spans) == 0 {
+		t.Fatalf("expected fallback span for invalid JSON line")
+	}
+	if spans[0].Kind != "plain" || spans[0].StartCol != 0 || spans[0].EndCol != len([]rune(line)) {
+		t.Fatalf("first span = %#v, want full-line plain fallback", spans[0])
+	}
+	if kind, ok := highlightKindForTest(spans, 15); !ok || kind != "plain" {
+		t.Fatalf("highlight at unfinished string = (%q,%v), want plain,true; spans=%#v", kind, ok, spans)
+	}
+}
+
 func TestMarkdownHighlightRuneColumns(t *testing.T) {
 	langs := config.Languages{
 		Languages: []config.Language{
@@ -86,6 +146,48 @@ func TestMarkdownHighlightRuneColumns(t *testing.T) {
 	}
 	if !spanCoversKind(lineSpans, codeStart, "string") {
 		t.Fatalf("expected code span highlight at rune col %d", codeStart)
+	}
+}
+
+func highlightKindForTest(spans []HighlightSpan, col int) (string, bool) {
+	bestKind := ""
+	bestPriority := 0
+	for _, span := range spans {
+		if col < span.StartCol || col >= span.EndCol {
+			continue
+		}
+		priority := highlightPriorityForTest(span.Kind)
+		if priority > bestPriority {
+			bestPriority = priority
+			bestKind = span.Kind
+		}
+	}
+	if bestKind == "" {
+		return "", false
+	}
+	return bestKind, true
+}
+
+func highlightPriorityForTest(kind string) int {
+	switch kind {
+	case "comment":
+		return 7
+	case "string":
+		return 6
+	case "keyword":
+		return 5
+	case "constant", "builtin", "yaml-key":
+		return 4
+	case "parameter", "yaml-list-item", "type", "function", "number":
+		return 3
+	case "field", "variable", "yaml-value":
+		return 2
+	case "operator", "punctuation", "plain":
+		return 1
+	case "text":
+		return 8
+	default:
+		return 0
 	}
 }
 
@@ -234,12 +336,12 @@ func TestMultiLineTemplateStringHighlightsCrossChunkBoundary(t *testing.T) {
 	// starts at line 0) must still be captured — otherwise the interior lines
 	// get no "string" highlight and render as styleSyntaxUnknown (red).
 	var sb strings.Builder
-	sb.WriteString("const css = `\n")       // line 0: template start
+	sb.WriteString("const css = `\n") // line 0: template start
 	for i := 0; i < 10; i++ {
 		sb.WriteString("  .class" + string(rune('a'+i)) + " { color: red; }\n") // lines 1-10
 	}
-	sb.WriteString("`;\n")                   // line 11: template end
-	sb.WriteString("const x = 42;\n")        // line 12
+	sb.WriteString("`;\n")            // line 11: template end
+	sb.WriteString("const x = 42;\n") // line 12
 
 	path := "tpl.js"
 	text := sb.String()
@@ -338,11 +440,11 @@ func TestLongLineInsideTemplateLiteralGetsStringSpan(t *testing.T) {
 	// The individual long-line query must still capture the template_string
 	// node starting on a previous row.
 	var sb strings.Builder
-	sb.WriteString("var css = `\n")                                        // line 0: template start
-	sb.WriteString("  .short { color: red; }\n")                           // line 1: short
+	sb.WriteString("var css = `\n")                                               // line 0: template start
+	sb.WriteString("  .short { color: red; }\n")                                  // line 1: short
 	sb.WriteString("  .long { content: '" + strings.Repeat("x", 5000) + "'; }\n") // line 2: long (>4096 bytes)
-	sb.WriteString("  .another { color: blue; }\n")                        // line 3: short
-	sb.WriteString("`;\n")                                                 // line 4: template end
+	sb.WriteString("  .another { color: blue; }\n")                               // line 3: short
+	sb.WriteString("`;\n")                                                        // line 4: template end
 
 	path := "long_in_tpl.js"
 	text := sb.String()

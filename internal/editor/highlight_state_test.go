@@ -45,6 +45,31 @@ func TestSetHighlightsNormalizesAndSortsLineSpans(t *testing.T) {
 	}
 }
 
+func TestAdjustHighlightsDropsEditedRowsAndShiftsFollowingRows(t *testing.T) {
+	e := New(Options{})
+	e.SetHighlights(0, 3, map[int][]HighlightSpan{
+		0: {{StartCol: 0, EndCol: 1, Kind: "keyword"}},
+		1: {{StartCol: 0, EndCol: 1, Kind: "string"}},
+		2: {{StartCol: 0, EndCol: 1, Kind: "comment"}},
+		3: {{StartCol: 0, EndCol: 1, Kind: "number"}},
+	})
+
+	e.AdjustHighlights(1, 1, 2)
+
+	if e.highlight.lineCovered(1) {
+		t.Fatalf("edited row should not stay covered by stale highlights")
+	}
+	if !e.highlight.lineCovered(0) {
+		t.Fatalf("row before edit should remain covered")
+	}
+	if got := e.highlight.spans[3]; len(got) != 1 || got[0].Kind != "comment" {
+		t.Fatalf("row after edit not shifted correctly: %#v", got)
+	}
+	if got := e.highlight.spans[4]; len(got) != 1 || got[0].Kind != "number" {
+		t.Fatalf("second row after edit not shifted correctly: %#v", got)
+	}
+}
+
 func TestClipHighlightSpansAndWalker(t *testing.T) {
 	spans := normalizeHighlightSpans([]HighlightSpan{
 		{StartCol: 0, EndCol: 1000, Kind: "plain"},

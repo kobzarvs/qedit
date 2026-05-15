@@ -140,6 +140,86 @@ func TestHugeModeAsyncHighlightsSmallLongLineFile(t *testing.T) {
 	t.Fatalf("expected async highlights for huge long line file")
 }
 
+func TestHugeModeRequeriesCoveredLongLineAtFarColumn(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mermaid.min.js")
+	line := `const banner = "` + strings.Repeat("a", 150000) + `";var tail=1;`
+	content := line + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	langs := config.Languages{
+		Languages: []config.Language{
+			{Name: "javascript", FileTypes: []string{"js"}},
+		},
+	}
+	ts := treesitter.New(langs)
+	if !ts.ParseSync(path, "javascript", content) {
+		t.Fatalf("ParseSync failed")
+	}
+
+	store := integrations.FileStore{}
+	info, err := store.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+	ed := editor.New(editor.Options{LineNumbers: "off"})
+	ed.SetStyles(appTestEditorStyles())
+	if err := ed.LoadHugeFile(path, store, info); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	screen := newAppTestScreen(96, 12)
+	ed.Render(screen)
+	ed.JumpToLocation(0, len([]rune(line)))
+	ed.Render(screen)
+
+	start, end := ed.VisibleRange()
+	colStart, colEnd := ed.HighlightWindowCols()
+	if colStart < 100000 {
+		t.Fatalf("expected far horizontal window, got [%d,%d)", colStart, colEnd)
+	}
+
+	// Reproduce the stale-cache shape from huge-mode background highlighting:
+	// the visible line range is marked as covered, but only for an old column
+	// window near the start of a very long line.
+	ed.MergeHighlights(start, end, map[int][]editor.HighlightSpan{})
+	ed.SetHighlightColumns(0, 128)
+
+	rtState := newEditorRuntimeState(ed)
+	rtState.openPath = path
+	rtState.langName = "javascript"
+	rtState.highlightEnabled = true
+	rtState.highlightParsed = true
+
+	lastTick := ed.ChangeTick()
+	lastStart := -1
+	lastEnd := -1
+	seqBefore := rtState.highlightJobSeq
+	lastTick, lastStart, lastEnd = syncVisibleHighlights(ed, ts, &rtState, path, "javascript", true, lastTick, lastStart, lastEnd)
+	if rtState.highlightJobSeq == seqBefore || !rtState.highlightJobActive {
+		t.Fatalf("expected a new highlight job for far column window; seq before=%d after=%d active=%v", seqBefore, rtState.highlightJobSeq, rtState.highlightJobActive)
+	}
+
+	seqAfterLaunch := rtState.highlightJobSeq
+	lastTick, lastStart, lastEnd = syncVisibleHighlights(ed, ts, &rtState, path, "javascript", true, lastTick, lastStart, lastEnd)
+	if rtState.highlightJobSeq != seqAfterLaunch {
+		t.Fatalf("highlight job relaunched while matching column window was pending: before=%d after=%d", seqAfterLaunch, rtState.highlightJobSeq)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		lastTick, lastStart, lastEnd = syncVisibleHighlights(ed, ts, &rtState, path, "javascript", true, lastTick, lastStart, lastEnd)
+		ed.Render(screen)
+		if screen.rowHasNonMainText(0, appTestMainFG) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expected rendered syntax style at far column after async highlight job")
+}
+
 func TestHugeModeStartsLSPForJavaScript(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mermaid.min.js")
@@ -204,6 +284,126 @@ func TestHugeModeStartsLSPForJavaScript(t *testing.T) {
 	}
 	if !strings.Contains(text, "textDocument/didOpen") {
 		t.Fatalf("missing didOpen in %q", text)
+	}
+}
+
+const appTestMainFG editor.Color = 1
+
+type appTestStyle struct {
+	fg    editor.Color
+	bg    editor.Color
+	attrs editor.AttrMask
+}
+
+func (s appTestStyle) Decompose() (editor.Color, editor.Color, editor.AttrMask) {
+	return s.fg, s.bg, s.attrs
+}
+
+func (s appTestStyle) Foreground(c editor.Color) editor.Style {
+	s.fg = c
+	return s
+}
+
+func (s appTestStyle) Background(c editor.Color) editor.Style {
+	s.bg = c
+	return s
+}
+
+type appTestCell struct {
+	ch    rune
+	style editor.Style
+}
+
+type appTestScreen struct {
+	w     int
+	h     int
+	cells map[[2]int]appTestCell
+}
+
+func newAppTestScreen(w, h int) *appTestScreen {
+	return &appTestScreen{w: w, h: h, cells: make(map[[2]int]appTestCell)}
+}
+
+func (s *appTestScreen) Size() (int, int)      { return s.w, s.h }
+func (s *appTestScreen) SetStyle(editor.Style) {}
+func (s *appTestScreen) Clear() {
+	clear(s.cells)
+}
+func (s *appTestScreen) SetContent(x, y int, ch rune, _ []rune, style editor.Style) {
+	if x < 0 || x >= s.w || y < 0 || y >= s.h {
+		return
+	}
+	s.cells[[2]int{x, y}] = appTestCell{ch: ch, style: style}
+}
+func (s *appTestScreen) Show()                             {}
+func (s *appTestScreen) ShowCursor(int, int)               {}
+func (s *appTestScreen) HideCursor()                       {}
+func (s *appTestScreen) SetCursorStyle(editor.CursorStyle) {}
+
+func (s *appTestScreen) rowHasNonMainText(y int, mainFG editor.Color) bool {
+	for x := 0; x < s.w; x++ {
+		cell, ok := s.cells[[2]int{x, y}]
+		if !ok || cell.ch == ' ' || cell.style == nil {
+			continue
+		}
+		fg, _, _ := cell.style.Decompose()
+		if fg != mainFG {
+			return true
+		}
+	}
+	return false
+}
+
+func appTestEditorStyles() editor.EditorStyles {
+	main := appTestStyle{fg: appTestMainFG}
+	lineNumber := appTestStyle{fg: 2}
+	status := appTestStyle{fg: 3}
+	selection := appTestStyle{fg: appTestMainFG, bg: 4}
+	keyword := appTestStyle{fg: 10}
+	stringStyle := appTestStyle{fg: 11}
+	comment := appTestStyle{fg: 12}
+	typeStyle := appTestStyle{fg: 13}
+	function := appTestStyle{fg: 14}
+	number := appTestStyle{fg: 15}
+	constant := appTestStyle{fg: 16}
+	operator := appTestStyle{fg: 17}
+	punctuation := appTestStyle{fg: 18}
+	field := appTestStyle{fg: 19}
+	builtin := appTestStyle{fg: 20}
+	variable := appTestStyle{fg: 21}
+	parameter := appTestStyle{fg: 22}
+	return editor.EditorStyles{
+		Main:              main,
+		Status:            status,
+		StatusWarning:     status,
+		Command:           status,
+		LineNumber:        lineNumber,
+		LineNumberActive:  lineNumber,
+		Selection:         selection,
+		SearchMatch:       selection,
+		SyntaxKeyword:     keyword,
+		SyntaxString:      stringStyle,
+		SyntaxComment:     comment,
+		SyntaxType:        typeStyle,
+		SyntaxFunction:    function,
+		SyntaxNumber:      number,
+		SyntaxConstant:    constant,
+		SyntaxOperator:    operator,
+		SyntaxPunctuation: punctuation,
+		SyntaxField:       field,
+		SyntaxBuiltin:     builtin,
+		SyntaxUnknown:     main,
+		SyntaxVariable:    variable,
+		SyntaxParameter:   parameter,
+		TableBorder:       appTestStyle{fg: 23},
+		Branch:            status,
+		MainBranch:        status,
+		LayoutUS:          status,
+		LayoutRU:          status,
+		LayoutOther:       status,
+		AutoComplete:      status,
+		ScrollIndicator:   status,
+		BoxBorder:         status,
 	}
 }
 

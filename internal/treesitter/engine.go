@@ -27,25 +27,28 @@ import (
 )
 
 type Event struct {
-	Kind string
-	Path string
+	Kind    string
+	Path    string
+	Version uint64
 }
 
 type Engine struct {
-	langs         config.Languages
-	parsers       map[string]*sitter.Parser
-	trees         map[string]*sitter.Tree
-	queries       map[string]*sitter.Query
+	langs           config.Languages
+	parsers         map[string]*sitter.Parser
+	trees           map[string]*sitter.Tree
+	queries         map[string]*sitter.Query
 	sources         map[string][]byte
 	sourceLines     map[string][][]byte
 	sourceASCII     map[string]bool
 	sourceLineASCII map[string][]bool
-	mdInlineQuery *sitter.Query
-	reqCh         chan parseRequest
-	events        chan Event
-	stopCh        chan struct{}
-	opMu          sync.Mutex
-	mu            sync.RWMutex
+	mdInlineQuery   *sitter.Query
+	reqCh           chan struct{}
+	events          chan Event
+	stopCh          chan struct{}
+	pendingParses   map[string]parseRequest
+	parseVersions   map[string]uint64
+	opMu            sync.Mutex
+	mu              sync.RWMutex
 }
 
 type HighlightSpan struct {
@@ -58,6 +61,7 @@ type parseRequest struct {
 	path     string
 	language string
 	text     string
+	version  uint64
 }
 
 func (e *Engine) ensureQuery(name string) *sitter.Query {
@@ -91,17 +95,19 @@ func (e *Engine) ensureQuery(name string) *sitter.Query {
 
 func New(langs config.Languages) *Engine {
 	return &Engine{
-		langs:       langs,
-		parsers:     make(map[string]*sitter.Parser),
-		trees:       make(map[string]*sitter.Tree),
-		queries:     make(map[string]*sitter.Query),
+		langs:           langs,
+		parsers:         make(map[string]*sitter.Parser),
+		trees:           make(map[string]*sitter.Tree),
+		queries:         make(map[string]*sitter.Query),
 		sources:         make(map[string][]byte),
 		sourceLines:     make(map[string][][]byte),
 		sourceASCII:     make(map[string]bool),
 		sourceLineASCII: make(map[string][]bool),
-		reqCh:       make(chan parseRequest, 8),
-		events:      make(chan Event, 16),
-		stopCh:      make(chan struct{}),
+		reqCh:           make(chan struct{}, 1),
+		events:          make(chan Event, 16),
+		stopCh:          make(chan struct{}),
+		pendingParses:   make(map[string]parseRequest),
+		parseVersions:   make(map[string]uint64),
 	}
 }
 
@@ -204,21 +210,26 @@ func (e *Engine) OpenFile(path, text string) {
 		e.sourceLineASCII[path] = lineASCII
 		e.mu.Unlock()
 		e.opMu.Unlock()
-		e.sendEvent("parsed", path)
+		e.sendEvent("parsed", path, 0)
 		return
 	}
 
 	e.Parse(path, lang.Name, text)
 }
 
-func (e *Engine) Parse(path, language, text string) {
-	req := parseRequest{path: path, language: language, text: text}
+func (e *Engine) Parse(path, language, text string) uint64 {
+	e.mu.Lock()
+	e.parseVersions[path]++
+	version := e.parseVersions[path]
+	e.pendingParses[path] = parseRequest{path: path, language: language, text: text, version: version}
+	e.mu.Unlock()
+
 	select {
-	case e.reqCh <- req:
-		logger.Debug("treesitter parse queued", "path", path, "lang", language, "bytes", len(text))
+	case e.reqCh <- struct{}{}:
 	default:
-		logger.Debug("treesitter parse dropped", "path", path, "lang", language, "bytes", len(text))
 	}
+	logger.Debug("treesitter parse queued", "path", path, "lang", language, "version", version, "bytes", len(text))
+	return version
 }
 
 func (e *Engine) loop() {
@@ -226,42 +237,83 @@ func (e *Engine) loop() {
 		select {
 		case <-e.stopCh:
 			return
-		case req := <-e.reqCh:
-			start := time.Now()
-			logger.Debug("treesitter parse start", "path", req.path, "lang", req.language, "mode", "async", "bytes", len(req.text))
-			e.opMu.Lock()
-			e.mu.RLock()
-			parser, ok := e.parsers[req.language]
-			e.mu.RUnlock()
-			if !ok {
-				e.opMu.Unlock()
-				logger.Debug("treesitter parse skip", "path", req.path, "lang", req.language, "mode", "async", "reason", "no-parser")
-				continue
+		case <-e.reqCh:
+			for {
+				req, ok := e.nextPendingParse()
+				if !ok {
+					break
+				}
+				e.parseAsync(req)
 			}
-			e.mu.Lock()
-			tree, err := parser.ParseCtx(context.Background(), nil, []byte(req.text))
-			source := []byte(req.text)
-			lines, asciiOnly, lineASCII := buildSourceMetadata(source)
-			e.trees[req.path] = tree
-			e.sources[req.path] = source
-			e.sourceLines[req.path] = lines
-			e.sourceASCII[req.path] = asciiOnly
-			e.sourceLineASCII[req.path] = lineASCII
-			e.mu.Unlock()
-			e.opMu.Unlock()
-			if err != nil {
-				logger.Warn("treesitter parse error", "path", req.path, "lang", req.language, "mode", "async", "error", err, "duration", time.Since(start))
-			} else {
-				logger.Debug("treesitter parse done", "path", req.path, "lang", req.language, "mode", "async", "duration", time.Since(start))
-			}
-			e.sendEvent("parsed", req.path)
 		}
 	}
 }
 
-func (e *Engine) sendEvent(kind, path string) {
+func (e *Engine) nextPendingParse() (parseRequest, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for path, req := range e.pendingParses {
+		delete(e.pendingParses, path)
+		return req, true
+	}
+	return parseRequest{}, false
+}
+
+func (e *Engine) parseAsync(req parseRequest) {
+	start := time.Now()
+	logger.Debug("treesitter parse start", "path", req.path, "lang", req.language, "mode", "async", "version", req.version, "bytes", len(req.text))
+	e.opMu.Lock()
+	e.mu.RLock()
+	parser, ok := e.parsers[req.language]
+	e.mu.RUnlock()
+	if !ok {
+		e.opMu.Unlock()
+		logger.Debug("treesitter parse skip", "path", req.path, "lang", req.language, "mode", "async", "version", req.version, "reason", "no-parser")
+		return
+	}
+
+	tree, err := parser.ParseCtx(context.Background(), nil, []byte(req.text))
+	source := []byte(req.text)
+	lines, asciiOnly, lineASCII := buildSourceMetadata(source)
+
+	e.mu.Lock()
+	latest := e.parseVersions[req.path]
+	stale := req.version < latest
+	if !stale {
+		e.trees[req.path] = tree
+		e.sources[req.path] = source
+		e.sourceLines[req.path] = lines
+		e.sourceASCII[req.path] = asciiOnly
+		e.sourceLineASCII[req.path] = lineASCII
+	}
+	e.mu.Unlock()
+	e.opMu.Unlock()
+
+	if stale {
+		logger.Debug("treesitter parse stale", "path", req.path, "lang", req.language, "mode", "async", "version", req.version, "latest", latest, "duration", time.Since(start))
+		return
+	}
+	if err != nil {
+		logger.Warn("treesitter parse error", "path", req.path, "lang", req.language, "mode", "async", "version", req.version, "error", err, "duration", time.Since(start))
+	} else {
+		logger.Debug("treesitter parse done", "path", req.path, "lang", req.language, "mode", "async", "version", req.version, "duration", time.Since(start))
+	}
+	e.sendEvent("parsed", req.path, req.version)
+}
+
+func (e *Engine) sendEvent(kind, path string, version uint64) {
+	evt := Event{Kind: kind, Path: path, Version: version}
 	select {
-	case e.events <- Event{Kind: kind, Path: path}:
+	case e.events <- evt:
+		return
+	default:
+	}
+	select {
+	case <-e.events:
+	default:
+	}
+	select {
+	case e.events <- evt:
 	default:
 	}
 }
@@ -301,7 +353,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 		e.sourceLineASCII[path] = lineASCII
 		e.mu.Unlock()
 		e.opMu.Unlock()
-		e.sendEvent("parsed", path)
+		e.sendEvent("parsed", path, 0)
 		logger.Debug("treesitter parse done", "path", path, "lang", lang, "mode", "sync", "duration", time.Since(start))
 		return true
 	}
@@ -352,7 +404,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	e.sources[path] = source
 	e.sourceLines[path] = lines
 	e.sourceASCII[path] = asciiOnly
-		e.sourceLineASCII[path] = lineASCII
+	e.sourceLineASCII[path] = lineASCII
 	e.mu.Unlock()
 	e.opMu.Unlock()
 	if err != nil {
@@ -360,7 +412,7 @@ func (e *Engine) parseSync(path, language, text string, edit *sitter.EditInput) 
 	} else {
 		logger.Debug("treesitter parse done", "path", path, "lang", lang, "mode", "sync", "duration", time.Since(start))
 	}
-	e.sendEvent("parsed", path)
+	e.sendEvent("parsed", path, 0)
 	return true
 }
 
@@ -1601,7 +1653,11 @@ func (e *Engine) regexHighlights(langName string, source []byte, startLine, endL
 }
 
 func (e *Engine) highlightJSONLine(line string) []HighlightSpan {
-	var spans []HighlightSpan
+	lineLen := len([]rune(line))
+	if lineLen == 0 {
+		return nil
+	}
+	spans := []HighlightSpan{{StartCol: 0, EndCol: lineLen, Kind: "plain"}}
 
 	// Find all strings and determine if they are keys or values
 	for _, loc := range jsonString.FindAllStringIndex(line, -1) {
