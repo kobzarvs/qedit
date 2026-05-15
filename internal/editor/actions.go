@@ -342,6 +342,7 @@ func (e *Editor) hugeFileAllowsAction(action string) bool {
 		actionToggleLineNumbers,
 		actionEnterInsert, actionEnterNormal,
 		actionBackspace, actionNewline, actionDeleteChar,
+		actionInsertTab, actionIndent, actionUnindent,
 		actionDeleteLine, actionDelete, actionChange,
 		actionYank, actionPaste, actionPasteBefore,
 		actionAppend, actionAppendLineEnd, actionInsertLineStart,

@@ -99,6 +99,41 @@ func TestLoadHugeFileEntersLimitedEditMode(t *testing.T) {
 	}
 }
 
+func TestHugeFileTabActionsWorkViaKeymap(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.txt")
+	content := "alpha\n\tbeta\ngamma\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat file: %v", err)
+	}
+
+	e := newTestEditor()
+	if err := e.LoadHugeFile(path, realTestFileStore{}, FileMetadata{
+		ModTime: info.ModTime(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+	}); err != nil {
+		t.Fatalf("LoadHugeFile returned error: %v", err)
+	}
+
+	e.SetBehaviorProfile(BehaviorProfileBasic)
+	e.cursor = Cursor{Row: 0, Col: 2}
+	e.HandleKey(keyTab())
+	if got := string(e.line(0)); got != "al\tpha" {
+		t.Fatalf("line 0 after insert-mode tab = %q, want %q", got, "al\tpha")
+	}
+
+	e.cursor = Cursor{Row: 1, Col: 0}
+	e.HandleKey(keyShiftTab())
+	if got := string(e.line(1)); got != "beta" {
+		t.Fatalf("line 1 after shift-tab = %q, want %q", got, "beta")
+	}
+}
+
 func TestHugeFileSaveWritesEditedLines(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "huge.txt")
