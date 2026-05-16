@@ -28,6 +28,7 @@ func New(opts Options) *Editor {
 		},
 		SearchState: SearchState{
 			searchHistoryPath: opts.SearchHistoryPath,
+			searchHighlight:   true,
 		},
 		mode: ModeNormal,
 		bindings: editorBindingsState{
@@ -72,6 +73,7 @@ func New(opts Options) *Editor {
 			showIgnored: opts.FileTreeShowIgnored,
 		},
 		buffers: NewBufferManager(),
+		windows: newEditorWindowState(),
 	}
 	e.registerBuiltInBehaviorProfiles()
 	e.registerBuiltInSidebarModes()

@@ -1,6 +1,11 @@
 package editor
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
 
 func (e *Editor) OpenFile(path string) error {
 	if e.workspaceFileStore() == nil {
@@ -31,13 +36,20 @@ func (e *Editor) OpenExistingBuffer(path string) bool {
 	return false
 }
 
+func (e *Editor) syncActiveBufferState() {
+	if e.buffers == nil || e.buffers.Count() == 0 {
+		return
+	}
+	e.buffers.UpdateActive(e.snapshotBufferState())
+}
+
 // LoadFileContent replaces the current editor buffer with caller-supplied file contents.
 func (e *Editor) LoadFileContent(path string, data []byte) error {
 	if e.OpenExistingBuffer(path) {
 		return nil
 	}
 	// Save current buffer state before opening new file
-	if e.buffers != nil && e.buffers.Count() > 0 && e.document.filename != "" {
+	if e.buffers != nil && e.buffers.Count() > 0 {
 		e.saveSessionState()
 		_ = e.SaveUndoHistory()
 		bs := e.snapshotBufferState()
@@ -55,6 +67,7 @@ func (e *Editor) LoadFileContent(path string, data []byte) error {
 	e.viewport.scrollX = 0
 	e.mode = ModeNormal
 	e.document.filename = path
+	e.document.title = ""
 	e.commandLine.text = e.commandLine.text[:0]
 	e.ui.statusMessage = ""
 	e.undo = nil
@@ -81,6 +94,7 @@ func (e *Editor) LoadFileContent(path string, data []byte) error {
 		bs := e.snapshotBufferState()
 		newIdx := e.buffers.Add(bs)
 		e.buffers.SetActive(newIdx)
+		e.setActiveWindowBufferIndex(newIdx)
 	}
 
 	return nil
@@ -100,7 +114,7 @@ func (e *Editor) LoadHugeFileWithKind(path string, store FileStore, meta FileMet
 	if store == nil {
 		return errFileStoreUnavailable()
 	}
-	if e.buffers != nil && e.buffers.Count() > 0 && e.document.filename != "" {
+	if e.buffers != nil && e.buffers.Count() > 0 {
 		e.saveSessionState()
 		_ = e.SaveUndoHistory()
 		bs := e.snapshotBufferState()
@@ -129,6 +143,7 @@ func (e *Editor) LoadHugeFileWithKind(path string, store FileStore, meta FileMet
 	e.viewport.scrollX = 0
 	e.mode = ModeNormal
 	e.document.filename = path
+	e.document.title = ""
 	e.commandLine.text = e.commandLine.text[:0]
 	e.ui.statusMessage = ""
 	e.undo = nil
@@ -150,6 +165,7 @@ func (e *Editor) LoadHugeFileWithKind(path string, store FileStore, meta FileMet
 		bs := e.snapshotBufferState()
 		newIdx := e.buffers.Add(bs)
 		e.buffers.SetActive(newIdx)
+		e.setActiveWindowBufferIndex(newIdx)
 	}
 	status := fmt.Sprintf("huge file mode: limited edit (%.1f MB)", float64(meta.Size)/(1024*1024))
 	if kind == HugeFileKindLongLine {
@@ -179,6 +195,7 @@ func (e *Editor) switchToBuffer(index int) {
 
 	// Restore new buffer state
 	e.restoreBufferState(e.buffers.Active())
+	e.setActiveWindowBufferIndex(index)
 
 	// Signal runtime controller.
 	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestBufferSwitched})
@@ -216,6 +233,196 @@ func (e *Editor) gotoLastAccessedBuffer() {
 	e.switchToBuffer(prev)
 }
 
+func (e *Editor) showBufferList() {
+	if e.buffers == nil || e.buffers.Count() == 0 {
+		e.setStatus("no buffers")
+		return
+	}
+	e.syncActiveBufferState()
+	infos := e.buffers.Items()
+	parts := make([]string, 0, len(infos))
+	prev := e.buffers.PrevIndex()
+	for _, info := range infos {
+		marker := " "
+		if info.Active {
+			marker = "%"
+		} else if info.Index == prev {
+			marker = "#"
+		}
+		dirty := " "
+		if info.Dirty {
+			dirty = "+"
+		}
+		parts = append(parts, fmt.Sprintf("%d%s%s %s", info.Index+1, marker, dirty, e.bufferDisplayName(info)))
+	}
+	e.setStatus("buffers: " + strings.Join(parts, " | "))
+}
+
+func (e *Editor) switchToBufferTarget(target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		e.showBufferList()
+		return false
+	}
+	index, ok := e.resolveBufferTarget(target)
+	if !ok {
+		return false
+	}
+	e.switchToBuffer(index)
+	if e.buffers != nil && index >= 0 && index < e.buffers.Count() {
+		e.setStatus(fmt.Sprintf("buffer %d/%d: %s", index+1, e.buffers.Count(), e.bufferDisplayName(e.buffers.Items()[index])))
+	}
+	return false
+}
+
+func (e *Editor) closeBufferTarget(target string, force bool) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		e.closeCurrentBuffer(force)
+		return false
+	}
+	index, ok := e.resolveBufferTarget(target)
+	if !ok {
+		return false
+	}
+	e.closeBufferByIndex(index, force)
+	return false
+}
+
+func (e *Editor) resolveBufferTarget(target string) (int, bool) {
+	if e.buffers == nil || e.buffers.Count() == 0 {
+		e.setStatus("no buffers")
+		return -1, false
+	}
+	e.syncActiveBufferState()
+	target = strings.TrimSpace(target)
+	if target == "" {
+		e.setStatus("buffer target required")
+		return -1, false
+	}
+	if target == "#" {
+		prev := e.buffers.PrevIndex()
+		if prev < 0 || prev >= e.buffers.Count() {
+			e.setStatus("no alternate buffer")
+			return -1, false
+		}
+		return prev, true
+	}
+	if n, err := strconv.Atoi(target); err == nil {
+		index := n - 1
+		if index < 0 || index >= e.buffers.Count() {
+			e.setStatus("buffer not found: " + target)
+			return -1, false
+		}
+		return index, true
+	}
+
+	infos := e.buffers.Items()
+	for _, info := range infos {
+		if e.bufferTargetExactMatch(info, target) {
+			return info.Index, true
+		}
+	}
+
+	var matches []BufferInfo
+	for _, info := range infos {
+		if e.bufferTargetPartialMatch(info, target) {
+			matches = append(matches, info)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		e.setStatus("buffer not found: " + target)
+		return -1, false
+	case 1:
+		return matches[0].Index, true
+	default:
+		e.setStatus("buffer name is ambiguous: " + target)
+		return -1, false
+	}
+}
+
+func (e *Editor) closeBufferByIndex(index int, force bool) bool {
+	if e.buffers == nil || e.buffers.Count() <= 1 {
+		e.setStatus("last buffer (use :q to quit)")
+		return false
+	}
+	if index < 0 || index >= e.buffers.Count() {
+		e.setStatus("buffer not found")
+		return false
+	}
+	if index == e.buffers.ActiveIndex() {
+		e.closeCurrentBuffer(force)
+		return true
+	}
+	bs := e.buffers.buffers[index]
+	if bs == nil {
+		e.setStatus("buffer not found")
+		return false
+	}
+	if !force && bs.dirty {
+		e.setStatus("unsaved changes (use :bd!)")
+		return false
+	}
+	name := e.bufferDisplayName(e.buffers.Items()[index])
+	if bs.huge.buffer != nil {
+		_ = bs.huge.buffer.Close()
+	}
+	if !e.buffers.Remove(index) {
+		e.setStatus("buffer not found")
+		return false
+	}
+	e.adjustWindowsAfterBufferRemove(index)
+	e.setStatus("closed buffer: " + name)
+	return true
+}
+
+func (e *Editor) bufferDisplayName(info BufferInfo) string {
+	if info.Filename != "" {
+		if rel, ok := e.relativePathFromWorkingDir(info.Filename); ok && len(rel) < len(info.Filename) {
+			return rel
+		}
+		return info.Filename
+	}
+	if info.Title != "" {
+		return info.Title
+	}
+	return "[No Name]"
+}
+
+func (e *Editor) bufferTargetExactMatch(info BufferInfo, target string) bool {
+	for _, name := range e.bufferTargetNames(info) {
+		if name == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Editor) bufferTargetPartialMatch(info BufferInfo, target string) bool {
+	target = strings.ToLower(target)
+	for _, name := range e.bufferTargetNames(info) {
+		if strings.Contains(strings.ToLower(name), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Editor) bufferTargetNames(info BufferInfo) []string {
+	var names []string
+	if info.Filename != "" {
+		names = append(names, info.Filename, filepath.Base(info.Filename))
+		if rel, ok := e.relativePathFromWorkingDir(info.Filename); ok {
+			names = append(names, rel)
+		}
+	}
+	if info.Title != "" {
+		names = append(names, info.Title)
+	}
+	return names
+}
+
 // closeCurrentBuffer closes the current buffer. If force is false and the buffer
 // is dirty, shows a warning instead.
 func (e *Editor) closeCurrentBuffer(force bool) {
@@ -224,7 +431,7 @@ func (e *Editor) closeCurrentBuffer(force bool) {
 		return
 	}
 	if !force && e.document.dirty {
-		e.setStatus("unsaved changes (use :bc!)")
+		e.setStatus("unsaved changes (use :bd!)")
 		return
 	}
 
@@ -247,6 +454,7 @@ func (e *Editor) closeCurrentBuffer(force bool) {
 		_ = closing.huge.buffer.Close()
 	}
 	e.buffers.Remove(idx)
+	e.adjustWindowsAfterBufferRemove(idx)
 
 	// After removal, adjust nextIdx if it was shifted.
 	if nextIdx > idx {
@@ -256,7 +464,9 @@ func (e *Editor) closeCurrentBuffer(force bool) {
 	// Explicitly set the active buffer and restore its state.
 	e.buffers.SetActive(nextIdx)
 	e.restoreBufferState(e.buffers.Active())
+	e.setActiveWindowBufferIndex(e.buffers.ActiveIndex())
 	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestBufferSwitched})
+	e.setStatus("closed buffer")
 }
 
 // closeBufferAtIndex closes a buffer at the given index (called from sidebar).
@@ -279,6 +489,7 @@ func (e *Editor) closeBufferAtIndex(index int) {
 		_ = closing.huge.buffer.Close()
 	}
 	e.buffers.Remove(index)
+	e.adjustWindowsAfterBufferRemove(index)
 }
 
 // openSidebarBuffers opens the sidebar with the buffer list.
@@ -289,6 +500,7 @@ func (e *Editor) openSidebarBuffers() {
 	if e.refsPicker.active {
 		e.closeRefsPicker(false)
 	}
+	e.syncActiveBufferState()
 	e.refreshSidebarMenu()
 	content := NewSidebarBuffersContent(e)
 	// Position cursor on active buffer

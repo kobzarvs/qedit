@@ -10,9 +10,12 @@ type SearchState struct {
 	searchForward       bool          // search direction
 	searchFuzzy         bool          // true = fuzzy search (cmd+f), false = exact (/)
 	searchRegex         bool          // true = regex search (cmd+e)
+	searchIgnoreCase    bool          // Vim-compatible 'ignorecase' option
+	searchHighlight     bool          // highlight current search matches outside search mode
 	lastSearchQuery     string        // last search query for n/N
 	searchHistory       []string      // search history (prefixed with /: F: or E:)
 	searchHistoryIndex  int           // current position in search history (-1 = not browsing)
 	searchHistoryPrefix string        // prefix for filtered search history
 	searchHistoryPath   string        // search history file path
+	searchConfirmAction string        // optional action to run when confirming the prompt
 }

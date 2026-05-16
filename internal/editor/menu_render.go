@@ -294,7 +294,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"insert_line_start": "Editing", "join_lines": "Editing", "replace_char": "Editing", "delete_line": "Editing",
 		"indent": "Editing", "unindent": "Editing", "insert_line_above": "Editing",
 		// Selection
-		"toggle_select": "Selection", "extend_line": "Selection", "collapse_selection": "Selection", "select_all": "Selection",
+		"toggle_select": "Selection", "extend_line": "Selection", "collapse_selection": "Selection", "keep_primary_selection": "Selection", "select_all": "Selection",
 		// Search
 		"search_forward": "Search", "search_backward": "Search", "search_next": "Search", "search_prev": "Search",
 		"find_char": "Search", "find_char_backward": "Search", "till_char": "Search", "till_char_backward": "Search",
@@ -303,7 +303,7 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"worktree_menu": "Git", "worktree_new": "Git", "worktree_switch": "Git", "worktree_remove": "Git", "worktree_refresh": "Git",
 		// Modes
 		"enter_insert": "Modes", "enter_command": "Modes", "goto_mode": "Modes", "match_mode": "Modes",
-		"view_mode": "Modes", "space_mode": "Modes", "merge_mode": "Modes",
+		"view_mode": "Modes", "space_mode": "Modes", "window_mode": "Modes", "merge_mode": "Modes",
 		// History
 		"undo": "History", "redo": "History",
 		// Other
@@ -328,11 +328,12 @@ func (e *Editor) renderKeybindingsHelp(s Screen, w, viewHeight int) {
 		"append": "Append after cursor", "append_line_end": "Append at line end",
 		"insert_line_start": "Insert at line start", "join_lines": "Join lines",
 		"toggle_select": "Toggle select mode", "extend_line": "Extend to full line",
-		"collapse_selection": "Collapse selection", "select_all": "Select all",
+		"collapse_selection": "Collapse selection", "keep_primary_selection": "Keep primary selection/cursor", "select_all": "Select all",
 		"indent": "Indent", "unindent": "Unindent",
 		"goto_mode": "Goto mode (g)", "match_mode": "Match mode (m)", "view_mode": "View mode (z)", "space_mode": "Space menu",
-		"merge_mode": "Merge mode (Shift+M)",
-		"find_char":  "Find char (f)", "find_char_backward": "Find char back (F)",
+		"window_mode": "Window mode (Ctrl-w)",
+		"merge_mode":  "Merge mode (Shift+M)",
+		"find_char":   "Find char (f)", "find_char_backward": "Find char back (F)",
 		"till_char": "Till char (t)", "till_char_backward": "Till char back (T)",
 		"search_forward": "Search /", "search_backward": "Search ?",
 		"search_next": "Next match (n)", "search_prev": "Prev match (N)",

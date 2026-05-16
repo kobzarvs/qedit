@@ -618,6 +618,161 @@ func (e *Editor) wordEnd() {
 	e.cursor.Col = idx
 }
 
+// Vim-style word end backward (ge) - move to the end of the previous word.
+func (e *Editor) wordEndBackward() {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
+		return
+	}
+	row := e.cursor.Row
+	idx := e.cursor.Col - 1
+	for row >= 0 {
+		line := e.line(row)
+		for idx >= 0 && isSpaceRune(line[idx]) {
+			idx--
+		}
+		if idx >= 0 {
+			e.cursor.Row = row
+			e.cursor.Col = idx
+			return
+		}
+		row--
+		if row >= 0 {
+			idx = e.lineLen(row) - 1
+		}
+	}
+}
+
+// Helix-style WORD forward (W) - WORDs are separated only by whitespace.
+func (e *Editor) wordForwardLong() {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
+		return
+	}
+	line := e.line(e.cursor.Row)
+	idx := e.cursor.Col
+	if idx >= len(line) {
+		if e.cursor.Row >= e.LineCount()-1 {
+			return
+		}
+		e.cursor.Row++
+		e.cursor.Col = 0
+		e.skipLongWordWhitespaceForward()
+		return
+	}
+	for idx < len(line) && !isSpaceRune(line[idx]) {
+		idx++
+	}
+	for idx < len(line) && isSpaceRune(line[idx]) {
+		idx++
+	}
+	if idx >= len(line) {
+		if e.cursor.Row >= e.LineCount()-1 {
+			e.cursor.Col = len(line)
+			return
+		}
+		e.cursor.Row++
+		e.cursor.Col = 0
+		e.skipLongWordWhitespaceForward()
+		return
+	}
+	e.cursor.Col = idx
+}
+
+// Helix-style WORD backward (B) - WORDs are separated only by whitespace.
+func (e *Editor) wordBackwardLong() {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
+		return
+	}
+	line := e.line(e.cursor.Row)
+	idx := e.cursor.Col
+	if idx <= 0 {
+		if e.cursor.Row <= 0 {
+			return
+		}
+		e.cursor.Row--
+		e.cursor.Col = e.lineLen(e.cursor.Row)
+		e.wordBackwardLong()
+		return
+	}
+	idx--
+	for idx > 0 && isSpaceRune(line[idx]) {
+		idx--
+	}
+	for idx > 0 && !isSpaceRune(line[idx-1]) {
+		idx--
+	}
+	e.cursor.Col = idx
+}
+
+// Helix-style WORD end (E) - WORDs are separated only by whitespace.
+func (e *Editor) wordEndLong() {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
+		return
+	}
+	line := e.line(e.cursor.Row)
+	idx := e.cursor.Col + 1
+	for idx < len(line) && isSpaceRune(line[idx]) {
+		idx++
+	}
+	if idx >= len(line) {
+		if e.cursor.Row >= e.LineCount()-1 {
+			e.cursor.Col = len(line)
+			return
+		}
+		e.cursor.Row++
+		line = e.line(e.cursor.Row)
+		idx = 0
+		for idx < len(line) && isSpaceRune(line[idx]) {
+			idx++
+		}
+	}
+	if idx >= len(line) {
+		e.cursor.Col = len(line)
+		return
+	}
+	for idx < len(line)-1 && !isSpaceRune(line[idx+1]) {
+		idx++
+	}
+	e.cursor.Col = idx
+}
+
+// Vim-style WORD end backward (gE) - WORDs are separated only by whitespace.
+func (e *Editor) wordEndBackwardLong() {
+	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
+		return
+	}
+	row := e.cursor.Row
+	idx := e.cursor.Col - 1
+	for row >= 0 {
+		line := e.line(row)
+		for idx >= 0 && isSpaceRune(line[idx]) {
+			idx--
+		}
+		if idx >= 0 {
+			e.cursor.Row = row
+			e.cursor.Col = idx
+			return
+		}
+		row--
+		if row >= 0 {
+			idx = e.lineLen(row) - 1
+		}
+	}
+}
+
+func (e *Editor) skipLongWordWhitespaceForward() {
+	for e.cursor.Row < e.LineCount() {
+		line := e.line(e.cursor.Row)
+		for e.cursor.Col < len(line) && isSpaceRune(line[e.cursor.Col]) {
+			e.cursor.Col++
+		}
+		if e.cursor.Col < len(line) || e.cursor.Row >= e.LineCount()-1 {
+			return
+		}
+		e.cursor.Row++
+		e.cursor.Col = 0
+	}
+}
+
 // Helix-style goto line (G) - go to last line
 func (e *Editor) gotoLastLine() {
 	if e.LineCount() == 0 {

@@ -106,6 +106,38 @@ func TestToggleLineNumbersHotkey(t *testing.T) {
 	}
 }
 
+func TestCmdHomeEndPreferFileBoundsHotkeys(t *testing.T) {
+	e := newTestEditor("one", "two", "three")
+	e.cursor = Cursor{Row: 1, Col: 1}
+
+	e.HandleKey(eventForKeyString(t, "cmd+home"))
+	if e.cursor != (Cursor{Row: 0, Col: 0}) {
+		t.Fatalf("cmd+home cursor = %+v, want file start", e.cursor)
+	}
+
+	e.cursor = Cursor{Row: 1, Col: 1}
+	e.HandleKey(eventForKeyString(t, "cmd+end"))
+	if e.cursor != (Cursor{Row: 2, Col: 5}) {
+		t.Fatalf("cmd+end cursor = %+v, want file end", e.cursor)
+	}
+}
+
+func TestBareHomeEndUseLineBoundsHotkeys(t *testing.T) {
+	e := newTestEditor("one", "two", "three")
+	e.cursor = Cursor{Row: 1, Col: 1}
+
+	e.HandleKey(eventForKeyString(t, "home"))
+	if e.cursor != (Cursor{Row: 1, Col: 0}) {
+		t.Fatalf("home cursor = %+v, want line start", e.cursor)
+	}
+
+	e.cursor = Cursor{Row: 1, Col: 1}
+	e.HandleKey(eventForKeyString(t, "end"))
+	if e.cursor != (Cursor{Row: 1, Col: 3}) {
+		t.Fatalf("end cursor = %+v, want line end", e.cursor)
+	}
+}
+
 func TestDeleteLineHotkey(t *testing.T) {
 	e := newTestEditor("one", "two", "three")
 	e.cursor = Cursor{Row: 1, Col: 0}
@@ -367,15 +399,15 @@ func TestExpandShrinkSelectionHotkeys(t *testing.T) {
 			{StartRow: 0, StartCol: 0, EndRow: 0, EndCol: 3},
 		},
 	})
-	e.HandleKey(eventForKeyString(t, "alt+shift+up"))
+	e.HandleKey(eventForKeyString(t, "alt+up"))
 	if !e.selectionActive || e.selectionEnd.Col != 1 {
 		t.Fatalf("expand1 selectionEnd = %d, want 1", e.selectionEnd.Col)
 	}
-	e.HandleKey(eventForKeyString(t, "alt+shift+up"))
+	e.HandleKey(eventForKeyString(t, "alt+o"))
 	if e.selectionEnd.Col != 3 {
 		t.Fatalf("expand2 selectionEnd = %d, want 3", e.selectionEnd.Col)
 	}
-	e.HandleKey(eventForKeyString(t, "alt+shift+down"))
+	e.HandleKey(eventForKeyString(t, "alt+down"))
 	if e.selectionEnd.Col != 1 {
 		t.Fatalf("shrink selectionEnd = %d, want 1", e.selectionEnd.Col)
 	}

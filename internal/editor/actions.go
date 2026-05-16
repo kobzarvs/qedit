@@ -83,9 +83,15 @@ func (e *Editor) execAction(action string) bool {
 	case actionFocusCommandLine:
 		e.focusCommandLine()
 	case actionEnterInsert:
+		if e.BehaviorProfile() == BehaviorProfileHelix && e.enterHelixInsertFromSelections(false) {
+			return false
+		}
 		e.mode = ModeInsert
 		e.saveLineState()
 	case actionEnterNormal:
+		if e.BehaviorProfile() == BehaviorProfileHelix {
+			e.finishHelixMultiChange()
+		}
 		e.mode = ModeNormal
 	case actionEnterCommand:
 		e.mode = ModeCommand
@@ -152,6 +158,12 @@ func (e *Editor) execAction(action string) bool {
 		e.wordBackward()
 	case actionWordEnd:
 		e.wordEnd()
+	case actionWordForwardLong:
+		e.wordForwardLong()
+	case actionWordBackwardLong:
+		e.wordBackwardLong()
+	case actionWordEndLong:
+		e.wordEndLong()
 	case actionGotoMode:
 		e.modal.gotoMode = true
 		e.modal.pendingKeys = "g"
@@ -197,6 +209,12 @@ func (e *Editor) execAction(action string) bool {
 		e.pasteAfter()
 	case actionPasteBefore:
 		e.pasteBefore()
+	case actionReplaceWithYank:
+		e.replaceSelectionWithYank()
+	case actionIncrementNumber:
+		e.changeNumberAtCursor(1)
+	case actionDecrementNumber:
+		e.changeNumberAtCursor(-1)
 	case actionOpenBelow:
 		e.openBelow()
 		return false // Entering insert mode
@@ -204,12 +222,21 @@ func (e *Editor) execAction(action string) bool {
 		e.openAbove()
 		return false // Entering insert mode
 	case actionAppend:
+		if e.BehaviorProfile() == BehaviorProfileHelix && e.enterHelixInsertFromSelections(true) {
+			return false
+		}
 		e.appendMode()
 		return false // Entering insert mode
 	case actionAppendLineEnd:
+		if e.BehaviorProfile() == BehaviorProfileHelix && e.enterHelixLineInsertFromSelections(true) {
+			return false
+		}
 		e.appendLineEnd()
 		return false // Entering insert mode
 	case actionInsertLineStart:
+		if e.BehaviorProfile() == BehaviorProfileHelix && e.enterHelixLineInsertFromSelections(false) {
+			return false
+		}
 		e.insertLineStart()
 		return false // Entering insert mode
 	case actionReplaceChar:
@@ -231,11 +258,61 @@ func (e *Editor) execAction(action string) bool {
 	case actionFlipSelection:
 		e.flipSelection()
 		return false // Don't clear selection
+	case actionToggleCase:
+		e.transformSelectionCase(caseTransformToggle)
+		return false
+	case actionLowercase:
+		e.transformSelectionCase(caseTransformLower)
+		return false
+	case actionUppercase:
+		e.transformSelectionCase(caseTransformUpper)
+		return false
+	case actionSelectRegex:
+		e.enterHelixSelectionPrompt(actionSelectRegex)
+		return false
+	case actionSplitRegex:
+		e.enterHelixSelectionPrompt(actionSplitRegex)
+		return false
+	case actionSplitLines:
+		e.splitSelectionsByLine()
+		return false
+	case actionAlignSelections:
+		e.alignSelections()
+		return false
+	case actionCycleSelectionNext:
+		e.cyclePrimarySelection(1)
+		return false
+	case actionCycleSelectionPrev:
+		e.cyclePrimarySelection(-1)
+		return false
+	case actionKeepPrimarySelection:
+		e.keepPrimarySelection()
+		return false
+	case actionRemovePrimarySelection:
+		e.removePrimarySelection()
+		return false
+	case actionDuplicateCursorNext:
+		e.duplicateHelixCursor(1)
+		return false
+	case actionDuplicateCursorPrev:
+		e.duplicateHelixCursor(-1)
+		return false
+	case actionCycleContentsNext:
+		e.cycleSelectionContents(1)
+		return false
+	case actionCycleContentsPrev:
+		e.cycleSelectionContents(-1)
+		return false
 
 	// Space mode
 	case actionSpaceMode:
 		e.modal.spaceMenuActive = true
 		e.modal.pendingKeys = "SPC"
+		return false
+	case actionWindowMode:
+		e.modal.windowMode = true
+		e.modal.windowNewPending = false
+		e.modal.pendingKeys = "C-w"
 		return false
 
 	// Match mode
@@ -257,6 +334,9 @@ func (e *Editor) execAction(action string) bool {
 	case actionSearchBackward:
 		e.enterSearchMode(false, false, false) // exact search
 		return false
+	case actionSearchSelection:
+		e.searchFromPrimarySelection()
+		return false
 	case actionSearchFuzzy:
 		e.enterSearchMode(true, true, false) // fuzzy search
 		return false
@@ -264,8 +344,16 @@ func (e *Editor) execAction(action string) bool {
 		e.enterSearchMode(true, false, true) // regex search
 		return false
 	case actionSearchNext:
+		if e.BehaviorProfile() == BehaviorProfileHelix && e.modal.selectMode {
+			e.addSearchSelection(true)
+			return false
+		}
 		e.searchNext()
 	case actionSearchPrev:
+		if e.BehaviorProfile() == BehaviorProfileHelix && e.modal.selectMode {
+			e.addSearchSelection(false)
+			return false
+		}
 		e.searchPrev()
 
 	// Git
@@ -283,6 +371,8 @@ func (e *Editor) execAction(action string) bool {
 	// Special
 	case actionInsertLineAbove:
 		e.insertLineAboveCursor()
+	case actionToggleComment:
+		e.toggleLineComment()
 
 	// Terminal zoom
 	case actionTerminalZoomIn:
@@ -339,16 +429,18 @@ func (e *Editor) hugeFileAllowsAction(action string) bool {
 	case actionMoveLeft, actionMoveRight, actionMoveUp, actionMoveDown,
 		actionWordLeft, actionWordRight, actionLineStart, actionLineEnd,
 		actionFileStart, actionFileEnd, actionPageUp, actionPageDown,
+		actionWordForwardLong, actionWordBackwardLong, actionWordEndLong,
 		actionToggleLineNumbers,
 		actionEnterInsert, actionEnterNormal,
 		actionBackspace, actionNewline, actionDeleteChar,
 		actionInsertTab, actionIndent, actionUnindent,
 		actionDeleteLine, actionDelete, actionChange,
-		actionYank, actionPaste, actionPasteBefore,
+		actionYank, actionPaste, actionPasteBefore, actionReplaceWithYank,
+		actionIncrementNumber, actionDecrementNumber,
 		actionAppend, actionAppendLineEnd, actionInsertLineStart,
 		actionUndo, actionRedo, actionSave,
 		actionOpenBelow, actionOpenAbove, actionInsertLineAbove,
-		actionSearchForward, actionSearchBackward,
+		actionSearchForward, actionSearchBackward, actionSearchSelection,
 		actionSearchFuzzy, actionSearchRegex,
 		actionSearchNext, actionSearchPrev,
 		actionBranchPicker, actionWorktreeMenu, actionWorktreeRefresh,
@@ -358,7 +450,14 @@ func (e *Editor) hugeFileAllowsAction(action string) bool {
 		actionQuit, actionScrollUp, actionScrollDown, actionGotoMode,
 		actionGotoLine, actionGotoLinePrompt, actionGotoFirstLine,
 		actionGotoFileEnd, actionBufferPicker, actionGotoNextBuffer,
-		actionGotoPrevBuffer, actionGotoLastAccessed, actionCloseBuffer:
+		actionGotoPrevBuffer, actionGotoLastAccessed, actionCloseBuffer,
+		actionToggleCase, actionLowercase, actionUppercase,
+		actionToggleComment,
+		actionSelectRegex, actionSplitRegex, actionSplitLines,
+		actionAlignSelections, actionCycleSelectionNext, actionCycleSelectionPrev,
+		actionKeepPrimarySelection, actionRemovePrimarySelection, actionDuplicateCursorNext, actionDuplicateCursorPrev,
+		actionCycleContentsNext, actionCycleContentsPrev,
+		actionWindowMode:
 		return true
 	default:
 		return false

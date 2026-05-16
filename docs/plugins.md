@@ -38,6 +38,19 @@ Useful runtime-safe editor methods for plugins:
 - `SetStatusMessage`
 - `Notify`
 
+Behavior profile plugins own the top-level key dispatch for their profile.
+Built-in `helix` and `vim` profiles keep modal state such as pending counts,
+operator start positions, text-object state, repeat recording, visual/select
+mode, multiple selections/cursors, registers, macro recording, jumplist state,
+replace mode, and split/window focus inside editor-owned state so plugins do
+not need to patch shared input handlers.
+
+Command plugins can register multiple aliases for one handler. Built-in file
+commands use that path for Vim-compatible aliases such as `:ls`, `:buffers`,
+`:b`, `:b#`, `:bd`, and legacy `:bc`, plus Helix-style split aliases such as
+`:vs` and `:hs`. Vim tutor file commands (`:r`, `:r !cmd`, visual
+`:'<,'>w`) are also registered through the same command layer.
+
 ## Example
 [`internal/plugins/profile_sidebar.go`] adds a real plugin:
 

@@ -1,5 +1,7 @@
 package editor
 
+import "strconv"
+
 func (e *Editor) handleNormal(ev EventKey) bool {
 	// Handle zoom mode - only allow = (more zoom) or space (restore)
 	if e.zoom.pendingRestore {
@@ -78,13 +80,19 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	// Handle window mode (space-w prefix)
 	if e.modal.windowMode {
 		e.modal.windowMode = false
-		e.modal.pendingKeys = ""
 		if ev.Key() == KeyEscape {
+			e.modal.pendingKeys = ""
+			e.modal.windowNewPending = false
 			return false
 		}
 		if ev.Key() == KeyRune {
 			return e.handleWindowKey(ev.Rune())
 		}
+		if ev.Key() == KeyCtrlW {
+			return e.handleWindowKey('w')
+		}
+		e.modal.pendingKeys = ""
+		e.modal.windowNewPending = false
 		return false
 	}
 
@@ -105,7 +113,43 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 		return false
 	}
 
+	if ev.Key() == KeyEscape {
+		e.profile.helix.count = ""
+		e.modal.pendingKeys = ""
+		if e.modal.selectMode {
+			e.collapseSelection()
+		}
+		return false
+	}
+	if ev.Key() == KeyCtrlC {
+		e.execAction(actionToggleComment)
+		e.profile.helix.count = ""
+		e.modal.pendingKeys = ""
+		return false
+	}
+	if ev.Key() == KeyCtrlS {
+		e.saveJumpPosition()
+		e.profile.helix.count = ""
+		e.modal.pendingKeys = ""
+		return false
+	}
+	if ev.Key() == KeyCtrlO {
+		e.jumpBackward()
+		e.profile.helix.count = ""
+		e.modal.pendingKeys = ""
+		return false
+	}
+	if ev.Key() == KeyCtrlI {
+		e.jumpForward()
+		e.profile.helix.count = ""
+		e.modal.pendingKeys = ""
+		return false
+	}
+
 	if e.handleSelectionMove(ev) {
+		return false
+	}
+	if e.handleHelixCountKey(ev) {
 		return false
 	}
 	key := keyStringForMap(ev, e.bindings.keymap.normal)
@@ -114,20 +158,33 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	}
 	action, ok := e.bindings.keymap.normal[key]
 	if !ok {
+		e.profile.helix.count = ""
+		e.modal.pendingKeys = ""
+		return false
+	}
+	count := e.consumeHelixCount()
+
+	if e.applyHelixMotionToSelectionRanges(action, count) {
 		return false
 	}
 
 	// Helix-style: w, b, e, f, F, t, T - anchor moves to old cursor, cursor moves to target
 	// Selection covers what was "jumped over"
 	if isHelixSelectingMotion(action) {
+		if e.applyHelixSelectingMotionToCursors(action, count) {
+			return false
+		}
 		// Anchor = where cursor WAS
 		anchor := e.cursor
-		result := e.execAction(action)
+		var result bool
+		for i := 0; i < count; i++ {
+			result = e.execAction(action)
+		}
 		if anchor != e.cursor {
 			// Selection from old position to new position
 			e.selectionActive = true
 			e.selectionStart = anchor
-			e.selectionEnd = e.cursor
+			e.selectionEnd = e.helixSelectionEndForAction(action)
 			e.modal.selectMode = true
 		}
 		return result
@@ -136,14 +193,63 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 	// In select mode, extend selection for other motion commands
 	if e.modal.selectMode && isMotionAction(action) {
 		before := e.cursor
-		result := e.execAction(action)
+		var result bool
+		for i := 0; i < count; i++ {
+			result = e.execAction(action)
+		}
 		if before != e.cursor {
-			e.selectionEnd = e.cursor
+			e.selectionEnd = e.helixSelectionEndForAction(action)
+		}
+		return result
+	}
+
+	if e.applyHelixMotionToCursors(action, count) {
+		return false
+	}
+
+	if isHelixCountableAction(action) {
+		before := e.cursor
+		var result bool
+		for i := 0; i < count; i++ {
+			result = e.execAction(action)
+		}
+		if action == actionGotoLine || action == actionGotoFirstLine || action == actionGotoFileEnd {
+			e.recordJump(before, e.cursor)
 		}
 		return result
 	}
 
 	return e.execAction(action)
+}
+
+func (e *Editor) handleHelixCountKey(ev EventKey) bool {
+	if ev.Key() != KeyRune {
+		return false
+	}
+	r := ev.Rune()
+	if r >= '1' && r <= '9' {
+		e.profile.helix.count += string(r)
+		e.modal.pendingKeys = e.profile.helix.count
+		return true
+	}
+	if r == '0' && e.profile.helix.count != "" {
+		e.profile.helix.count += "0"
+		e.modal.pendingKeys = e.profile.helix.count
+		return true
+	}
+	return false
+}
+
+func (e *Editor) consumeHelixCount() int {
+	count := 1
+	if e.profile.helix.count != "" {
+		if parsed, err := strconv.Atoi(e.profile.helix.count); err == nil && parsed > 0 {
+			count = parsed
+		}
+	}
+	e.profile.helix.count = ""
+	e.modal.pendingKeys = ""
+	return count
 }
 
 // isMotionAction returns true if the action is a motion that should extend selection
@@ -153,6 +259,7 @@ func isMotionAction(action string) bool {
 		actionWordLeft, actionWordRight, actionLineStart, actionLineEnd,
 		actionFileStart, actionFileEnd, actionPageUp, actionPageDown,
 		actionWordForward, actionWordBackward, actionWordEnd,
+		actionWordForwardLong, actionWordBackwardLong, actionWordEndLong,
 		actionGotoLine, actionGotoFirstLine, actionGotoFileEnd,
 		actionFindChar, actionFindCharBackward, actionTillChar, actionTillCharBackward:
 		return true
@@ -165,8 +272,21 @@ func isMotionAction(action string) bool {
 func isHelixSelectingMotion(action string) bool {
 	switch action {
 	case actionWordForward, actionWordBackward, actionWordEnd,
+		actionWordForwardLong, actionWordBackwardLong, actionWordEndLong,
 		actionFindChar, actionFindCharBackward, actionTillChar, actionTillCharBackward:
 		return true
 	}
 	return false
+}
+
+func (e *Editor) helixSelectionEndForAction(action string) Cursor {
+	if action == actionWordEnd || action == actionWordEndLong {
+		return e.advanceCursorOne(e.cursor)
+	}
+	return e.cursor
+}
+
+func isHelixCountableAction(action string) bool {
+	return isMotionAction(action) || action == actionExtendLine ||
+		action == actionDuplicateCursorNext || action == actionDuplicateCursorPrev
 }

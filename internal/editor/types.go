@@ -66,6 +66,9 @@ const (
 	actionWordForward      = "word_forward"       // w - move to next word start
 	actionWordBackward     = "word_backward"      // b - move to previous word start
 	actionWordEnd          = "word_end"           // e - move to word end
+	actionWordForwardLong  = "word_forward_long"  // W - move to next WORD start
+	actionWordBackwardLong = "word_backward_long" // B - move to previous WORD start
+	actionWordEndLong      = "word_end_long"      // E - move to WORD end
 	actionGotoMode         = "goto_mode"          // g - enter goto mode
 	actionGotoLine         = "goto_line"          // G - go to last line (or specific line)
 	actionGotoLinePrompt   = "goto_line_prompt"   // cmd+g - prompt for line number
@@ -82,6 +85,9 @@ const (
 	actionYank            = "yank"              // y - yank/copy
 	actionPaste           = "paste"             // p - paste after
 	actionPasteBefore     = "paste_before"      // P - paste before
+	actionReplaceWithYank = "replace_with_yank" // R - replace selection with yanked text
+	actionIncrementNumber = "increment_number"
+	actionDecrementNumber = "decrement_number"
 	actionOpenBelow       = "open_below"        // o - open line below
 	actionOpenAbove       = "open_above"        // O - open line above
 	actionAppend          = "append"            // a - append (insert after cursor)
@@ -89,18 +95,45 @@ const (
 	actionInsertLineStart = "insert_line_start" // I - insert at first non-whitespace
 	actionReplaceChar     = "replace_char"      // r - replace with single char
 	actionJoinLines       = "join_lines"        // J - join lines
+	actionVimSetMark      = "vim_set_mark"      // m{char} - set Vim mark
+	actionVimGotoMarkLine = "vim_goto_mark_line"
+	actionVimGotoMark     = "vim_goto_mark"
+	actionVimStartMacro   = "vim_start_macro"
+	actionVimReplayMacro  = "vim_replay_macro"
 
 	// Helix-style selection
-	actionToggleSelect      = "toggle_select"      // v - toggle selection mode
-	actionExtendLine        = "extend_line"        // x - extend to full line
-	actionCollapseSelection = "collapse_selection" // ; - collapse selection to cursor
-	actionFlipSelection     = "flip_selection"     // Alt+; - flip selection anchor
+	actionToggleSelect           = "toggle_select"      // v - toggle selection mode
+	actionExtendLine             = "extend_line"        // x - extend to full line
+	actionCollapseSelection      = "collapse_selection" // ; - collapse selection to cursor
+	actionFlipSelection          = "flip_selection"     // Alt+; - flip selection anchor
+	actionToggleCase             = "toggle_case"        // ~ - toggle selected text case
+	actionLowercase              = "lowercase"          // ` - lowercase selected text
+	actionUppercase              = "uppercase"          // Alt+` - uppercase selected text
+	actionSelectRegex            = "select_regex"
+	actionSplitRegex             = "split_selection_regex"
+	actionSplitLines             = "split_selection_lines"
+	actionAlignSelections        = "align_selections"
+	actionCycleSelectionNext     = "cycle_selection_next"
+	actionCycleSelectionPrev     = "cycle_selection_prev"
+	actionKeepPrimarySelection   = "keep_primary_selection"
+	actionRemovePrimarySelection = "remove_primary_selection"
+	actionDuplicateCursorNext    = "duplicate_cursor_next"
+	actionDuplicateCursorPrev    = "duplicate_cursor_prev"
+	actionCycleContentsNext      = "cycle_selection_contents_next"
+	actionCycleContentsPrev      = "cycle_selection_contents_prev"
 
 	// Space mode
-	actionSpaceMode = "space_mode" // Space - open space menu
+	actionSpaceMode  = "space_mode" // Space - open space menu
+	actionWindowMode = "window_mode"
 
 	// Match mode
-	actionMatchMode = "match_mode" // m - enter match mode
+	actionMatchMode              = "match_mode" // m - enter match mode
+	actionMatchSelectInside      = "match_select_inside"
+	actionMatchSelectAround      = "match_select_around"
+	actionMatchSurroundAdd       = "match_surround_add"
+	actionMatchSurroundDelete    = "match_surround_delete"
+	actionMatchSurroundReplace   = "match_surround_replace"
+	actionMatchSurroundReplaceTo = "match_surround_replace_to"
 
 	// View mode
 	actionViewMode = "view_mode" // z - enter view mode
@@ -109,12 +142,13 @@ const (
 	actionMergeMode = "merge_mode" // Shift+M - enter merge mode
 
 	// Search
-	actionSearchForward  = "search_forward"  // / - exact search forward
-	actionSearchBackward = "search_backward" // ? - exact search backward
-	actionSearchFuzzy    = "search_fuzzy"    // Cmd+F - fuzzy search forward
-	actionSearchRegex    = "search_regex"    // Cmd+E - regex search forward
-	actionSearchNext     = "search_next"     // n - next match
-	actionSearchPrev     = "search_prev"     // N - previous match
+	actionSearchForward   = "search_forward"  // / - exact search forward
+	actionSearchBackward  = "search_backward" // ? - exact search backward
+	actionSearchSelection = "search_selection"
+	actionSearchFuzzy     = "search_fuzzy" // Cmd+F - fuzzy search forward
+	actionSearchRegex     = "search_regex" // Cmd+E - regex search forward
+	actionSearchNext      = "search_next"  // n - next match
+	actionSearchPrev      = "search_prev"  // N - previous match
 
 	// Git
 	actionGitNextChange = "git_next_change" // F3 - next git change
@@ -122,6 +156,7 @@ const (
 
 	// Special
 	actionInsertLineAbove = "insert_line_above" // Shift+Enter - insert indented line above cursor
+	actionToggleComment   = "toggle_comment"
 
 	// Terminal zoom
 	actionTerminalZoomIn = "terminal_zoom_in" // Cmd+= - zoom in terminal 5x
@@ -244,15 +279,21 @@ var ViewMenuItems = []SpaceMenuItem{
 
 // WindowMenuItems defines the window mode menu (space-w prefix)
 var WindowMenuItems = []SpaceMenuItem{
-	{'w', "Switch to next window", "window_next", false},
-	{'v', "Vertical split", "window_vsplit", false},
-	{'s', "Horizontal split", "window_hsplit", false},
-	{'h', "Move to left window", "window_left", false},
-	{'j', "Move to window below", "window_down", false},
-	{'k', "Move to window above", "window_up", false},
-	{'l', "Move to right window", "window_right", false},
-	{'q', "Close window", "window_close", false},
-	{'o', "Close other windows", "window_only", false},
+	{'w', "Switch to next window", "window_next", true},
+	{'n', "New buffer split", "window_new", true},
+	{'v', "Vertical split", "window_vsplit", true},
+	{'s', "Horizontal split", "window_hsplit", true},
+	{'h', "Move to left window", "window_left", true},
+	{'j', "Move to window below", "window_down", true},
+	{'k', "Move to window above", "window_up", true},
+	{'l', "Move to right window", "window_right", true},
+	{'H', "Swap left", "window_swap_left", true},
+	{'J', "Swap down", "window_swap_down", true},
+	{'K', "Swap up", "window_swap_up", true},
+	{'L', "Swap right", "window_swap_right", true},
+	{'t', "Transpose split", "window_transpose", true},
+	{'q', "Close window", "window_close", true},
+	{'o', "Close other windows", "window_only", true},
 }
 
 type actionKind int
@@ -445,6 +486,7 @@ type Editor struct {
 	buffers  *BufferManager // tracks multiple open buffers
 	commands commandRegistry
 	requests editorRequestState
+	windows  editorWindowState
 }
 
 // SearchMatch represents a match location

@@ -335,10 +335,16 @@ func keyStringForMap(ev EventKey, keymap map[string]string) string {
 	if ev.Modifiers()&ModMeta != 0 {
 		switch ev.Key() {
 		case KeyHome:
+			if _, ok := keymap["cmd+home"]; ok {
+				return "cmd+home"
+			}
 			if _, ok := keymap["cmd+left"]; ok {
 				return "cmd+left"
 			}
 		case KeyEnd:
+			if _, ok := keymap["cmd+end"]; ok {
+				return "cmd+end"
+			}
 			if _, ok := keymap["cmd+right"]; ok {
 				return "cmd+right"
 			}

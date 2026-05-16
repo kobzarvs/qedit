@@ -62,10 +62,8 @@ func (e *Editor) renderNotification(s Screen, w int, now time.Time) {
 
 func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	mode := e.currentModeLabel()
-	name := e.document.filename
-	if name == "" {
-		name = "[No Name]"
-	} else {
+	name := e.documentDisplayName()
+	if e.document.filename != "" {
 		if rel, ok := e.relativePathFromWorkingDir(name); ok {
 			name = rel
 		} else {
@@ -209,4 +207,14 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 		}
 		s.SetContent(x, y, r, nil, style)
 	}
+}
+
+func (e *Editor) documentDisplayName() string {
+	if e.document.filename != "" {
+		return e.document.filename
+	}
+	if e.document.title != "" {
+		return e.document.title
+	}
+	return "[No Name]"
 }

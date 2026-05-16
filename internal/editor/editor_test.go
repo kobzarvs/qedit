@@ -505,13 +505,33 @@ func TestHandleInsertClearsSelection(t *testing.T) {
 
 func TestKeyStringForMapMetaHome(t *testing.T) {
 	ev := wrapKey(tcell.NewEventKey(tcell.KeyHome, 0, tcell.ModMeta))
-	key := keyStringForMap(ev, map[string]string{"cmd+left": "word_left"})
+	key := keyStringForMap(ev, map[string]string{"cmd+home": "file_start", "cmd+left": "word_left"})
+	if key != "cmd+home" {
+		t.Fatalf("key = %q, want %q", key, "cmd+home")
+	}
+	key = keyStringForMap(ev, map[string]string{"cmd+left": "word_left"})
 	if key != "cmd+left" {
-		t.Fatalf("key = %q, want %q", key, "cmd+left")
+		t.Fatalf("fallback key = %q, want %q", key, "cmd+left")
 	}
 	key = keyStringForMap(ev, map[string]string{})
 	if key != "cmd+home" {
 		t.Fatalf("key = %q, want %q", key, "cmd+home")
+	}
+}
+
+func TestKeyStringForMapMetaEnd(t *testing.T) {
+	ev := wrapKey(tcell.NewEventKey(tcell.KeyEnd, 0, tcell.ModMeta))
+	key := keyStringForMap(ev, map[string]string{"cmd+end": "file_end", "cmd+right": "word_right"})
+	if key != "cmd+end" {
+		t.Fatalf("key = %q, want %q", key, "cmd+end")
+	}
+	key = keyStringForMap(ev, map[string]string{"cmd+right": "word_right"})
+	if key != "cmd+right" {
+		t.Fatalf("fallback key = %q, want %q", key, "cmd+right")
+	}
+	key = keyStringForMap(ev, map[string]string{})
+	if key != "cmd+end" {
+		t.Fatalf("key = %q, want %q", key, "cmd+end")
 	}
 }
 

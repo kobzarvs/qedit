@@ -69,10 +69,18 @@ func (e *Editor) handleGotoKey(ch rune) bool {
 		if before != e.cursor {
 			e.selectionEnd = e.cursor
 		}
+		if action == actionGotoFirstLine || action == actionGotoFileEnd {
+			e.recordJump(before, e.cursor)
+		}
 		return result
 	}
 
-	return e.execAction(action)
+	before := e.cursor
+	result := e.execAction(action)
+	if action == actionGotoFirstLine || action == actionGotoFileEnd {
+		e.recordJump(before, e.cursor)
+	}
+	return result
 }
 
 // lspGoto performs an LSP goto operation
@@ -135,15 +143,20 @@ func (e *Editor) handleMatchKey(ch rune) bool {
 	case 'm':
 		e.goToMatchingBracket()
 	case 'a':
-		e.setStatus("select around (not implemented)")
+		e.setPendingFindChar(actionMatchSelectAround)
+		e.modal.pendingKeys = "ma"
 	case 'i':
-		e.setStatus("select inside (not implemented)")
+		e.setPendingFindChar(actionMatchSelectInside)
+		e.modal.pendingKeys = "mi"
 	case 's':
-		e.setStatus("surround add (not implemented)")
+		e.setPendingFindChar(actionMatchSurroundAdd)
+		e.modal.pendingKeys = "ms"
 	case 'r':
-		e.setStatus("surround replace (not implemented)")
+		e.setPendingFindChar(actionMatchSurroundReplace)
+		e.modal.pendingKeys = "mr"
 	case 'd':
-		e.setStatus("surround delete (not implemented)")
+		e.setPendingFindChar(actionMatchSurroundDelete)
+		e.modal.pendingKeys = "md"
 	default:
 		return false
 	}
@@ -190,16 +203,41 @@ func (e *Editor) handlePendingChar(ch rune) bool {
 		result = e.findCharBackward(ch, true)
 	case actionReplaceChar:
 		return e.replaceCharAtCursor(ch)
+	case actionMatchSelectInside:
+		return e.matchSelectPair(ch, false)
+	case actionMatchSelectAround:
+		return e.matchSelectPair(ch, true)
+	case actionMatchSurroundAdd:
+		return e.matchSurroundSelection(ch)
+	case actionMatchSurroundDelete:
+		return e.matchDeleteSurround(ch)
+	case actionMatchSurroundReplace:
+		e.profile.helix.surroundReplaceOld = ch
+		e.setPendingFindChar(actionMatchSurroundReplaceTo)
+		return false
+	case actionMatchSurroundReplaceTo:
+		old := e.profile.helix.surroundReplaceOld
+		e.profile.helix.surroundReplaceOld = 0
+		return e.matchReplaceSurround(old, ch)
 	default:
 		return false
 	}
 
-	// Set selection from anchor to new cursor position (inclusive of cursor char)
+	// Set selection from anchor to new cursor position. Forward find/till includes
+	// the target cursor char; backward find/till includes through the old anchor.
 	if isSelectingAction && anchor != e.cursor {
 		e.selectionActive = true
-		e.selectionStart = anchor
-		// Selection end is exclusive, so add 1 to include the character at cursor
-		e.selectionEnd = Cursor{Row: e.cursor.Row, Col: e.cursor.Col + 1}
+		if cursorLess(e.cursor, anchor) {
+			e.selectionStart = e.cursor
+			e.selectionEnd = anchor
+			if e.selectionEnd.Row >= 0 && e.selectionEnd.Row < e.LineCount() && e.selectionEnd.Col < e.lineLen(e.selectionEnd.Row) {
+				e.selectionEnd.Col++
+			}
+		} else {
+			e.selectionStart = anchor
+			// Selection end is exclusive, so add 1 to include the character at cursor.
+			e.selectionEnd = Cursor{Row: e.cursor.Row, Col: e.cursor.Col + 1}
+		}
 		e.modal.selectMode = true
 	}
 

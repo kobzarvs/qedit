@@ -7,10 +7,21 @@ func (e *Editor) handleInsert(ev EventKey) bool {
 	key := keyStringForMap(ev, e.bindings.keymap.insert)
 	if key != "" {
 		if action, ok := e.bindings.keymap.insert[key]; ok {
+			if e.BehaviorProfile() == BehaviorProfileHelix {
+				if e.applyHelixMotionToCursors(action, 1) {
+					return false
+				}
+				if e.applyHelixInsertActionToCursors(action) {
+					return false
+				}
+			}
 			return e.execAction(action)
 		}
 	}
 	if ev.Key() == KeyRune {
+		if e.BehaviorProfile() == BehaviorProfileHelix && e.insertRuneAtHelixCursors(ev.Rune()) {
+			return false
+		}
 		e.clearSelection()
 		e.insertRune(ev.Rune())
 	}

@@ -102,6 +102,23 @@ Non-goal for now:
 ## Behavioral Profiles
 Profiles define semantics and default bindings together:
 
+Users can open an interactive tutorial inside the editor with `:tutor`,
+`:tutor helix`, or `:tutor vim`. Tutorial buffers are embedded scratch buffers:
+they start clean, can be edited while following the lessons, and are not tied
+to an on-disk path unless explicitly saved with `:w <path>`.
+
+Profile support claims are test-scoped. `internal/editor/profile_conformance_test.go`
+lists the advertised Vim and Helix profile commands and fails if that advertised
+set diverges from the exercised conformance set. Vim core editing scenarios are
+also compared against a real `vim -Nu NONE -N` process when `vim` is available
+on the test machine. This lets release notes claim conformance for the declared
+profile command set, not unbounded compatibility with every upstream Vim or
+Helix feature.
+
+The current support matrix lives in `docs/modes-compatibility.md`. Any new
+profile command should land with a full-key simulation test and an update to
+that matrix.
+
 ### `basic`
 - non-modal text editing
 - familiar movement/selection behavior
@@ -110,15 +127,54 @@ Profiles define semantics and default bindings together:
 
 ### `helix`
 - selection-first motions
+- numeric counts for motions and line extension (`2w`, `3e`, `2x`)
+- linewise `x` selection so `xd` removes whole lines and `xyp` duplicates
+  selected lines in Helix order
+- conformance-covered editing/navigation includes `P`, `b`, `f/F/t/T`, `gh`,
+  `%`, `;`, uppercase WORD motions (`W/B/E`), selection indentation with
+  `>`/`<`, replace-with-yanked-text (`R`), number increment/decrement
+  (`Ctrl-a`, `Ctrl-x`), regex selection/splitting (`s`, `S`, `Alt-s`),
+  alignment (`&`), primary selection cycling/removal, duplicate cursors
+  (`C`, `Alt-C`), content cycling (`Alt-(`/`Alt-)`), selection case transforms
+  (`~`, backtick, `Alt+backtick`), search-register selection expansion (`*`,
+  `n/N` in select mode), syntax-node selection expansion (`Alt-o`, `Alt-i`),
+  match-mode pair selection/surrounds (`mi`, `ma`, `ms`, `md`, `mr`), line
+  comments (`Ctrl-c`), and jumplist navigation (`Ctrl-s`, `Ctrl-o`, `Ctrl-i`)
+- buffer navigation is exposed through the Helix-style goto family (`gn`,
+  `gp`, `ga`) and the `space b` buffer picker
+- Helix window mode is backed by an editor split tree and covers new/current
+  buffer splits (`Ctrl-w nv/ns`, `Ctrl-w v/s`), focus (`Ctrl-w hjkl`,
+  `Ctrl-w w`), close/only (`Ctrl-w q/o`), swap/transpose (`Ctrl-w HJKL`,
+  `Ctrl-w t`), and command splits (`:vs`, `:hs`)
 - existing `g`, `m`, `z`, `space` command families
 - command semantics stay close to current editor behavior
 - implemented as the extracted legacy engine
 
 ### `vim`
-- normal/insert/visual/operator-pending/command modes
+- normal/insert/visual/visual-line/operator-pending/command modes
 - counts and operators are profile semantics, not keymap aliases
 - current MVP supports distinct normal/insert/visual behavior, operator
-  pending, counts, linewise yank/paste, and profile switching
+  pending, counts, linewise yank/paste, replace mode, undo-line, substitute
+  command basics, and profile switching
+- operator-pending state preserves the operator start position and accepts
+  Vim-style counts before and after operators, for example `2d3d`, `d10j`,
+  `dgg`, `D`, `C`, `s`, `S`, and `X`
+- conformance-covered Vim additions include `cw`, `Y`, `%`, `>>`, `<<`, `~`,
+  `.`, common text objects (`iw/aw`, `ip/ap`, quotes, brackets), uppercase
+  WORD motions (`W/B/E`), backward word-end motions (`ge/gE`), case operators
+  (`gu`, `gU`, `g~`), marks (`m`, `'`, backtick), sentence/paragraph motions,
+  named and blackhole registers for covered yank/delete/paste flows, macro
+  recording/replay (`q`, `@`, `@@`), jumplist navigation (`Ctrl-o`,
+  `Ctrl-i`), number increment/decrement (`Ctrl-a`, `Ctrl-x`), and native
+  non-selecting `f/F/t/T`
+- Vim-style buffer commands include `:ls`, `:buffers`, `:b`, `:b#`, `:bn`,
+  `:bp`, `:bnext`, `:bprevious`, `:bd`, and `:bd!`
+- Vim tutor command coverage includes file info (`Ctrl-g`), read commands
+  (`:r`, `:r !cmd`), shell commands (`:!cmd`), visual-range writes
+  (`:'<,'>w`), and shared split/window commands (`Ctrl-w v/s`, `Ctrl-w w`,
+  `:vs`, `:hs`)
+- Vim tutor search options include `:set ic`, `:set noic`, `:set invic`,
+  `:set hls is`, and `:nohlsearch`
 
 ## Refactor Order
 1. Mechanical split inside `internal/editor`.

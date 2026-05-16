@@ -78,6 +78,7 @@ func (e *Editor) SetBehaviorProfile(name string) bool {
 		return false
 	}
 	e.profile.name = name
+	e.profile.helix = helixProfileState{}
 	e.profile.vim = vimProfileState{}
 	if name == BehaviorProfileBasic && e.mode == ModeNormal {
 		e.mode = ModeInsert
@@ -172,6 +173,9 @@ func (e *Editor) currentModeLabel() string {
 		}
 		if e.profile.vim.visual {
 			return "VISUAL"
+		}
+		if e.profile.vim.replace {
+			return "REPLACE"
 		}
 		if e.mode == ModeInsert {
 			return "INSERT"

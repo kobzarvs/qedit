@@ -112,6 +112,67 @@ func TestRenderSelectionStyle(t *testing.T) {
 	}
 }
 
+func TestRenderHelixMultiCursorsDrawsVirtualCursorCells(t *testing.T) {
+	cfg := config.Default()
+	cfg.Editor.LineNumbers = "off"
+	e := New(optionsFromConfig(cfg))
+	e.SetBehaviorProfile(BehaviorProfileHelix)
+	applyTestStyles(e)
+	e.text = NewTextBufferFromString("abc\nabc")
+	e.cursor = Cursor{Row: 0, Col: 1}
+	e.profile.helix.multiCursors = []Cursor{
+		{Row: 0, Col: 1},
+		{Row: 1, Col: 1},
+	}
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(10, 4)
+
+	e.Render(wrapScreen(s))
+	cells, w, _ := s.GetContents()
+	normal := cells[1*w+0].Style
+	virtual := cells[1*w+1].Style
+	_, bgNormal, _ := normal.Decompose()
+	_, bgVirtual, _ := virtual.Decompose()
+	if bgVirtual == bgNormal {
+		t.Fatalf("secondary cursor background not applied")
+	}
+}
+
+func TestRenderHelixMultipleSelectionHeadsDrawVirtualCursorCells(t *testing.T) {
+	cfg := config.Default()
+	cfg.Editor.LineNumbers = "off"
+	e := New(optionsFromConfig(cfg))
+	e.SetBehaviorProfile(BehaviorProfileHelix)
+	applyTestStyles(e)
+	e.text = NewTextBufferFromString("one\ntwo")
+	e.setSelectionRanges([]editorSelectionRange{
+		{Start: Cursor{Row: 0, Col: 0}, End: Cursor{Row: 0, Col: 3}},
+		{Start: Cursor{Row: 1, Col: 0}, End: Cursor{Row: 1, Col: 3}},
+	}, 0)
+
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer s.Fini()
+	s.SetSize(10, 4)
+
+	e.Render(wrapScreen(s))
+	cells, w, _ := s.GetContents()
+	normal := cells[1*w+4].Style
+	virtual := cells[1*w+3].Style
+	_, bgNormal, _ := normal.Decompose()
+	_, bgVirtual, _ := virtual.Decompose()
+	if bgVirtual == bgNormal {
+		t.Fatalf("selection head cursor background not applied")
+	}
+}
+
 func TestRenderSyntaxHighlightStyle(t *testing.T) {
 	cfg := config.Default()
 	cfg.Editor.LineNumbers = "off"

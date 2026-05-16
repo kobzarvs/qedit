@@ -24,7 +24,10 @@ func (c *SidebarBuffersContent) buildItems() {
 	for i, info := range infos {
 		label := info.Filename
 		if label == "" {
-			label = "[No Name]"
+			label = info.Title
+			if label == "" {
+				label = "[No Name]"
+			}
 		} else {
 			if rel, ok := c.editor.relativePathFromWorkingDir(info.Filename); ok && len(rel) < len(info.Filename) {
 				label = rel

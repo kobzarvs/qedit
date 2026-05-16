@@ -10,6 +10,7 @@ type BufferState struct {
 
 	// File identity
 	filename string
+	title    string
 	file     editorFileState
 	dirty    bool
 
@@ -27,9 +28,11 @@ type BufferState struct {
 	scrollX int
 
 	// Selection
-	selectionActive bool
-	selectionStart  Cursor
-	selectionEnd    Cursor
+	selectionActive  bool
+	selectionStart   Cursor
+	selectionEnd     Cursor
+	selectionRanges  []editorSelectionRange
+	primarySelection int
 
 	// Search matches (per-file)
 	searchMatches    []SearchMatch
@@ -62,6 +65,7 @@ type BufferState struct {
 type BufferInfo struct {
 	Index    int
 	Filename string
+	Title    string
 	Dirty    bool
 	Active   bool
 }
@@ -163,6 +167,7 @@ func (bm *BufferManager) Items() []BufferInfo {
 		items[i] = BufferInfo{
 			Index:    i,
 			Filename: bs.filename,
+			Title:    bs.title,
 			Dirty:    bs.dirty,
 			Active:   i == bm.activeIndex,
 		}
@@ -214,6 +219,7 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		huge:                e.huge,
 		cursor:              e.cursor,
 		filename:            e.document.filename,
+		title:               e.document.title,
 		file:                e.file,
 		dirty:               e.document.dirty,
 		undo:                e.undo,
@@ -228,6 +234,8 @@ func (e *Editor) snapshotBufferState() *BufferState {
 		selectionActive:     e.selectionActive,
 		selectionStart:      e.selectionStart,
 		selectionEnd:        e.selectionEnd,
+		selectionRanges:     cloneSelectionRanges(e.selectionRanges),
+		primarySelection:    e.primarySelection,
 		searchMatches:       e.searchMatches,
 		searchMatchIndex:    e.searchMatchIndex,
 		mode:                e.mode,
@@ -252,6 +260,7 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	}
 	e.cursor = bs.cursor
 	e.document.filename = bs.filename
+	e.document.title = bs.title
 	e.file = bs.file
 	e.document.dirty = bs.dirty
 	e.undo = bs.undo
@@ -266,6 +275,8 @@ func (e *Editor) restoreBufferState(bs *BufferState) {
 	e.selectionActive = bs.selectionActive
 	e.selectionStart = bs.selectionStart
 	e.selectionEnd = bs.selectionEnd
+	e.selectionRanges = cloneSelectionRanges(bs.selectionRanges)
+	e.primarySelection = bs.primarySelection
 	e.searchMatches = bs.searchMatches
 	e.searchMatchIndex = bs.searchMatchIndex
 	e.mode = bs.mode

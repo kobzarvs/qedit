@@ -70,12 +70,12 @@ func TestDefaultInsertHotkeysTriggerActions(t *testing.T) {
 
 func expectedActionForKey(key string, keymap map[string]string) string {
 	if key == "cmd+home" {
-		if _, ok := keymap["cmd+left"]; ok {
+		if _, ok := keymap["cmd+home"]; !ok {
 			key = "cmd+left"
 		}
 	}
 	if key == "cmd+end" {
-		if _, ok := keymap["cmd+right"]; ok {
+		if _, ok := keymap["cmd+end"]; !ok {
 			key = "cmd+right"
 		}
 	}

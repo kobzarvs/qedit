@@ -26,6 +26,7 @@ func (e *Editor) prepareSave(path string) (string, []byte, error) {
 func (e *Editor) ApplySavedFile(path string) {
 	e.clearGitDiffPreview()
 	e.document.filename = path
+	e.document.title = ""
 	e.savePoint = len(e.undo)
 	e.file.externalChange = ExternalChangeNone
 	e.file.diskContent = e.Content()

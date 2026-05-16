@@ -21,10 +21,62 @@ func (e *Editor) handleViewKey(ch rune) bool {
 	return false
 }
 
-// handleWindowKey handles the second key after 'space-w' prefix
+// handleWindowKey handles the second key after Ctrl-w or space-w prefixes.
 func (e *Editor) handleWindowKey(ch rune) bool {
-	e.modal.lastCommand = "SPC w" + string(ch)
-	e.setStatus("window mode (not implemented)")
+	prefix := "C-w"
+	if e.modal.pendingKeys != "" {
+		prefix = e.modal.pendingKeys
+	}
+	e.modal.pendingKeys = ""
+	e.modal.lastCommand = prefix + string(ch)
+	if e.modal.windowNewPending {
+		e.modal.windowNewPending = false
+		switch ch {
+		case 'v':
+			e.splitNewWindow(editorWindowVertical)
+		case 's':
+			e.splitNewWindow(editorWindowHorizontal)
+		default:
+			e.setStatus("expected v or s after window new")
+		}
+		return false
+	}
+	switch ch {
+	case 'n':
+		e.modal.windowMode = true
+		e.modal.windowNewPending = true
+		e.modal.pendingKeys = prefix + "n"
+	case 'w':
+		e.focusNextWindow()
+	case 'v':
+		e.splitCurrentWindow(editorWindowVertical)
+	case 's':
+		e.splitCurrentWindow(editorWindowHorizontal)
+	case 'h':
+		e.focusDirectionalWindow(editorWindowLeft)
+	case 'j':
+		e.focusDirectionalWindow(editorWindowDown)
+	case 'k':
+		e.focusDirectionalWindow(editorWindowUp)
+	case 'l':
+		e.focusDirectionalWindow(editorWindowRight)
+	case 'H':
+		e.swapWindow(editorWindowLeft)
+	case 'J':
+		e.swapWindow(editorWindowDown)
+	case 'K':
+		e.swapWindow(editorWindowUp)
+	case 'L':
+		e.swapWindow(editorWindowRight)
+	case 't':
+		e.transposeWindowSplit()
+	case 'q':
+		e.closeCurrentWindow()
+	case 'o':
+		e.closeOtherWindows()
+	default:
+		e.setStatus("unknown window command")
+	}
 	return false
 }
 
@@ -139,6 +191,7 @@ func (e *Editor) executeSpaceAction(item SpaceMenuItem) bool {
 		e.pasteFromSystemClipboard(true)
 	case "window_mode":
 		e.modal.windowMode = true
+		e.modal.windowNewPending = false
 		e.modal.pendingKeys = "SPC w"
 		return false
 	case "toggle_comment":

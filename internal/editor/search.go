@@ -161,6 +161,8 @@ func (e *Editor) handleSearch(ev EventKey) bool {
 		e.searchCursor = 0
 		e.searchMatches = nil
 		e.searchHistoryIndex = -1
+		e.searchConfirmAction = ""
+		e.profile.helix.selectionPromptRanges = nil
 		return false
 	case KeyCtrlC:
 		e.mode = ModeNormal
@@ -168,10 +170,23 @@ func (e *Editor) handleSearch(ev EventKey) bool {
 		e.searchCursor = 0
 		e.searchMatches = nil
 		e.searchHistoryIndex = -1
+		e.searchConfirmAction = ""
+		e.profile.helix.selectionPromptRanges = nil
 		return false
 	case KeyEnter:
 		// Confirm search and go to first/current match
 		query := string(e.searchQuery)
+		if e.searchConfirmAction != "" {
+			action := e.searchConfirmAction
+			e.searchConfirmAction = ""
+			e.mode = ModeNormal
+			e.searchQuery = e.searchQuery[:0]
+			e.searchCursor = 0
+			e.searchMatches = nil
+			e.searchHistoryIndex = -1
+			e.applyHelixSelectionPattern(action, query)
+			return false
+		}
 		if query != "" {
 			e.addSearchToHistory(query)
 			e.lastSearchQuery = query
@@ -181,6 +196,8 @@ func (e *Editor) handleSearch(ev EventKey) bool {
 			e.cursor.Row = match.Row
 			e.cursor.Col = match.Col
 		}
+		e.clearSelection()
+		e.profile.helix.multiCursors = nil
 		e.mode = ModeNormal
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
@@ -191,12 +208,14 @@ func (e *Editor) handleSearch(ev EventKey) bool {
 			e.searchQuery = append(e.searchQuery[:e.searchCursor-1], e.searchQuery[e.searchCursor:]...)
 			e.searchCursor--
 			e.updateSearchMatches()
+			e.previewHelixSelectionPattern()
 		}
 		return false
 	case KeyDelete:
 		if e.searchCursor < len(e.searchQuery) {
 			e.searchQuery = append(e.searchQuery[:e.searchCursor], e.searchQuery[e.searchCursor+1:]...)
 			e.updateSearchMatches()
+			e.previewHelixSelectionPattern()
 		}
 		return false
 	case KeyLeft, KeyCtrlB:
@@ -227,6 +246,7 @@ func (e *Editor) handleSearch(ev EventKey) bool {
 		e.searchQuery = e.searchQuery[:0]
 		e.searchCursor = 0
 		e.updateSearchMatches()
+		e.previewHelixSelectionPattern()
 		return false
 	case KeyCtrlW:
 		if e.searchCursor > 0 {
@@ -240,12 +260,14 @@ func (e *Editor) handleSearch(ev EventKey) bool {
 			e.searchQuery = append(e.searchQuery[:i], e.searchQuery[e.searchCursor:]...)
 			e.searchCursor = i
 			e.updateSearchMatches()
+			e.previewHelixSelectionPattern()
 		}
 		return false
 	case KeyRune:
 		e.searchQuery = append(e.searchQuery[:e.searchCursor], append([]rune{ev.Rune()}, e.searchQuery[e.searchCursor:]...)...)
 		e.searchCursor++
 		e.updateSearchMatches()
+		e.previewHelixSelectionPattern()
 		return false
 	}
 	return false
@@ -264,14 +286,21 @@ func (e *Editor) updateSearchMatches() {
 	truncated := false
 	searchLineCount, partial := e.searchLineCount()
 
+	ignoreCase := e.searchIgnoreCase || e.searchFuzzy
+
 	// Regex search mode
 	if e.searchRegex {
-		re, err := regexp.Compile("(?i)" + query) // case-insensitive
+		pattern := expandRegexEscapedNewlines(query)
+		if ignoreCase {
+			pattern = "(?i)" + pattern
+		}
+		re, err := regexp.Compile(pattern)
 		if err != nil {
 			// Invalid regex, show error in status
 			e.setStatus("regex error: " + err.Error())
 			return
 		}
+		e.clearRegexStatus()
 		for row := 0; row < searchLineCount; row++ {
 			line := e.line(row)
 			lineStr := string(line)
@@ -296,18 +325,24 @@ func (e *Editor) updateSearchMatches() {
 			}
 		}
 	} else {
-		queryLower := strings.ToLower(query)
+		needle := query
+		if ignoreCase {
+			needle = strings.ToLower(query)
+		}
 
 		// Search through all lines
 		for row := 0; row < searchLineCount; row++ {
 			line := e.line(row)
 			lineStr := string(line)
-			lineLower := strings.ToLower(lineStr)
+			haystack := lineStr
+			if ignoreCase {
+				haystack = strings.ToLower(lineStr)
+			}
 
 			// Find all exact substring matches in this line first
 			offset := 0
 			for {
-				col := strings.Index(lineLower[offset:], queryLower)
+				col := strings.Index(haystack[offset:], needle)
 				if col < 0 {
 					break
 				}
@@ -322,7 +357,7 @@ func (e *Editor) updateSearchMatches() {
 					break
 				}
 				offset += col + 1
-				if offset >= len(lineLower) {
+				if offset >= len(haystack) {
 					break
 				}
 			}

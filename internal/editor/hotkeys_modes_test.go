@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -285,26 +286,66 @@ func TestMatchModeHotkeys(t *testing.T) {
 		t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "mm")
 	}
 
-	cases := []struct {
-		key    rune
-		status string
-	}{
-		{'a', "select around (not implemented)"},
-		{'i', "select inside (not implemented)"},
-		{'s', "surround add (not implemented)"},
-		{'r', "surround replace (not implemented)"},
-		{'d', "surround delete (not implemented)"},
-	}
-	for _, tt := range cases {
-		t.Run(string(tt.key), func(t *testing.T) {
-			e := newTestEditor("abc")
-			e.HandleKey(keyRune('m'))
-			e.HandleKey(keyRune(tt.key))
-			if e.ui.statusMessage != tt.status {
-				t.Fatalf("status = %q, want %q", e.ui.statusMessage, tt.status)
-			}
-		})
-	}
+	t.Run("select inside pair", func(t *testing.T) {
+		e := newTestEditor("a(b)c")
+		e.cursor = Cursor{Row: 0, Col: 2}
+		e.HandleKey(keyRune('m'))
+		e.HandleKey(keyRune('i'))
+		e.HandleKey(keyRune('('))
+		start, end, ok := e.selectionRange()
+		if !ok || start != (Cursor{Row: 0, Col: 2}) || end != (Cursor{Row: 0, Col: 3}) {
+			t.Fatalf("selection = %+v..%+v ok=%v, want 2..3", start, end, ok)
+		}
+	})
+
+	t.Run("select around pair", func(t *testing.T) {
+		e := newTestEditor("a(b)c")
+		e.cursor = Cursor{Row: 0, Col: 2}
+		e.HandleKey(keyRune('m'))
+		e.HandleKey(keyRune('a'))
+		e.HandleKey(keyRune('('))
+		start, end, ok := e.selectionRange()
+		if !ok || start != (Cursor{Row: 0, Col: 1}) || end != (Cursor{Row: 0, Col: 4}) {
+			t.Fatalf("selection = %+v..%+v ok=%v, want 1..4", start, end, ok)
+		}
+	})
+
+	t.Run("surround add", func(t *testing.T) {
+		e := newTestEditor("abc")
+		e.selectionStart = Cursor{Row: 0, Col: 1}
+		e.selectionEnd = Cursor{Row: 0, Col: 2}
+		e.selectionActive = true
+		e.modal.selectMode = true
+		e.HandleKey(keyRune('m'))
+		e.HandleKey(keyRune('s'))
+		e.HandleKey(keyRune('('))
+		if got := e.Content(); got != "a(b)c" {
+			t.Fatalf("content = %q, want %q", got, "a(b)c")
+		}
+	})
+
+	t.Run("surround delete", func(t *testing.T) {
+		e := newTestEditor("a(b)c")
+		e.cursor = Cursor{Row: 0, Col: 2}
+		e.HandleKey(keyRune('m'))
+		e.HandleKey(keyRune('d'))
+		e.HandleKey(keyRune('('))
+		if got := e.Content(); got != "abc" {
+			t.Fatalf("content = %q, want %q", got, "abc")
+		}
+	})
+
+	t.Run("surround replace", func(t *testing.T) {
+		e := newTestEditor("a(b)c")
+		e.cursor = Cursor{Row: 0, Col: 2}
+		e.HandleKey(keyRune('m'))
+		e.HandleKey(keyRune('r'))
+		e.HandleKey(keyRune('('))
+		e.HandleKey(keyRune('['))
+		if got := e.Content(); got != "a[b]c" {
+			t.Fatalf("content = %q, want %q", got, "a[b]c")
+		}
+	})
 }
 
 func TestViewModeHotkeys(t *testing.T) {
@@ -386,22 +427,200 @@ func TestSpaceMenuHotkeys(t *testing.T) {
 }
 
 func TestWindowModeHotkeys(t *testing.T) {
-	e := newTestEditor("one")
-	e.HandleKey(keyRune(' '))
-	e.HandleKey(keyRune('w'))
-	if !e.modal.windowMode {
-		t.Fatalf("windowMode = false, want true")
-	}
-	e.HandleKey(keyRune('v'))
-	if e.modal.windowMode {
-		t.Fatalf("windowMode = true, want false")
-	}
-	if e.ui.statusMessage != "window mode (not implemented)" {
-		t.Fatalf("status = %q, want %q", e.ui.statusMessage, "window mode (not implemented)")
-	}
-	if e.modal.lastCommand != "SPC wv" {
-		t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "SPC wv")
-	}
+	t.Run("space w vertical split", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(keyRune(' '))
+		e.HandleKey(keyRune('w'))
+		if !e.modal.windowMode {
+			t.Fatalf("windowMode = false, want true")
+		}
+		e.HandleKey(keyRune('v'))
+		if e.modal.windowMode {
+			t.Fatalf("windowMode = true, want false")
+		}
+		if got := e.windowCount(); got != 2 {
+			t.Fatalf("window count = %d, want 2", got)
+		}
+		if e.ui.statusMessage != "vertical split" {
+			t.Fatalf("status = %q, want %q", e.ui.statusMessage, "vertical split")
+		}
+		if e.modal.lastCommand != "SPC wv" {
+			t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "SPC wv")
+		}
+	})
+
+	t.Run("ctrl w new vertical split", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('n'))
+		if !e.modal.windowMode || !e.modal.windowNewPending {
+			t.Fatalf("window new pending = mode:%v pending:%v, want true/true", e.modal.windowMode, e.modal.windowNewPending)
+		}
+		e.HandleKey(keyRune('v'))
+		if got := e.windowCount(); got != 2 {
+			t.Fatalf("window count = %d, want 2", got)
+		}
+		if got := e.BufferCount(); got != 2 {
+			t.Fatalf("buffer count = %d, want 2", got)
+		}
+		if got := e.activeWindowLeaf().bufferIndex; got != e.ActiveBufferIndex() {
+			t.Fatalf("active window buffer = %d, want active buffer %d", got, e.ActiveBufferIndex())
+		}
+		if got := e.Content(); got != "" {
+			t.Fatalf("new split content = %q, want empty", got)
+		}
+		if e.modal.lastCommand != "C-wnv" {
+			t.Fatalf("lastCommand = %q, want %q", e.modal.lastCommand, "C-wnv")
+		}
+	})
+
+	t.Run("focus and close windows", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('n'))
+		e.HandleKey(keyRune('v'))
+		rightID := e.windows.activeID
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('h'))
+		if e.windows.activeID == rightID {
+			t.Fatalf("active window did not move left")
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('l'))
+		if e.windows.activeID != rightID {
+			t.Fatalf("active window = %d, want right window %d", e.windows.activeID, rightID)
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('q'))
+		if got := e.windowCount(); got != 1 {
+			t.Fatalf("window count after close = %d, want 1", got)
+		}
+	})
+
+	t.Run("horizontal split next only and transpose", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('s'))
+		if got := e.windowCount(); got != 2 {
+			t.Fatalf("window count = %d, want 2", got)
+		}
+		if parent := e.activeWindowLeaf().parent; parent == nil || parent.axis != editorWindowHorizontal {
+			t.Fatalf("active parent axis = %#v, want horizontal", parent)
+		}
+		bottomID := e.windows.activeID
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('k'))
+		if e.windows.activeID == bottomID {
+			t.Fatalf("active window did not move up")
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('w'))
+		if e.windows.activeID != bottomID {
+			t.Fatalf("next window = %d, want bottom %d", e.windows.activeID, bottomID)
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('t'))
+		if parent := e.activeWindowLeaf().parent; parent == nil || parent.axis != editorWindowVertical {
+			t.Fatalf("active parent axis = %#v, want vertical after transpose", parent)
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('o'))
+		if got := e.windowCount(); got != 1 {
+			t.Fatalf("window count after only = %d, want 1", got)
+		}
+	})
+
+	t.Run("new horizontal split", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('n'))
+		e.HandleKey(keyRune('s'))
+		if got := e.windowCount(); got != 2 {
+			t.Fatalf("window count = %d, want 2", got)
+		}
+		if got := e.BufferCount(); got != 2 {
+			t.Fatalf("buffer count = %d, want 2", got)
+		}
+		if parent := e.activeWindowLeaf().parent; parent == nil || parent.axis != editorWindowHorizontal {
+			t.Fatalf("active parent axis = %#v, want horizontal", parent)
+		}
+	})
+
+	t.Run("swap horizontal windows", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('n'))
+		e.HandleKey(keyRune('s'))
+		if got := e.Content(); got != "" {
+			t.Fatalf("active content before swap = %q, want empty", got)
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('K'))
+		if got := e.Content(); got != "" {
+			t.Fatalf("active content after swap up = %q, want empty", got)
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('J'))
+		if got := e.Content(); got != "" {
+			t.Fatalf("active content after swap down = %q, want empty", got)
+		}
+	})
+
+	t.Run("swap vertical windows", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('n'))
+		e.HandleKey(keyRune('v'))
+		if got := e.Content(); got != "" {
+			t.Fatalf("active content before swap = %q, want empty", got)
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('H'))
+		if got := e.Content(); got != "" {
+			t.Fatalf("active content after swap left = %q, want empty", got)
+		}
+		e.HandleKey(eventForKeyString(t, "ctrl+w"))
+		e.HandleKey(keyRune('L'))
+		if got := e.Content(); got != "" {
+			t.Fatalf("active content after swap right = %q, want empty", got)
+		}
+	})
+
+	t.Run("command split opens named buffer", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(keyRune(':'))
+		for _, r := range "vs scratch-buffer" {
+			e.HandleKey(keyRune(r))
+		}
+		e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
+		if got := e.windowCount(); got != 2 {
+			t.Fatalf("window count = %d, want 2", got)
+		}
+		if got := e.BufferCount(); got != 2 {
+			t.Fatalf("buffer count = %d, want 2", got)
+		}
+		if !strings.HasSuffix(e.document.filename, "scratch-buffer") {
+			t.Fatalf("filename = %q, want suffix scratch-buffer", e.document.filename)
+		}
+	})
+
+	t.Run("command horizontal split opens named buffer", func(t *testing.T) {
+		e := newTestEditor("one")
+		e.HandleKey(keyRune(':'))
+		for _, r := range "hs scratch-bottom" {
+			e.HandleKey(keyRune(r))
+		}
+		e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
+		if got := e.windowCount(); got != 2 {
+			t.Fatalf("window count = %d, want 2", got)
+		}
+		if parent := e.activeWindowLeaf().parent; parent == nil || parent.axis != editorWindowHorizontal {
+			t.Fatalf("active parent axis = %#v, want horizontal", parent)
+		}
+		if !strings.HasSuffix(e.document.filename, "scratch-bottom") {
+			t.Fatalf("filename = %q, want suffix scratch-bottom", e.document.filename)
+		}
+	})
 }
 
 func TestKeybindingsHelpHotkeys(t *testing.T) {

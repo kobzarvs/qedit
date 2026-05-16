@@ -87,6 +87,16 @@ func (e *Editor) registerBuiltInCommands() {
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
+		Names: []string{"r", "read"},
+		Entries: []CommandInfo{
+			{Name: "r <file>", Description: "read file below cursor", Group: CmdGroupFile},
+			{Name: "r !<cmd>", Description: "read shell output below cursor", Group: CmdGroupFile},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			return ed.executeReadCommand(args)
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
 		Names: []string{"q"},
 		Entries: []CommandInfo{
 			{Name: "q", Description: "quit", Group: CmdGroupFile},
@@ -127,6 +137,32 @@ func (e *Editor) registerBuiltInCommands() {
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
+		Names: []string{"set"},
+		Entries: []CommandInfo{
+			{Name: "set", Description: "show editor options", Group: CmdGroupView},
+			{Name: "set ic", Description: "enable ignorecase search", Group: CmdGroupView},
+			{Name: "set noic", Description: "disable ignorecase search", Group: CmdGroupView},
+			{Name: "set invic", Description: "toggle ignorecase search", Group: CmdGroupView},
+			{Name: "set hls is", Description: "enable search highlighting and incremental search", Group: CmdGroupView},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			return ed.executeSetCommand(args)
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
+		Names: []string{"nohlsearch", "noh"},
+		Entries: []CommandInfo{
+			{Name: "nohlsearch", Description: "clear highlighted search matches", Group: CmdGroupView},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			if len(args) > 0 {
+				ed.setStatus("usage: nohlsearch")
+				return false
+			}
+			return ed.executeNoHLSearchCommand()
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
 		Names: []string{"fmt"},
 		Entries: []CommandInfo{
 			{Name: "fmt", Description: "format code", Group: CmdGroupEdit},
@@ -147,6 +183,26 @@ func (e *Editor) registerBuiltInCommands() {
 		Handle: func(ed *Editor, args []string) bool {
 			ed.toggleSidebar()
 			return false
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
+		Names: []string{"vs", "vsplit"},
+		Entries: []CommandInfo{
+			{Name: "vs [file]", Description: "open vertical split", Group: CmdGroupView},
+			{Name: "vsplit [file]", Description: "open vertical split", Group: CmdGroupView},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			return ed.executeSplitCommand(args, editorWindowVertical)
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
+		Names: []string{"hs", "hsplit"},
+		Entries: []CommandInfo{
+			{Name: "hs [file]", Description: "open horizontal split", Group: CmdGroupView},
+			{Name: "hsplit [file]", Description: "open horizontal split", Group: CmdGroupView},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			return ed.executeSplitCommand(args, editorWindowHorizontal)
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
@@ -209,6 +265,25 @@ func (e *Editor) registerBuiltInCommands() {
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
+		Names: []string{"tutor", "Tutor"},
+		Entries: []CommandInfo{
+			{Name: "tutor", Description: "open current profile tutorial", Group: CmdGroupView},
+			{Name: "tutor helix", Description: "open Helix tutorial", Group: CmdGroupView},
+			{Name: "tutor vim", Description: "open Vim tutorial", Group: CmdGroupView},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			if len(args) > 1 {
+				ed.setStatus("usage: tutor [vim|helix]")
+				return false
+			}
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			}
+			return ed.openTutor(name)
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
 		Names: []string{"merge"},
 		Entries: []CommandInfo{
 			{Name: "merge", Description: "merge mode", Group: CmdGroupView},
@@ -236,43 +311,92 @@ func (e *Editor) registerBuiltInCommands() {
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
-		Names: []string{"bn"},
+		Names: []string{"buffers", "ls", "files"},
 		Entries: []CommandInfo{
-			{Name: "bn", Description: "next buffer", Group: CmdGroupFile},
+			{Name: "buffers", Description: "list open buffers", Group: CmdGroupFile},
+			{Name: "ls", Description: "list open buffers", Group: CmdGroupFile},
 		},
 		Handle: func(ed *Editor, args []string) bool {
+			ed.showBufferList()
+			return false
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
+		Names: []string{"b", "buffer"},
+		Entries: []CommandInfo{
+			{Name: "b <target>", Description: "switch buffer", Group: CmdGroupFile},
+			{Name: "buffer <target>", Description: "switch buffer", Group: CmdGroupFile},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			if len(args) == 0 {
+				return ed.switchToBufferTarget("")
+			}
+			return ed.switchToBufferTarget(strings.Join(args, " "))
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
+		Names: []string{"b#"},
+		Entries: []CommandInfo{
+			{Name: "b#", Description: "switch to alternate buffer", Group: CmdGroupFile},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			if len(args) > 0 {
+				ed.setStatus("usage: b#")
+				return false
+			}
+			return ed.switchToBufferTarget("#")
+		},
+	})
+	e.RegisterCommand(CommandDefinition{
+		Names: []string{"bn", "bnext"},
+		Entries: []CommandInfo{
+			{Name: "bn", Description: "next buffer", Group: CmdGroupFile},
+			{Name: "bnext", Description: "next buffer", Group: CmdGroupFile},
+		},
+		Handle: func(ed *Editor, args []string) bool {
+			if len(args) > 0 {
+				ed.setStatus("usage: bnext")
+				return false
+			}
 			ed.gotoNextBuffer()
 			return false
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
-		Names: []string{"bp"},
+		Names: []string{"bp", "bprev", "bprevious"},
 		Entries: []CommandInfo{
 			{Name: "bp", Description: "previous buffer", Group: CmdGroupFile},
+			{Name: "bprevious", Description: "previous buffer", Group: CmdGroupFile},
 		},
 		Handle: func(ed *Editor, args []string) bool {
+			if len(args) > 0 {
+				ed.setStatus("usage: bprevious")
+				return false
+			}
 			ed.gotoPrevBuffer()
 			return false
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
-		Names: []string{"bc"},
+		Names: []string{"bd", "bdelete", "bc"},
 		Entries: []CommandInfo{
+			{Name: "bd", Description: "delete buffer", Group: CmdGroupFile},
+			{Name: "bdelete", Description: "delete buffer", Group: CmdGroupFile},
 			{Name: "bc", Description: "close buffer", Group: CmdGroupFile},
 		},
 		Handle: func(ed *Editor, args []string) bool {
-			ed.closeCurrentBuffer(false)
-			return false
+			return ed.closeBufferTarget(strings.Join(args, " "), false)
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
-		Names: []string{"bc!"},
+		Names: []string{"bd!", "bdelete!", "bc!"},
 		Entries: []CommandInfo{
+			{Name: "bd!", Description: "delete buffer (force)", Group: CmdGroupFile},
+			{Name: "bdelete!", Description: "delete buffer (force)", Group: CmdGroupFile},
 			{Name: "bc!", Description: "close buffer (force)", Group: CmdGroupFile},
 		},
 		Handle: func(ed *Editor, args []string) bool {
-			ed.closeCurrentBuffer(true)
-			return false
+			return ed.closeBufferTarget(strings.Join(args, " "), true)
 		},
 	})
 }

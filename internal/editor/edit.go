@@ -771,6 +771,15 @@ func (e *Editor) joinLineAt(pos Cursor) bool {
 
 // Helix-style delete (d) - delete selection or char
 func (e *Editor) helixDelete() {
+	if len(e.profile.helix.multiCursors) > 1 {
+		e.deleteCharAtHelixCursors()
+		return
+	}
+	if e.hasMultipleSelections() {
+		e.deleteSelectionRanges(e.activeSelectionRanges())
+		e.modal.selectMode = false
+		return
+	}
 	if start, end, ok := e.selectionRange(); ok {
 		e.deleteSelection(start, end, true) // Restore selection on undo
 		e.clearSelection()
@@ -783,6 +792,12 @@ func (e *Editor) helixDelete() {
 
 // Helix-style change (c) - delete selection and enter insert mode
 func (e *Editor) helixChange() {
+	if e.hasMultipleSelections() {
+		e.beginHelixMultiChange()
+		e.mode = ModeInsert
+		e.saveLineState()
+		return
+	}
 	if start, end, ok := e.selectionRange(); ok {
 		e.deleteSelection(start, end, true) // Restore selection on undo
 		e.clearSelection()
@@ -801,6 +816,23 @@ func (e *Editor) fillClipboardFromSelection() bool {
 			e.clipboard.linewise = true
 		}
 		return false
+	}
+
+	if start.Col == 0 {
+		endRow := end.Row
+		if end.Col == 0 && end.Row > start.Row {
+			endRow = end.Row - 1
+		} else if end.Row != e.LineCount()-1 || end.Col != e.lineLen(end.Row) {
+			endRow = -1
+		}
+		if endRow >= start.Row {
+			e.clipboard.lines = e.clipboard.lines[:0]
+			e.clipboard.linewise = true
+			for row := start.Row; row <= endRow; row++ {
+				e.clipboard.lines = append(e.clipboard.lines, append([]rune(nil), e.line(row)...))
+			}
+			return true
+		}
 	}
 
 	// Copy selection to clipboard
@@ -837,11 +869,16 @@ func (e *Editor) copyToSystemClipboard(notify bool) {
 
 // Helix-style yank (y) - copy selection to clipboard
 func (e *Editor) yankSelection() {
+	start, _, hadRange := e.selectionRange()
 	hadSelection := e.fillClipboardFromSelection()
+	linewise := e.clipboard.linewise
 	e.copyToSystemClipboard(false)
 	e.modal.lastCommand = "y"
 	e.ui.copiedMessageTime = time.Now()
 	if hadSelection {
+		if linewise && hadRange {
+			e.cursor = start
+		}
 		e.clearSelection()
 		e.modal.selectMode = false
 	}
@@ -921,6 +958,30 @@ func (e *Editor) pasteBefore() {
 		e.cursor.Col = 0
 		e.change.lastEdit.Valid = false
 	}
+}
+
+// Helix-style replace (R) - replace the current selection with yanked text.
+func (e *Editor) replaceSelectionWithYank() {
+	if len(e.clipboard.lines) == 0 {
+		return
+	}
+	start, end, ok := e.selectionRange()
+	if !ok {
+		return
+	}
+	replacement := cloneClipboardState(e.clipboard).lines
+	e.startUndoGroup()
+	deleted := e.deleteTextRange(start, end)
+	if len(deleted) > 0 {
+		e.appendUndo(action{kind: actionInsertText, pos: start, text: deleted})
+	}
+	endPos := e.insertTextAt(start, replacement)
+	e.appendUndo(action{kind: actionDeleteText, pos: start, endPos: endPos, text: replacement})
+	e.finishUndoGroup()
+	e.cursor = start
+	e.clearSelection()
+	e.modal.selectMode = false
+	e.change.lastEdit.Valid = false
 }
 
 // Helix-style open below (o) - open line below and enter insert
@@ -1077,6 +1138,9 @@ func (e *Editor) insertLineStart() {
 
 // Helix-style replace char (r) - replace char at cursor
 func (e *Editor) replaceCharAtCursor(ch rune) bool {
+	if ranges := e.activeSelectionRanges(); len(ranges) > 0 {
+		return e.replaceSelectionRangesWithRune(ranges, ch)
+	}
 	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
 		return false
 	}
@@ -1099,18 +1163,50 @@ func (e *Editor) replaceCharAtCursor(ch rune) bool {
 	return true
 }
 
-// Helix-style join lines (J) - join current line with next
+// Helix-style join lines (J) - join selected lines, or current line with next.
 func (e *Editor) joinLinesCmd() {
+	if start, end, ok := e.selectionRange(); ok {
+		startRow := start.Row
+		endRow := end.Row
+		if end.Col == 0 && end.Row > start.Row {
+			endRow--
+		}
+		if startRow < 0 {
+			startRow = 0
+		}
+		if endRow >= e.LineCount() {
+			endRow = e.LineCount() - 1
+		}
+		if endRow <= startRow {
+			return
+		}
+		e.startUndoGroup()
+		for row := startRow; row < endRow && startRow < e.LineCount()-1; row++ {
+			e.joinLineWithNext(startRow)
+		}
+		e.finishUndoGroup()
+		e.cursor = Cursor{Row: startRow, Col: 0}
+		e.clearSelection()
+		e.modal.selectMode = false
+		e.change.lastEdit.Valid = false
+		return
+	}
 	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount()-1 {
 		return
 	}
+	e.joinLineWithNext(e.cursor.Row)
+}
 
+func (e *Editor) joinLineWithNext(row int) bool {
+	if row < 0 || row >= e.LineCount()-1 {
+		return false
+	}
 	// Position at end of current line
-	pos := Cursor{Row: e.cursor.Row, Col: e.lineLen(e.cursor.Row)}
+	pos := Cursor{Row: row, Col: e.lineLen(row)}
 
 	// Add a space before joining (unless line ends with space or next line starts with space)
-	currentLine := e.line(e.cursor.Row)
-	nextLine := e.line(e.cursor.Row + 1)
+	currentLine := e.line(row)
+	nextLine := e.line(row + 1)
 	needSpace := len(currentLine) > 0 && len(nextLine) > 0 &&
 		!isSpaceRune(currentLine[len(currentLine)-1]) &&
 		!isSpaceRune(nextLine[0])
@@ -1128,16 +1224,18 @@ func (e *Editor) joinLinesCmd() {
 	}
 
 	e.cursor = pos
+	return true
 }
 
 // Helix-style toggle select (v) - toggle selection mode
 func (e *Editor) toggleSelectMode() {
 	e.modal.selectMode = !e.modal.selectMode
 	if e.modal.selectMode {
-		// Start selection at cursor
-		e.selectionStart = e.cursor
-		e.selectionEnd = e.cursor
-		e.selectionActive = true
+		if !e.selectionActive && len(e.selectionRanges) == 0 {
+			e.selectionStart = e.cursor
+			e.selectionEnd = e.cursor
+			e.selectionActive = true
+		}
 	} else {
 		e.clearSelection()
 	}
@@ -1150,40 +1248,93 @@ func (e *Editor) extendLine() {
 		return
 	}
 
-	lineLen := e.lineLen(e.cursor.Row)
-
-	// Check if we should extend to next line:
-	// - selection is active
-	// - cursor is at the end of current line
-	// - selection end matches cursor position
-	if e.selectionActive && e.cursor.Col == lineLen &&
-		e.selectionEnd.Row == e.cursor.Row && e.selectionEnd.Col == lineLen {
-		// Extend to next line if available
-		if e.cursor.Row < e.LineCount()-1 {
-			e.cursor.Row++
-			newLineLen := e.lineLen(e.cursor.Row)
-			e.cursor.Col = newLineLen
-			e.selectionEnd = Cursor{Row: e.cursor.Row, Col: newLineLen}
+	if e.selectionActive && e.modal.selectMode {
+		nextRow := e.selectionEnd.Row
+		if e.selectionEnd.Col > 0 {
+			nextRow = e.selectionEnd.Row + 1
 		}
+		if nextRow >= e.LineCount() {
+			return
+		}
+		e.selectionEnd = e.linewiseSelectionEnd(nextRow)
+		e.cursor = e.selectionEnd
 		return
 	}
 
 	// First press: select entire current line with cursor at end
 	e.selectionStart = Cursor{Row: e.cursor.Row, Col: 0}
-	e.selectionEnd = Cursor{Row: e.cursor.Row, Col: lineLen}
-	e.cursor.Col = lineLen
+	e.selectionEnd = e.linewiseSelectionEnd(e.cursor.Row)
+	e.cursor = e.selectionEnd
 	e.selectionActive = true
 	e.modal.selectMode = true
 }
 
+func (e *Editor) linewiseSelectionEnd(row int) Cursor {
+	if row < e.LineCount()-1 {
+		return Cursor{Row: row + 1, Col: 0}
+	}
+	return Cursor{Row: row, Col: e.lineLen(row)}
+}
+
 // Helix-style collapse selection (;) - collapse selection to cursor
 func (e *Editor) collapseSelection() {
+	if len(e.selectionRanges) > 0 {
+		cursors := make([]Cursor, 0, len(e.selectionRanges))
+		for _, r := range e.selectionRanges {
+			pos := e.visibleSelectionHead(r)
+			if pos.Row < 0 || pos.Row >= e.LineCount() {
+				continue
+			}
+			if pos.Col < 0 {
+				pos.Col = 0
+			}
+			if maxCol := e.lineLen(pos.Row); pos.Col > maxCol {
+				pos.Col = maxCol
+			}
+			if !cursorListContains(cursors, pos) {
+				cursors = append(cursors, pos)
+			}
+		}
+		if len(cursors) == 0 {
+			e.clearSelection()
+			e.modal.selectMode = false
+			return
+		}
+		primary := e.primarySelection
+		if primary < 0 || primary >= len(cursors) {
+			primary = 0
+		}
+		cursor := cursors[primary]
+		sortCursors(cursors)
+		e.clearSelection()
+		e.modal.selectMode = false
+		if len(cursors) > 1 {
+			e.profile.helix.multiCursors = cursors
+		} else {
+			e.profile.helix.multiCursors = nil
+		}
+		e.cursor = cursor
+		return
+	}
 	e.clearSelection()
 	e.modal.selectMode = false
 }
 
 // Helix-style flip selection (Alt+;) - swap anchor and cursor
 func (e *Editor) flipSelection() {
+	if len(e.selectionRanges) > 0 {
+		for i := range e.selectionRanges {
+			e.selectionRanges[i].Start, e.selectionRanges[i].End = e.selectionRanges[i].End, e.selectionRanges[i].Start
+		}
+		primary := e.primarySelection
+		if primary < 0 || primary >= len(e.selectionRanges) {
+			primary = 0
+		}
+		e.selectionStart = e.selectionRanges[primary].Start
+		e.selectionEnd = e.selectionRanges[primary].End
+		e.cursor = e.selectionEnd
+		return
+	}
 	if !e.selectionActive {
 		return
 	}
@@ -1194,6 +1345,8 @@ func (e *Editor) clearSelection() {
 	e.selectionActive = false
 	e.selectionStart = Cursor{}
 	e.selectionEnd = Cursor{}
+	e.selectionRanges = nil
+	e.primarySelection = 0
 }
 func (e *Editor) selectAll() {
 	if e.LineCount() == 0 {
@@ -1203,6 +1356,8 @@ func (e *Editor) selectAll() {
 	lastRow := e.LineCount() - 1
 	e.selectionEnd = Cursor{Row: lastRow, Col: e.lineLen(lastRow)}
 	e.selectionActive = true
+	e.selectionRanges = nil
+	e.primarySelection = 0
 }
 
 // expandSelection expands selection to the next larger syntax node
@@ -1268,6 +1423,13 @@ func (e *Editor) extendSelection(move func()) {
 	e.selectionEnd = e.cursor
 }
 func (e *Editor) selectionRange() (Cursor, Cursor, bool) {
+	if len(e.selectionRanges) > 0 {
+		primary := e.primarySelection
+		if primary < 0 || primary >= len(e.selectionRanges) {
+			primary = 0
+		}
+		return e.selectionRanges[primary].normalized()
+	}
 	if !e.selectionActive {
 		return Cursor{}, Cursor{}, false
 	}
@@ -1288,6 +1450,42 @@ func cursorLess(a, b Cursor) bool {
 	return a.Col < b.Col
 }
 func (e *Editor) selectionRangeForLine(lineIdx int) (int, int, bool) {
+	if len(e.selectionRanges) > 0 {
+		lineLen := 0
+		if lineIdx >= 0 && lineIdx < e.LineCount() {
+			lineLen = e.lineLen(lineIdx)
+		}
+		found := false
+		minCol := lineLen
+		maxCol := 0
+		for _, r := range e.selectionRanges {
+			start, end, ok := r.normalized()
+			if !ok || lineIdx < start.Row || lineIdx > end.Row {
+				continue
+			}
+			startCol := 0
+			endCol := lineLen
+			if start.Row == end.Row {
+				startCol = clampRange(start.Col, 0, lineLen)
+				endCol = clampRange(end.Col, 0, lineLen)
+			} else if lineIdx == start.Row {
+				startCol = clampRange(start.Col, 0, lineLen)
+			} else if lineIdx == end.Row {
+				endCol = clampRange(end.Col, 0, lineLen)
+			}
+			if endCol <= startCol {
+				continue
+			}
+			if startCol < minCol {
+				minCol = startCol
+			}
+			if endCol > maxCol {
+				maxCol = endCol
+			}
+			found = true
+		}
+		return minCol, maxCol, found
+	}
 	start, end, ok := e.selectionRange()
 	if !ok {
 		return 0, 0, false

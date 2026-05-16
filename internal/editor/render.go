@@ -65,11 +65,25 @@ func (e *Editor) Render(s Screen) {
 		editorX = mergeReviewLayout.centerX
 		editorWidth = mergeReviewLayout.centerW
 	}
+	windowsActive := !mergeReviewActive && !e.fileTreePreviewVisible() && !e.gitDiffPreviewActive() && editorWidth > 0 && contentViewHeight > 0 && e.windowCount() > 1
+	activeWindow := editorWindowLayout{x: editorX, y: 0, w: editorWidth, h: contentViewHeight}
+	var windowLayouts []editorWindowLayout
+	if windowsActive {
+		windowLayouts = e.windowLayouts(editorX, 0, editorWidth, contentViewHeight)
+		for _, layout := range windowLayouts {
+			if layout.id == e.windows.activeID {
+				activeWindow = layout
+				break
+			}
+		}
+		e.viewport.height = activeWindow.h
+		e.viewport.width = activeWindow.w
+	}
 	gutterWidth := e.gutterWidth()
 	if !e.interaction.freeScroll {
-		e.ensureCursorVisible(contentViewHeight)
+		e.ensureCursorVisible(e.viewport.height)
 		if !skipHeavyHugeFirstPaint {
-			e.ensureCursorVisibleHorizontal(editorWidth, gutterWidth)
+			e.ensureCursorVisibleHorizontal(activeWindow.w, gutterWidth)
 		}
 	}
 
@@ -84,6 +98,8 @@ func (e *Editor) Render(s Screen) {
 			e.renderGitDiffPreview(s, editorX, viewHeight, editorWidth)
 		} else if mergeReviewActive {
 			e.renderMergeReview(s, viewHeight, w)
+		} else if windowsActive {
+			e.renderWindows(s, windowLayouts, editorX, 0, editorWidth, contentViewHeight, skipHeavyHugeFirstPaint)
 		} else {
 			if !skipHeavyHugeFirstPaint {
 				e.prefetchHugeViewport(viewHeight)
@@ -128,30 +144,40 @@ func (e *Editor) Render(s Screen) {
 		}
 	}
 	cursorVisible := true
+	cursorAreaX := editorX
+	cursorAreaY := 0
+	cursorAreaW := editorWidth
+	cursorAreaH := viewHeight
+	if windowsActive {
+		cursorAreaX = activeWindow.x
+		cursorAreaY = activeWindow.y
+		cursorAreaW = activeWindow.w
+		cursorAreaH = activeWindow.h
+	}
 	if e.mode != ModeCommand && e.mode != ModeSearch && e.mode != ModeBranchPicker {
-		cy = e.cursor.Row - e.viewport.scroll
+		cy = cursorAreaY + e.cursor.Row - e.viewport.scroll
 		if mergeReviewActive {
 			cy++
 		}
-		if cy < 0 || cy >= viewHeight {
+		if cy < cursorAreaY || cy >= cursorAreaY+cursorAreaH {
 			cursorVisible = false
 		}
 		if skipHeavyHugeFirstPaint {
-			cx = editorX + gutterWidth
+			cx = cursorAreaX + gutterWidth
 		} else if e.cursor.Row >= 0 && e.cursor.Row < e.LineCount() {
 			if vc, ok := e.hugeVisualCol(e.cursor.Row, e.cursor.Col); ok {
-				cx = editorX + gutterWidth + vc - e.viewport.scrollX
+				cx = cursorAreaX + gutterWidth + vc - e.viewport.scrollX
 			} else {
 				line := e.lineForDisplay(e.cursor.Row)
-				cx = editorX + gutterWidth + visualCol(line, e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
+				cx = cursorAreaX + gutterWidth + visualCol(line, e.cursor.Col, e.display.tabWidth) - e.viewport.scrollX
 			}
 		}
-		if cx < editorX+gutterWidth {
-			cx = editorX + gutterWidth
+		if cx < cursorAreaX+gutterWidth {
+			cx = cursorAreaX + gutterWidth
 		}
-		maxCursorX := w - 1
-		if maxCursorX < editorX+gutterWidth {
-			maxCursorX = editorX + gutterWidth
+		maxCursorX := cursorAreaX + cursorAreaW - 1
+		if maxCursorX < cursorAreaX+gutterWidth {
+			maxCursorX = cursorAreaX + gutterWidth
 		}
 		if cx > maxCursorX {
 			cx = maxCursorX
@@ -319,6 +345,7 @@ func (e *Editor) drawLineSegment(s Screen, y, w, startX int, line []rune, logica
 	}
 	renderSpans := clipHighlightSpans(spans, spanClipStart, spanClipEnd)
 	walker := newHighlightWalker(renderSpans)
+	virtualCursorCols := e.helixVirtualCursorColsForLine(lineIdx)
 	fallbackStyle := e.styleMain
 	conflictBg, conflictActive := e.conflictBackground(conflictKind)
 	if conflictActive {
@@ -403,11 +430,14 @@ func (e *Editor) drawLineSegment(s Screen, y, w, startX int, line []rune, logica
 			_, selBg, _ := e.styleSelection.Decompose()
 			fg, _, _ := activeStyle.Decompose()
 			activeStyle = activeStyle.Foreground(fg).Background(selBg)
-		} else if selStart >= 0 && selEnd > selStart && idx >= selStart && idx < selEnd {
+		} else if e.selectionContainsCell(lineIdx, idx, selStart, selEnd) {
 			// Selection: only change background, keep syntax foreground
 			_, selBg, _ := e.styleSelection.Decompose()
 			fg, _, _ := activeStyle.Decompose()
 			activeStyle = activeStyle.Foreground(fg).Background(selBg)
+		}
+		if virtualCursorCols[idx] {
+			activeStyle = e.virtualCursorStyle(activeStyle)
 		}
 		if r == '\t' {
 			spaces := tabWidth - (col % tabWidth)
@@ -428,7 +458,11 @@ func (e *Editor) drawLineSegment(s Screen, y, w, startX int, line []rune, logica
 	// Clear rest of line
 	for x := startX + col - scrollX; x < w; x++ {
 		if x >= startX {
-			s.SetContent(x, y, ' ', nil, fallbackStyle)
+			style := fallbackStyle
+			if virtualCursorCols[len(line)] && x == startX+col-scrollX {
+				style = e.virtualCursorStyle(style)
+			}
+			s.SetContent(x, y, ' ', nil, style)
 		}
 	}
 }

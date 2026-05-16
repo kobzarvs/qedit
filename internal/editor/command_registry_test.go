@@ -53,3 +53,13 @@ func TestCommandRegistryKeepsBuiltInAutocomplete(t *testing.T) {
 		t.Fatalf("expected worktree switch autocomplete entry")
 	}
 }
+
+func TestSubstituteCommandDoesNotShadowSCommands(t *testing.T) {
+	e := newTestEditor("hello")
+
+	e.execCommand("sidebar")
+
+	if e.ui.statusMessage == "usage: s/old/new/[g]" {
+		t.Fatalf("sidebar command was parsed as substitute")
+	}
+}
