@@ -1175,7 +1175,7 @@ func TestCalculateOptimalLayout(t *testing.T) {
 	}
 
 	// With max height 15, all groups fit in 1 column (6+5+2=13 <= 15)
-	height, cols := calculateOptimalLayout(groups, 15)
+	height, cols := calculateOptimalLayout(groups, 15, maxCmdAutocompleteColumns)
 
 	if len(cols) != 1 {
 		t.Fatalf("expected 1 column, got %d", len(cols))
@@ -1193,7 +1193,7 @@ func TestCalculateOptimalLayoutMultiColumn(t *testing.T) {
 	}
 
 	// With max height 7, File(6) goes to col1, View+Edit(5+2=7) fit in col2
-	height, cols := calculateOptimalLayout(groups, 7)
+	height, cols := calculateOptimalLayout(groups, 7, maxCmdAutocompleteColumns)
 
 	if len(cols) != 2 {
 		t.Fatalf("expected 2 columns, got %d", len(cols))
@@ -1208,7 +1208,7 @@ func TestCalculateOptimalLayoutSingleGroup(t *testing.T) {
 		{Name: "File", Size: 5},
 	}
 
-	height, cols := calculateOptimalLayout(groups, 15)
+	height, cols := calculateOptimalLayout(groups, 15, maxCmdAutocompleteColumns)
 
 	if len(cols) != 1 {
 		t.Fatalf("expected 1 column, got %d", len(cols))
@@ -1219,9 +1219,72 @@ func TestCalculateOptimalLayoutSingleGroup(t *testing.T) {
 }
 
 func TestCalculateOptimalLayoutEmptyGroups(t *testing.T) {
-	height, cols := calculateOptimalLayout(nil, 15)
+	height, cols := calculateOptimalLayout(nil, 15, maxCmdAutocompleteColumns)
 
 	if height != 0 || cols != nil {
 		t.Fatalf("expected height 0, nil cols; got height=%d, cols=%v", height, cols)
+	}
+}
+
+func TestDistributeGroupsBalanced(t *testing.T) {
+	groups := []GroupInfo{
+		{Name: "File", Size: 6},
+		{Name: "View", Size: 5},
+		{Name: "Edit", Size: 2},
+		{Name: "Git", Size: 7},
+	}
+
+	cols := distributeGroupsBalanced(groups, 3)
+	if len(cols) != 3 {
+		t.Fatalf("expected 3 columns, got %d", len(cols))
+	}
+	totalGroups := 0
+	for _, col := range cols {
+		totalGroups += len(col)
+	}
+	if totalGroups != 4 {
+		t.Fatalf("expected 4 groups total, got %d", totalGroups)
+	}
+}
+
+func TestCalculateOptimalLayoutMaxColumns(t *testing.T) {
+	groups := []GroupInfo{
+		{Name: "File", Size: 6},
+		{Name: "View", Size: 5},
+		{Name: "Edit", Size: 2},
+		{Name: "Git", Size: 7},
+	}
+
+	// Short viewport cannot fit all groups without >3 columns; fallback packs into 3.
+	height, cols := calculateOptimalLayout(groups, 6, maxCmdAutocompleteColumns)
+	if len(cols) > maxCmdAutocompleteColumns {
+		t.Fatalf("expected at most %d columns, got %d", maxCmdAutocompleteColumns, len(cols))
+	}
+	if height != 6 {
+		t.Fatalf("expected viewport height 6, got %d", height)
+	}
+	if columnContentHeight(cols) <= 6 {
+		t.Fatalf("expected scrollable content taller than viewport")
+	}
+}
+
+func TestEnsureCmdAutoCompleteVisible(t *testing.T) {
+	e := newTestEditor("line")
+	e.cmdAutoComplete.active = true
+	e.cmdAutoComplete.visibleHeight = 5
+	e.cmdAutoComplete.contentHeight = 12
+	e.cmdAutoComplete.colGroups = [][]GroupInfo{
+		{
+			{Name: "File", Size: 4, Commands: []CommandInfo{{}, {}, {}}},
+			{Name: "View", Size: 9, Commands: make([]CommandInfo, 8)},
+		},
+	}
+	e.cmdAutoComplete.items = make([]CommandInfo, 11)
+	e.cmdAutoComplete.index = 10
+	e.cmdAutoComplete.scroll = 0
+
+	e.ensureCmdAutoCompleteVisible()
+	if e.cmdAutoComplete.scroll == 0 {
+		t.Fatalf("expected scroll > 0 for last item, got %d", e.cmdAutoComplete.scroll)
 	}
 }

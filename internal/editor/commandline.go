@@ -29,6 +29,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 			}
 			e.cmdAutoComplete.active = true
 			e.cmdAutoComplete.index = -1
+			e.cmdAutoComplete.scroll = 0
 			e.cmdAutoComplete.cols = 1 // Will be recalculated on render
 		} else {
 			// Tab moves to next item (down in column, then next column top)
@@ -41,6 +42,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 				}
 			}
 		}
+		e.ensureCmdAutoCompleteVisible()
 		e.updateCmdFromAutocomplete()
 		return false
 	case KeyBacktab:
@@ -54,6 +56,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 					e.cmdAutoComplete.index = len(e.cmdAutoComplete.items) - 1
 				}
 			}
+			e.ensureCmdAutoCompleteVisible()
 			e.updateCmdFromAutocomplete()
 		}
 		return false
@@ -90,6 +93,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 	case KeyLeft, KeyCtrlB: // Ctrl+B = back (readline)
 		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteLeft()
+			e.ensureCmdAutoCompleteVisible()
 			e.updateCmdFromAutocomplete()
 			return false
 		}
@@ -100,6 +104,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 	case KeyRight, KeyCtrlF: // Ctrl+F = forward (readline)
 		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteRight()
+			e.ensureCmdAutoCompleteVisible()
 			e.updateCmdFromAutocomplete()
 			return false
 		}
@@ -116,6 +121,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 	case KeyUp, KeyCtrlP: // Ctrl+P = previous
 		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteUp()
+			e.ensureCmdAutoCompleteVisible()
 			e.updateCmdFromAutocomplete()
 			return false
 		}
@@ -124,6 +130,7 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 	case KeyDown, KeyCtrlN: // Ctrl+N = next
 		if e.cmdAutoComplete.active {
 			e.cmdAutoCompleteDown()
+			e.ensureCmdAutoCompleteVisible()
 			e.updateCmdFromAutocomplete()
 			return false
 		}
@@ -239,6 +246,60 @@ func (e *Editor) saveCmdHistory() {
 // closeAutoComplete closes the command autocomplete popup
 func (e *Editor) closeAutoComplete() {
 	e.cmdAutoComplete = commandAutocompleteState{index: -1}
+}
+
+func (e *Editor) clampCmdAutoCompleteScroll() {
+	maxScroll := e.cmdAutoComplete.contentHeight - e.cmdAutoComplete.visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if e.cmdAutoComplete.scroll > maxScroll {
+		e.cmdAutoComplete.scroll = maxScroll
+	}
+	if e.cmdAutoComplete.scroll < 0 {
+		e.cmdAutoComplete.scroll = 0
+	}
+}
+
+// cmdVisualRow returns the visual row (including group headers) for a command index.
+func (e *Editor) cmdVisualRow(cmdIdx int) int {
+	col, posInCol := e.findCmdPosition(cmdIdx)
+	if col < 0 || col >= len(e.cmdAutoComplete.colGroups) {
+		return 0
+	}
+
+	row := 0
+	cmdCount := 0
+	for _, grp := range e.cmdAutoComplete.colGroups[col] {
+		groupEnd := cmdCount + len(grp.Commands)
+		if posInCol < groupEnd {
+			return row + 1 + (posInCol - cmdCount)
+		}
+		row += 1 + len(grp.Commands)
+		cmdCount = groupEnd
+	}
+	return row
+}
+
+// ensureCmdAutoCompleteVisible adjusts scroll so the selected item stays in view.
+func (e *Editor) ensureCmdAutoCompleteVisible() {
+	if !e.cmdAutoComplete.active || e.cmdAutoComplete.index < 0 {
+		return
+	}
+	if e.cmdAutoComplete.visibleHeight <= 0 {
+		return
+	}
+
+	row := e.cmdVisualRow(e.cmdAutoComplete.index)
+	scroll := e.cmdAutoComplete.scroll
+	vis := e.cmdAutoComplete.visibleHeight
+
+	if row < scroll {
+		e.cmdAutoComplete.scroll = row
+	} else if row >= scroll+vis {
+		e.cmdAutoComplete.scroll = row - vis + 1
+	}
+	e.clampCmdAutoCompleteScroll()
 }
 
 // cmdAutoCompleteUp moves selection up (previous command)
