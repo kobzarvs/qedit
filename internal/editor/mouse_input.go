@@ -367,11 +367,11 @@ func (e *Editor) scrollUp(lines int) {
 	if e.viewport.scroll < 0 {
 		e.viewport.scroll = 0
 	}
+	e.afterEditorViewChanged()
 }
 
 func (e *Editor) scrollDown(lines int) {
-	// Keep last line at least 5 lines above status line
-	viewHeight := e.viewHeightCached()
+	viewHeight := e.paneViewHeight()
 	maxScroll := e.LineCount() - viewHeight + 5
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -380,6 +380,7 @@ func (e *Editor) scrollDown(lines int) {
 	if e.viewport.scroll > maxScroll {
 		e.viewport.scroll = maxScroll
 	}
+	e.afterEditorViewChanged()
 }
 
 // scrollViewUp scrolls the view up (shows earlier lines), keeping cursor visible
@@ -390,17 +391,17 @@ func (e *Editor) scrollViewUp() {
 	e.viewport.scroll--
 	e.interaction.lastScrollTime = time.Now()
 	// If cursor is now below visible area, move it up
-	viewHeight := e.viewHeightCached()
+	viewHeight := e.paneViewHeight()
 	if e.cursor.Row >= e.viewport.scroll+viewHeight {
 		e.cursor.Row = e.viewport.scroll + viewHeight - 1
 		e.clampCursorCol()
 	}
+	e.afterEditorViewChanged()
 }
 
 // scrollViewDown scrolls the view down (shows later lines), keeping cursor visible
 func (e *Editor) scrollViewDown() {
-	// Keep last line at least 5 lines above status line
-	viewHeight := e.viewHeightCached()
+	viewHeight := e.paneViewHeight()
 	maxScroll := e.LineCount() - viewHeight + 5
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -415,4 +416,5 @@ func (e *Editor) scrollViewDown() {
 		e.cursor.Row = e.viewport.scroll
 		e.clampCursorCol()
 	}
+	e.afterEditorViewChanged()
 }

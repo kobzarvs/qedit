@@ -62,6 +62,7 @@ func (e *Editor) renderNotification(s Screen, w int, now time.Time) {
 
 func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	mode := e.currentModeLabel()
+	profile := e.currentProfileLabel()
 	name := e.documentDisplayName()
 	if e.document.filename != "" {
 		if rel, ok := e.relativePathFromWorkingDir(name); ok {
@@ -101,9 +102,9 @@ func (e *Editor) renderStatusline(s Screen, w, y int, showTopMessage bool) {
 	if bufIndicator != "" {
 		namePart = bufIndicator + " " + name
 	}
-	status := fmt.Sprintf(" %s | %s %s", mode, namePart, flags)
+	status := fmt.Sprintf(" %s | %s | %s %s", mode, profile, namePart, flags)
 	if msg != "" {
-		status = fmt.Sprintf(" %s | %s %s | %s ", mode, namePart, flags, msg)
+		status = fmt.Sprintf(" %s | %s | %s %s | %s ", mode, profile, namePart, flags, msg)
 	}
 	row := e.cursor.Row + 1
 	col := 1

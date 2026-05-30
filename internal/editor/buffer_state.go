@@ -43,6 +43,25 @@ func (e *Editor) syncActiveBufferState() {
 	e.buffers.UpdateActive(e.snapshotBufferState())
 }
 
+// syncActiveBufferContent persists document/undo state without overwriting scroll
+// and cursor — those live in per-window views when splits are active.
+func (e *Editor) syncActiveBufferContent() {
+	if e.buffers == nil || e.buffers.Count() == 0 {
+		return
+	}
+	active := e.buffers.Active()
+	if active == nil {
+		return
+	}
+	snap := e.snapshotBufferState()
+	if e.windowCount() > 1 {
+		snap.cursor = active.cursor
+		snap.scroll = active.scroll
+		snap.scrollX = active.scrollX
+	}
+	e.buffers.UpdateActive(snap)
+}
+
 // LoadFileContent replaces the current editor buffer with caller-supplied file contents.
 func (e *Editor) LoadFileContent(path string, data []byte) error {
 	if e.OpenExistingBuffer(path) {
@@ -196,8 +215,24 @@ func (e *Editor) switchToBuffer(index int) {
 	// Restore new buffer state
 	e.restoreBufferState(e.buffers.Active())
 	e.setActiveWindowBufferIndex(index)
+	if leaf := e.activeWindowLeaf(); leaf != nil {
+		e.syncActivePaneViewportSize()
+		e.ensureCursorVisible(e.paneViewHeight())
+		e.saveWindowView(leaf)
+	}
 
 	// Signal runtime controller.
+	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestBufferSwitched})
+}
+
+func (e *Editor) switchToBufferForWindowFocus(index int) {
+	if e.buffers == nil || index < 0 || index >= e.buffers.Count() || index == e.buffers.ActiveIndex() {
+		return
+	}
+	e.saveSessionState()
+	_ = e.SaveUndoHistory()
+	e.buffers.SetActive(index)
+	e.restoreBufferState(e.buffers.Active())
 	e.enqueueRuntimeRequest(RuntimeRequest{Kind: RuntimeRequestBufferSwitched})
 }
 
@@ -239,6 +274,9 @@ func (e *Editor) showBufferList() {
 		return
 	}
 	e.syncActiveBufferState()
+	// Status alone is cleared on the next Normal-mode key (see HandleKey), so :ls
+	// also opens the buffers sidebar where the list stays visible.
+	e.openSidebarBuffers()
 	infos := e.buffers.Items()
 	parts := make([]string, 0, len(infos))
 	prev := e.buffers.PrevIndex()

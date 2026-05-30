@@ -234,6 +234,7 @@ func (e *Editor) scrollCursorToBottom() {
 func (e *Editor) moveLeft() {
 	if e.cursor.Col > 0 {
 		e.cursor.Col--
+		e.afterEditorViewChanged()
 		return
 	}
 	if e.cursor.Row == 0 {
@@ -241,11 +242,13 @@ func (e *Editor) moveLeft() {
 	}
 	e.cursor.Row--
 	e.cursor.Col = e.lineLen(e.cursor.Row)
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveRight() {
 	lineLen := e.lineLen(e.cursor.Row)
 	if e.cursor.Col < lineLen {
 		e.cursor.Col++
+		e.afterEditorViewChanged()
 		return
 	}
 	if e.cursor.Row >= e.LineCount()-1 {
@@ -253,6 +256,7 @@ func (e *Editor) moveRight() {
 	}
 	e.cursor.Row++
 	e.cursor.Col = 0
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveUp() {
 	if e.cursor.Row == 0 {
@@ -263,6 +267,7 @@ func (e *Editor) moveUp() {
 	if e.mode == ModeInsert {
 		e.saveLineState()
 	}
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveDown() {
 	if e.cursor.Row >= e.LineCount()-1 {
@@ -273,6 +278,7 @@ func (e *Editor) moveDown() {
 	if e.mode == ModeInsert {
 		e.saveLineState()
 	}
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveWordLeft() {
 	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
@@ -354,6 +360,7 @@ func (e *Editor) moveWordRight() {
 }
 func (e *Editor) moveLineStart() {
 	e.cursor.Col = 0
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveLineEnd() {
 	if e.cursor.Row < 0 || e.cursor.Row >= e.LineCount() {
@@ -361,6 +368,7 @@ func (e *Editor) moveLineEnd() {
 		return
 	}
 	e.cursor.Col = e.lineLen(e.cursor.Row)
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveFileStart() {
 	prevRow := e.cursor.Row
@@ -369,6 +377,7 @@ func (e *Editor) moveFileStart() {
 	if e.mode == ModeInsert && e.cursor.Row != prevRow {
 		e.saveLineState()
 	}
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveFileEnd() {
 	if e.LineCount() == 0 {
@@ -382,6 +391,7 @@ func (e *Editor) moveFileEnd() {
 	if e.mode == ModeInsert && e.cursor.Row != prevRow {
 		e.saveLineState()
 	}
+	e.afterEditorViewChanged()
 }
 func (e *Editor) moveLineUp() {
 	if e.cursor.Row <= 0 || e.cursor.Row >= e.LineCount() {
@@ -414,10 +424,7 @@ func (e *Editor) moveLineDown() {
 	}
 }
 func (e *Editor) pageUp() {
-	height := e.viewHeightCached()
-	if height < 1 {
-		height = 1
-	}
+	height := e.paneViewHeight()
 	prevRow := e.cursor.Row
 	e.cursor.Row -= height
 	if e.cursor.Row < 0 {
@@ -427,12 +434,10 @@ func (e *Editor) pageUp() {
 	if e.mode == ModeInsert && e.cursor.Row != prevRow {
 		e.saveLineState()
 	}
+	e.afterEditorViewChanged()
 }
 func (e *Editor) pageDown() {
-	height := e.viewHeightCached()
-	if height < 1 {
-		height = 1
-	}
+	height := e.paneViewHeight()
 	prevRow := e.cursor.Row
 	e.cursor.Row += height
 	if e.cursor.Row >= e.LineCount() {
@@ -445,6 +450,7 @@ func (e *Editor) pageDown() {
 	if e.mode == ModeInsert && e.cursor.Row != prevRow {
 		e.saveLineState()
 	}
+	e.afterEditorViewChanged()
 }
 
 // Helix-style word forward (w) - move to next word start

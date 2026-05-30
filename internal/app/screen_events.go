@@ -10,10 +10,6 @@ import (
 func handleScreenEvent(screen tcell.Screen, ed *editor.Editor, ev tcell.Event) (bool, bool) {
 	switch ev := ev.(type) {
 	case *tcell.EventKey:
-		// Emergency exit: allow Ctrl+C to quit even if editor state is stuck.
-		if ev.Key() == tcell.KeyCtrlC {
-			return true, false
-		}
 		if ed.HandleKey(ui.WrapKey(ev)) {
 			return true, false
 		}

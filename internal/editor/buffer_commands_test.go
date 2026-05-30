@@ -10,6 +10,10 @@ func TestVimBufferCommandsThroughFullKeySimulation(t *testing.T) {
 	e, paths := newProfileBufferEditor(t, BehaviorProfileVim)
 
 	pressKeyScript(t, e, ":ls<enter>")
+	if e.sidebar == nil || !e.sidebar.Visible || e.sidebar.Content == nil ||
+		e.sidebar.Content.Mode() != SidebarModeBuffers {
+		t.Fatalf("sidebar = %#v visible=%v, want open buffers sidebar after :ls", e.sidebar.Content, e.sidebar.Visible)
+	}
 	if !strings.Contains(e.ui.statusMessage, "buffers:") ||
 		!strings.Contains(e.ui.statusMessage, filepath.Base(paths[0])) ||
 		!strings.Contains(e.ui.statusMessage, filepath.Base(paths[2])) {

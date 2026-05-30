@@ -21,6 +21,56 @@ func (e *Editor) handleViewKey(ch rune) bool {
 	return false
 }
 
+func windowDirectionFromKey(key Key) (editorWindowDirection, bool) {
+	switch key {
+	case KeyLeft:
+		return editorWindowLeft, true
+	case KeyRight:
+		return editorWindowRight, true
+	case KeyUp:
+		return editorWindowUp, true
+	case KeyDown:
+		return editorWindowDown, true
+	default:
+		return editorWindowLeft, false
+	}
+}
+
+// handleWindowModeKey handles the follow-up key after Ctrl-w / space-w window mode.
+func (e *Editor) handleWindowModeKey(ev EventKey) bool {
+	e.modal.windowMode = false
+	if ev.Key() == KeyEscape {
+		e.modal.pendingKeys = ""
+		e.modal.windowNewPending = false
+		return false
+	}
+	if dir, ok := windowDirectionFromKey(ev.Key()); ok {
+		e.modal.pendingKeys = ""
+		e.modal.windowNewPending = false
+		e.focusDirectionalWindow(dir)
+		switch dir {
+		case editorWindowLeft:
+			e.modal.lastCommand = "C-w arrow-left"
+		case editorWindowRight:
+			e.modal.lastCommand = "C-w arrow-right"
+		case editorWindowUp:
+			e.modal.lastCommand = "C-w arrow-up"
+		case editorWindowDown:
+			e.modal.lastCommand = "C-w arrow-down"
+		}
+		return false
+	}
+	if ev.Key() == KeyRune {
+		return e.handleWindowKey(ev.Rune())
+	}
+	if ev.Key() == KeyCtrlW {
+		return e.handleWindowKey('w')
+	}
+	e.modal.pendingKeys = ""
+	e.modal.windowNewPending = false
+	return false
+}
+
 // handleWindowKey handles the second key after Ctrl-w or space-w prefixes.
 func (e *Editor) handleWindowKey(ch rune) bool {
 	prefix := "C-w"

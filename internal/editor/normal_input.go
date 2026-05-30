@@ -79,21 +79,7 @@ func (e *Editor) handleNormal(ev EventKey) bool {
 
 	// Handle window mode (space-w prefix)
 	if e.modal.windowMode {
-		e.modal.windowMode = false
-		if ev.Key() == KeyEscape {
-			e.modal.pendingKeys = ""
-			e.modal.windowNewPending = false
-			return false
-		}
-		if ev.Key() == KeyRune {
-			return e.handleWindowKey(ev.Rune())
-		}
-		if ev.Key() == KeyCtrlW {
-			return e.handleWindowKey('w')
-		}
-		e.modal.pendingKeys = ""
-		e.modal.windowNewPending = false
-		return false
+		return e.handleWindowModeKey(ev)
 	}
 
 	// Handle pending char input (f/F/t/T/r)

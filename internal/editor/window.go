@@ -28,6 +28,12 @@ type editorWindowState struct {
 	nextID   int
 }
 
+type editorWindowView struct {
+	cursor  Cursor
+	scroll  int
+	scrollX int
+}
+
 type editorWindowNode struct {
 	parent      *editorWindowNode
 	axis        editorWindowAxis
@@ -35,6 +41,7 @@ type editorWindowNode struct {
 	second      *editorWindowNode
 	id          int
 	bufferIndex int
+	view        editorWindowView
 }
 
 type editorWindowLayout struct {
@@ -161,6 +168,76 @@ func (e *Editor) setActiveWindowBufferIndex(index int) {
 	}
 }
 
+func (e *Editor) saveWindowView(leaf *editorWindowNode) {
+	if leaf == nil || !leaf.isLeaf() {
+		return
+	}
+	leaf.view.cursor = e.cursor
+	leaf.view.scroll = e.viewport.scroll
+	leaf.view.scrollX = e.viewport.scrollX
+}
+
+func (e *Editor) loadWindowView(leaf *editorWindowNode) {
+	if leaf == nil || !leaf.isLeaf() {
+		return
+	}
+	e.cursor = leaf.view.cursor
+	e.viewport.scroll = leaf.view.scroll
+	e.viewport.scrollX = leaf.view.scrollX
+	if e.LineCount() > 0 && e.cursor.Row >= e.LineCount() {
+		e.cursor.Row = e.LineCount() - 1
+	}
+	e.clampCursorCol()
+}
+
+func (e *Editor) syncActiveWindowView() {
+	e.saveWindowView(e.activeWindowLeaf())
+}
+
+func (e *Editor) activePaneLayout() (editorWindowLayout, bool) {
+	if e.windowCount() <= 1 {
+		return editorWindowLayout{}, false
+	}
+	for _, layout := range e.navigationWindowLayouts() {
+		if layout.id == e.windows.activeID {
+			return layout, true
+		}
+	}
+	return editorWindowLayout{}, false
+}
+
+func (e *Editor) syncActivePaneViewportSize() {
+	if layout, ok := e.activePaneLayout(); ok {
+		if layout.h > 0 {
+			e.viewport.height = layout.h
+		}
+		if layout.w > 0 {
+			e.viewport.width = layout.w
+		}
+	}
+}
+
+// paneViewHeight returns the visible line count for the active split pane.
+func (e *Editor) paneViewHeight() int {
+	if layout, ok := e.activePaneLayout(); ok && layout.h > 0 {
+		return layout.h
+	}
+	h := e.viewport.height
+	if h < 1 {
+		return 1
+	}
+	return h
+}
+
+func (e *Editor) afterEditorViewChanged() {
+	if e.windowCount() <= 1 {
+		return
+	}
+	e.syncActivePaneViewportSize()
+	e.ensureCursorVisible(e.paneViewHeight())
+	e.syncActiveWindowView()
+}
+
 func (e *Editor) focusWindowByID(id int) bool {
 	e.ensureActiveBufferManaged()
 	leaf := findWindowLeaf(e.windows.root, id)
@@ -168,15 +245,22 @@ func (e *Editor) focusWindowByID(id int) bool {
 		e.setStatus("window not found")
 		return false
 	}
-	if e.buffers != nil && e.buffers.Count() > 0 {
-		e.syncActiveBufferState()
+	if current := e.activeWindowLeaf(); current != nil && current.id != leaf.id {
+		if e.buffers != nil && e.buffers.Count() > 0 {
+			e.syncActiveBufferContent()
+		}
+		e.saveWindowView(current)
 	}
 	e.windows.activeID = leaf.id
 	if e.buffers != nil && leaf.bufferIndex >= 0 && leaf.bufferIndex < e.buffers.Count() {
 		if leaf.bufferIndex != e.buffers.ActiveIndex() {
-			e.switchToBuffer(leaf.bufferIndex)
+			e.switchToBufferForWindowFocus(leaf.bufferIndex)
 		}
 	}
+	e.loadWindowView(leaf)
+	e.syncActivePaneViewportSize()
+	e.clampCursorCol()
+	e.ensureCursorVisible(e.paneViewHeight())
 	return true
 }
 
@@ -287,13 +371,28 @@ func absInt(v int) int {
 }
 
 func (e *Editor) navigationWindowLayouts() []editorWindowLayout {
-	w := e.viewport.width
-	if w < 80 {
-		w = 80
+	w := e.viewport.layoutW
+	h := e.viewport.layoutH
+	if w <= 0 {
+		w = e.viewport.width
 	}
-	h := e.viewport.height
-	if h < 24 {
-		h = 24
+	if h <= 0 {
+		h = e.viewport.height
+	}
+	if e.windowCount() <= 1 {
+		if w < 80 {
+			w = 80
+		}
+		if h < 24 {
+			h = 24
+		}
+	} else {
+		if w <= 0 {
+			w = 80
+		}
+		if h <= 0 {
+			h = 24
+		}
 	}
 	return e.windowLayouts(0, 0, w, h)
 }
@@ -319,15 +418,30 @@ func (e *Editor) splitWindowWithBuffer(axis editorWindowAxis, bufferIndex int, f
 	if axis != editorWindowVertical && axis != editorWindowHorizontal {
 		return
 	}
+	if e.viewport.layoutW <= 0 || e.viewport.layoutH <= 0 {
+		w, h := e.viewport.width, e.viewport.height
+		if w < 80 {
+			w = 80
+		}
+		if h < 24 {
+			h = 24
+		}
+		e.viewport.layoutW = w
+		e.viewport.layoutH = h
+	}
+	e.saveWindowView(leaf)
+	splitView := leaf.view
 	old := &editorWindowNode{
 		parent:      leaf,
 		id:          leaf.id,
 		bufferIndex: leaf.bufferIndex,
+		view:        splitView,
 	}
 	newLeaf := &editorWindowNode{
 		parent:      leaf,
 		id:          e.windows.nextID,
 		bufferIndex: bufferIndex,
+		view:        splitView,
 	}
 	e.windows.nextID++
 	leaf.axis = axis

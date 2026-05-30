@@ -43,8 +43,17 @@ func (a *App) Run() error {
 	sessionStore := newEditorSessionStore(sessionMgr)
 	fileStore := integrations.FileStore{}
 	languageRuntime := newEditorLanguageRuntime(fileStore, langs, services.ts, services.ls, cfg.Editor.HighlightMaxBytes)
+	startupProfile := cfg.Editor.Profile
 	ed := newConfiguredEditor(&cfg, sessionStore, fileStore, languageRuntime)
-	defer ed.Shutdown()
+	defer func() {
+		// Only write when the user changed profile this session. Unconditional
+		// persist on exit used to overwrite a saved vim/basic with helix when
+		// startup failed to apply the config profile (stale binary or load bug).
+		if profile := ed.BehaviorProfile(); profile != "" && profile != startupProfile {
+			_ = persistEditorProfile(&cfg, profile)
+		}
+		ed.Shutdown()
+	}()
 	autoReloadStabilizeDelay := time.Duration(cfg.Editor.AutoReloadStabilizeMS) * time.Millisecond
 	if autoReloadStabilizeDelay < 0 {
 		autoReloadStabilizeDelay = 0

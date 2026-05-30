@@ -24,11 +24,12 @@ func newBehaviorProfileRegistry() behaviorProfileRegistry {
 }
 
 func normalizeBehaviorProfileName(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if name == "" {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case BehaviorProfileBasic, BehaviorProfileHelix, BehaviorProfileVim:
+		return strings.ToLower(strings.TrimSpace(name))
+	default:
 		return BehaviorProfileHelix
 	}
-	return name
 }
 
 func (r *behaviorProfileRegistry) Register(profile BehaviorProfile) {
@@ -95,6 +96,39 @@ func (e *Editor) BehaviorProfile() string {
 		return name
 	}
 	return BehaviorProfileHelix
+}
+
+func (e *Editor) enqueuePersistBehaviorProfileChange(prev string) {
+	next := e.BehaviorProfile()
+	if next == prev {
+		return
+	}
+	e.enqueueRuntimeRequest(RuntimeRequest{
+		Kind:      RuntimeRequestPersistProfile,
+		Value:     next,
+		PrevValue: prev,
+	})
+}
+
+// SetBehaviorProfileAndPersist switches profile and schedules config persistence.
+func (e *Editor) SetBehaviorProfileAndPersist(name string) bool {
+	prev := e.BehaviorProfile()
+	if !e.SetBehaviorProfile(name) {
+		return false
+	}
+	e.enqueuePersistBehaviorProfileChange(prev)
+	return true
+}
+
+func (e *Editor) currentProfileLabel() string {
+	switch e.BehaviorProfile() {
+	case BehaviorProfileVim:
+		return "Vim"
+	case BehaviorProfileBasic:
+		return "Basic"
+	default:
+		return "Helix"
+	}
 }
 
 func (e *Editor) handleProfileKey(ev EventKey) bool {

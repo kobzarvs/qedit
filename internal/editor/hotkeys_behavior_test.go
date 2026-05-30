@@ -2,8 +2,6 @@ package editor
 
 import (
 	"testing"
-
-	"github.com/gdamore/tcell/v2"
 )
 
 type testLanguageRuntime struct {
@@ -54,25 +52,20 @@ func TestSearchEntryHotkeys(t *testing.T) {
 
 func TestSearchNextPrevHotkeys(t *testing.T) {
 	e := newTestEditor("one two one")
-	e.HandleKey(keyRune('/'))
-	e.handleSearch(keyRune('o'))
-	e.handleSearch(keyRune('n'))
-	e.handleSearch(keyRune('e'))
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
+	pressKeyScript(t, e, "/one<enter>")
 	if len(e.searchMatches) < 2 {
 		t.Fatalf("expected matches, got %d", len(e.searchMatches))
 	}
 	first := e.searchMatches[0]
 	second := e.searchMatches[1]
 
-	e.HandleKey(keyRune('n'))
+	pressKeyScript(t, e, "n")
 	if e.cursor.Row != second.Row || e.cursor.Col != second.Col+second.Length {
 		t.Fatalf("n cursor=%+v, want second match end", e.cursor)
 	}
 
-	// Move cursor to start of second match so prev goes to first
 	e.cursor = Cursor{Row: second.Row, Col: second.Col}
-	e.HandleKey(keyRune('N'))
+	pressKeyScript(t, e, "N")
 	if e.cursor.Row != first.Row || e.cursor.Col != first.Col+first.Length {
 		t.Fatalf("N cursor=%+v, want first match end", e.cursor)
 	}

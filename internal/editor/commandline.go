@@ -28,9 +28,10 @@ func (e *Editor) handleCommand(ev EventKey) bool {
 				return false
 			}
 			e.cmdAutoComplete.active = true
-			e.cmdAutoComplete.index = -1
+			e.cmdAutoComplete.index = 0
 			e.cmdAutoComplete.scroll = 0
 			e.cmdAutoComplete.cols = 1 // Will be recalculated on render
+			e.updateCmdFromAutocomplete()
 		} else {
 			// Tab moves to next item (down in column, then next column top)
 			if e.cmdAutoComplete.index < 0 {

@@ -182,6 +182,58 @@ func (e *Editor) VisibleRange() (int, int) {
 	return start, end
 }
 
+// HighlightVisibleRange returns the union of the visible line ranges of every
+// window pane that shows the active buffer. With a single window (or when no
+// other pane shows the active buffer) it equals VisibleRange.
+//
+// Syntax highlights are cached per buffer in a single span map, so when the
+// same buffer is shown in several splits at different scroll offsets, the
+// highlight runtime must request the union of all those ranges — otherwise
+// only the focused pane keeps its highlighting and the others render plain.
+func (e *Editor) HighlightVisibleRange() (int, int) {
+	start, end := e.VisibleRange()
+	lineCount := e.LineCount()
+	if lineCount == 0 || e.windowCount() <= 1 {
+		return start, end
+	}
+	activeBuffer := -1
+	if e.buffers != nil {
+		activeBuffer = e.buffers.ActiveIndex()
+	}
+	activeID := e.windows.activeID
+	for _, layout := range e.navigationWindowLayouts() {
+		if layout.id == activeID {
+			continue
+		}
+		if activeBuffer >= 0 && layout.bufferIndex != activeBuffer {
+			continue
+		}
+		leaf := findWindowLeaf(e.windows.root, layout.id)
+		if leaf == nil {
+			continue
+		}
+		h := layout.h
+		if h < 1 {
+			h = 1
+		}
+		paneStart := leaf.view.scroll
+		if paneStart < 0 {
+			paneStart = 0
+		}
+		paneEnd := paneStart + h - 1
+		if paneEnd >= lineCount {
+			paneEnd = lineCount - 1
+		}
+		if paneStart < start {
+			start = paneStart
+		}
+		if paneEnd > end {
+			end = paneEnd
+		}
+	}
+	return start, end
+}
+
 func (e *Editor) HighlightWindowCols() (int, int) {
 	start := e.viewport.scrollX
 	if start < 0 {

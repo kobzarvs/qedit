@@ -256,7 +256,7 @@ func syncVisibleHighlights(
 				return lastChangeTick, lastHighlightStart, lastHighlightEnd
 			}
 		}
-		start, end := ed.VisibleRange()
+		start, end := ed.HighlightVisibleRange()
 		if state != nil {
 			defer func() {
 				state.lastVisibleStart = start
@@ -346,7 +346,7 @@ func syncVisibleHighlights(
 		}
 	}
 
-	start, end := ed.VisibleRange()
+	start, end := ed.HighlightVisibleRange()
 	if asyncChanged {
 		return lastChangeTick, lastHighlightStart, lastHighlightEnd
 	}

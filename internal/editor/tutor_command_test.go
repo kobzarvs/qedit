@@ -55,6 +55,36 @@ func TestTutorCommandDefaultsToCurrentProfile(t *testing.T) {
 	}
 }
 
+func TestTutorCommandOpensVimTutorViaKeyScript(t *testing.T) {
+	e := newTestEditor("draft")
+	pressKeyScript(t, e, ":tutor vim<enter>")
+
+	if e.BehaviorProfile() != BehaviorProfileVim {
+		t.Fatalf("profile = %q, want %q", e.BehaviorProfile(), BehaviorProfileVim)
+	}
+	if e.document.title != "[Tutor: Vim]" {
+		t.Fatalf("title = %q, want Vim tutor title", e.document.title)
+	}
+	if !strings.Contains(e.Content(), "Welcome   to   the   VIM   Tutor") {
+		t.Fatalf("content does not look like Vim tutor")
+	}
+}
+
+func TestTutorCommandOpensHelixTutorViaKeyScript(t *testing.T) {
+	e := newTestEditor("draft")
+	pressKeyScript(t, e, ":tutor helix<enter>")
+
+	if e.BehaviorProfile() != BehaviorProfileHelix {
+		t.Fatalf("profile = %q, want %q", e.BehaviorProfile(), BehaviorProfileHelix)
+	}
+	if e.document.title != "[Tutor: Helix]" {
+		t.Fatalf("title = %q, want Helix tutor title", e.document.title)
+	}
+	if !strings.Contains(e.Content(), "Welcome to the Helix tutorial") {
+		t.Fatalf("content does not look like Helix tutor")
+	}
+}
+
 func TestTutorCommandRejectsUnknownTutor(t *testing.T) {
 	e := newTestEditor()
 

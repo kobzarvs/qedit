@@ -9,56 +9,56 @@ import (
 
 func TestCommandModeEditingKeys(t *testing.T) {
 	e := newTestEditor("one")
-	e.mode = ModeCommand
-	e.commandLine.text = []rune("hello world")
-	e.commandLine.cursor = 11
+	pressKeyScript(t, e, ":hello world")
+	if e.mode != ModeCommand {
+		t.Fatalf("mode = %v, want command", e.mode)
+	}
+	if e.commandLine.cursor != 11 {
+		t.Fatalf("initial cursor = %d, want 11", e.commandLine.cursor)
+	}
 
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlB, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+b>")
 	if e.commandLine.cursor != 10 {
 		t.Fatalf("ctrl+b cursor = %d, want 10", e.commandLine.cursor)
 	}
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlF, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+f>")
 	if e.commandLine.cursor != 11 {
 		t.Fatalf("ctrl+f cursor = %d, want 11", e.commandLine.cursor)
 	}
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyHome, 0, 0)))
+	pressKeyScript(t, e, "<home>")
 	if e.commandLine.cursor != 0 {
 		t.Fatalf("home cursor = %d, want 0", e.commandLine.cursor)
 	}
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyEnd, 0, 0)))
+	pressKeyScript(t, e, "<end>")
 	if e.commandLine.cursor != len(e.commandLine.text) {
 		t.Fatalf("end cursor = %d, want %d", e.commandLine.cursor, len(e.commandLine.text))
 	}
 
 	e.commandLine.cursor = 5
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyBackspace, 0, 0)))
+	pressKeyScript(t, e, "<backspace>")
 	if string(e.commandLine.text) != "hell world" {
 		t.Fatalf("backspace cmd = %q, want %q", string(e.commandLine.text), "hell world")
 	}
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyDelete, 0, 0)))
+	pressKeyScript(t, e, "<del>")
 	if string(e.commandLine.text) != "hellworld" {
 		t.Fatalf("delete cmd = %q, want %q", string(e.commandLine.text), "hellworld")
 	}
 
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlU, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+u>")
 	if len(e.commandLine.text) != 0 || e.commandLine.cursor != 0 {
 		t.Fatalf("ctrl+u cmd=%q cursor=%d, want empty/0", string(e.commandLine.text), e.commandLine.cursor)
 	}
 
-	e.handleCommand(keyRune('a'))
-	e.handleCommand(keyRune('b'))
-	e.handleCommand(keyRune('c'))
+	pressKeyScript(t, e, "abc")
 	e.commandLine.cursor = 3
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlW, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+w>")
 	if string(e.commandLine.text) != "" {
 		t.Fatalf("ctrl+w cmd = %q, want empty", string(e.commandLine.text))
 	}
 
-	e.handleCommand(keyRune('x'))
-	e.handleCommand(keyRune('y'))
-	e.handleCommand(keyRune('z'))
+	pressKeyScript(t, e, "xyz")
 	e.commandLine.cursor = 1
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlK, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+k>")
 	if string(e.commandLine.text) != "x" {
 		t.Fatalf("ctrl+k cmd = %q, want %q", string(e.commandLine.text), "x")
 	}
@@ -67,59 +67,44 @@ func TestCommandModeEditingKeys(t *testing.T) {
 func TestCommandModeHistoryAndExitKeys(t *testing.T) {
 	e := newTestEditor("one")
 
-	// Seed history via real command entry
-	e.HandleKey(keyRune(':'))
-	e.HandleKey(keyRune('l'))
-	e.HandleKey(keyRune('n'))
-	e.HandleKey(keyRune(' '))
-	e.HandleKey(keyRune('o'))
-	e.HandleKey(keyRune('f'))
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
+	pressKeyScript(t, e, ":ln of<enter>")
+	pressKeyScript(t, e, ":ln rel<enter>")
 
-	e.HandleKey(keyRune(':'))
-	e.HandleKey(keyRune('l'))
-	e.HandleKey(keyRune('n'))
-	e.HandleKey(keyRune(' '))
-	e.HandleKey(keyRune('r'))
-	e.HandleKey(keyRune('e'))
-	e.HandleKey(keyRune('l'))
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
-
-	e.HandleKey(keyRune(':'))
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyUp, 0, 0)))
+	pressKeyScript(t, e, ":")
+	pressKeyScript(t, e, "<up>")
 	if string(e.commandLine.text) != "ln rel" {
 		t.Fatalf("up history = %q, want %q", string(e.commandLine.text), "ln rel")
 	}
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, 0)))
+	pressKeyScript(t, e, "<down>")
 	if string(e.commandLine.text) != "" {
 		t.Fatalf("down history = %q, want empty", string(e.commandLine.text))
 	}
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlP, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+p>")
 	if string(e.commandLine.text) != "ln rel" {
 		t.Fatalf("ctrl+p history = %q, want %q", string(e.commandLine.text), "ln rel")
 	}
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlN, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+n>")
 	if string(e.commandLine.text) != "" {
 		t.Fatalf("ctrl+n history = %q, want empty", string(e.commandLine.text))
 	}
 
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0)))
+	pressKeyScript(t, e, "<esc>")
 	if e.mode != ModeNormal || len(e.commandLine.text) != 0 {
 		t.Fatalf("esc exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.commandLine.text))
 	}
 
-	e.HandleKey(keyRune(':'))
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyCtrlC, 0, 0)))
+	pressKeyScript(t, e, ":")
+	pressKeyScript(t, e, "<ctrl+c>")
 	if e.mode != ModeNormal || len(e.commandLine.text) != 0 {
 		t.Fatalf("ctrl+c exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.commandLine.text))
 	}
 
-	e.HandleKey(keyRune(':'))
-	e.HandleKey(keyRune('n'))
-	e.HandleKey(keyRune('o'))
-	e.HandleKey(keyRune('p'))
-	e.HandleKey(keyRune('e'))
-	e.handleCommand(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
+	pressKeyScript(t, e, "<esc>")
+	if quit := e.HandleKey(eventForKeyString(t, "ctrl+c")); quit {
+		t.Fatal("ctrl+c in normal mode must not request app quit")
+	}
+
+	pressKeyScript(t, e, ":nope<enter>")
 	if e.mode != ModeNormal || len(e.commandLine.text) != 0 {
 		t.Fatalf("enter exit mode=%v cmd=%q, want normal/empty", e.mode, string(e.commandLine.text))
 	}
@@ -130,52 +115,50 @@ func TestCommandModeHistoryAndExitKeys(t *testing.T) {
 
 func TestSearchModeEditingKeys(t *testing.T) {
 	e := newTestEditor("one two one")
-	e.HandleKey(keyRune('/'))
-
-	e.handleSearch(keyRune('o'))
-	e.handleSearch(keyRune('n'))
-	e.handleSearch(keyRune('e'))
+	pressKeyScript(t, e, "/one")
+	if e.mode != ModeSearch {
+		t.Fatalf("mode = %v, want search", e.mode)
+	}
 	if string(e.searchQuery) != "one" {
 		t.Fatalf("query = %q, want %q", string(e.searchQuery), "one")
 	}
 
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyLeft, 0, 0)))
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyCtrlB, 0, 0)))
+	pressKeyScript(t, e, "<left>")
+	pressKeyScript(t, e, "<ctrl+b>")
 	if e.searchCursor != 1 {
 		t.Fatalf("left/ctrl+b cursor = %d, want 1", e.searchCursor)
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyRight, 0, 0)))
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyCtrlF, 0, 0)))
+	pressKeyScript(t, e, "<right>")
+	pressKeyScript(t, e, "<ctrl+f>")
 	if e.searchCursor != 3 {
 		t.Fatalf("right/ctrl+f cursor = %d, want 3", e.searchCursor)
 	}
 
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyHome, 0, 0)))
+	pressKeyScript(t, e, "<home>")
 	if e.searchCursor != 0 {
 		t.Fatalf("home cursor = %d, want 0", e.searchCursor)
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyEnd, 0, 0)))
+	pressKeyScript(t, e, "<end>")
 	if e.searchCursor != len(e.searchQuery) {
 		t.Fatalf("end cursor = %d, want %d", e.searchCursor, len(e.searchQuery))
 	}
 
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyBackspace, 0, 0)))
+	pressKeyScript(t, e, "<backspace>")
 	if string(e.searchQuery) != "on" {
 		t.Fatalf("backspace query = %q, want %q", string(e.searchQuery), "on")
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyDelete, 0, 0)))
+	pressKeyScript(t, e, "<del>")
 	if string(e.searchQuery) != "on" {
 		t.Fatalf("delete query = %q, want %q", string(e.searchQuery), "on")
 	}
 
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyCtrlW, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+w>")
 	if string(e.searchQuery) != "" {
 		t.Fatalf("ctrl+w query = %q, want empty", string(e.searchQuery))
 	}
 
-	e.handleSearch(keyRune('a'))
-	e.handleSearch(keyRune('b'))
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyCtrlU, 0, 0)))
+	pressKeyScript(t, e, "ab")
+	pressKeyScript(t, e, "<ctrl+u>")
 	if string(e.searchQuery) != "" {
 		t.Fatalf("ctrl+u query = %q, want empty", string(e.searchQuery))
 	}
@@ -184,41 +167,36 @@ func TestSearchModeEditingKeys(t *testing.T) {
 func TestSearchModeHistoryAndExitKeys(t *testing.T) {
 	e := newTestEditor("one two one")
 
-	// Seed history via actual search
-	e.HandleKey(keyRune('/'))
-	e.handleSearch(keyRune('o'))
-	e.handleSearch(keyRune('n'))
-	e.handleSearch(keyRune('e'))
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyEnter, 0, 0)))
+	pressKeyScript(t, e, "/one<enter>")
 	if e.lastSearchQuery != "one" {
 		t.Fatalf("lastSearchQuery = %q, want %q", e.lastSearchQuery, "one")
 	}
 
-	e.HandleKey(keyRune('/'))
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyUp, 0, 0)))
+	pressKeyScript(t, e, "/")
+	pressKeyScript(t, e, "<up>")
 	if string(e.searchQuery) != "one" {
 		t.Fatalf("up history = %q, want %q", string(e.searchQuery), "one")
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, 0)))
+	pressKeyScript(t, e, "<down>")
 	if string(e.searchQuery) != "" {
 		t.Fatalf("down history = %q, want empty", string(e.searchQuery))
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyCtrlP, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+p>")
 	if string(e.searchQuery) != "one" {
 		t.Fatalf("ctrl+p history = %q, want %q", string(e.searchQuery), "one")
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyCtrlN, 0, 0)))
+	pressKeyScript(t, e, "<ctrl+n>")
 	if string(e.searchQuery) != "" {
 		t.Fatalf("ctrl+n history = %q, want empty", string(e.searchQuery))
 	}
 
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0)))
+	pressKeyScript(t, e, "<esc>")
 	if e.mode != ModeNormal {
 		t.Fatalf("esc mode = %v, want normal", e.mode)
 	}
 
-	e.HandleKey(keyRune('/'))
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyCtrlC, 0, 0)))
+	pressKeyScript(t, e, "/")
+	pressKeyScript(t, e, "<ctrl+c>")
 	if e.mode != ModeNormal {
 		t.Fatalf("ctrl+c mode = %v, want normal", e.mode)
 	}
@@ -226,18 +204,15 @@ func TestSearchModeHistoryAndExitKeys(t *testing.T) {
 
 func TestSearchModeMetaUpDownNavigatesMatches(t *testing.T) {
 	e := newTestEditor("one two one", "one")
-	e.HandleKey(keyRune('/'))
-	e.handleSearch(keyRune('o'))
-	e.handleSearch(keyRune('n'))
-	e.handleSearch(keyRune('e'))
+	pressKeyScript(t, e, "/one")
 	if len(e.searchMatches) < 2 {
 		t.Fatalf("expected matches, got %d", len(e.searchMatches))
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModMeta)))
+	pressKeyScript(t, e, "<cmd+down>")
 	if e.cursor.Row != e.searchMatches[1].Row || e.cursor.Col != e.searchMatches[1].Col+e.searchMatches[1].Length {
 		t.Fatalf("cmd+down cursor=%+v, want match1", e.cursor)
 	}
-	e.handleSearch(wrapKey(tcell.NewEventKey(tcell.KeyUp, 0, tcell.ModMeta)))
+	pressKeyScript(t, e, "<cmd+up>")
 	if e.cursor.Row != e.searchMatches[0].Row || e.cursor.Col != e.searchMatches[0].Col+e.searchMatches[0].Length {
 		t.Fatalf("cmd+up cursor=%+v, want match0", e.cursor)
 	}

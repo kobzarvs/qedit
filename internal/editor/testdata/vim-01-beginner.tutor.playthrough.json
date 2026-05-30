@@ -1,0 +1,27 @@
+{
+  "must_contain": [
+    "The cow jumped over the moon.",
+    "There is some text missing from this line.",
+    "There is also some text missing here.",
+    "There are some words that don't belong in this sentence.",
+    "Somebody typed the end of this line twice.",
+    "This line of words is cleaned up.",
+    "1)  Roses are red,",
+    "3)  Violets are blue,",
+    "6)  Sugar is sweet",
+    "7)  And so are you.",
+    "Fix the errors on this line and replace them with undo.",
+    "When this line was typed in, someone pressed some wrong keys!",
+    "This line has a few words that need changing using the change operator.",
+    "The end of this line needs to be corrected using the c$ command.",
+    "Usually the best time to see the flowers is in the spring.",
+    "This line will allow you to practice appending text to a line.",
+    "Adding 123 to 456 gives you 579.",
+    "a) This is the first item.",
+    "b) This is the second item."
+  ],
+  "deleted": [
+    "2)  Mud is fun,",
+    "4)  I have a car,"
+  ]
+}

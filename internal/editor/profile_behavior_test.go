@@ -3,14 +3,12 @@ package editor
 import (
 	"strings"
 	"testing"
-
-	"github.com/gdamore/tcell/v2"
 )
 
 func TestBasicProfileTypesWithoutEnteringInsert(t *testing.T) {
-	e := New(Options{Profile: BehaviorProfileBasic})
+	e := newSimulatedProfileEditor(BehaviorProfileBasic, "")
 
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'i', 0)))
+	pressKeyScript(t, e, "i")
 
 	if got := e.Content(); got != "i" {
 		t.Fatalf("content = %q, want %q", got, "i")
@@ -21,11 +19,9 @@ func TestBasicProfileTypesWithoutEnteringInsert(t *testing.T) {
 }
 
 func TestVimProfileEnterInsertAndType(t *testing.T) {
-	e := New(Options{Profile: BehaviorProfileVim})
+	e := newSimulatedProfileEditor(BehaviorProfileVim, "")
 
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'i', 0)))
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'x', 0)))
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyEscape, 0, 0)))
+	pressKeyScript(t, e, "ix<esc>")
 
 	if got := e.Content(); got != "x" {
 		t.Fatalf("content = %q, want %q", got, "x")
@@ -36,11 +32,9 @@ func TestVimProfileEnterInsertAndType(t *testing.T) {
 }
 
 func TestVimProfileDeleteWordWithDw(t *testing.T) {
-	e := New(Options{Profile: BehaviorProfileVim})
-	e.text = NewTextBufferFromString("one two")
+	e := newSimulatedProfileEditor(BehaviorProfileVim, "one two")
 
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'd', 0)))
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'w', 0)))
+	pressKeyScript(t, e, "dw")
 
 	if got := e.Content(); got != "two" {
 		t.Fatalf("content = %q, want %q", got, "two")
@@ -48,12 +42,9 @@ func TestVimProfileDeleteWordWithDw(t *testing.T) {
 }
 
 func TestVimProfileLinewiseYankPaste(t *testing.T) {
-	e := New(Options{Profile: BehaviorProfileVim})
-	e.text = NewTextBufferFromString("one\ntwo")
+	e := newSimulatedProfileEditor(BehaviorProfileVim, "one", "two")
 
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'y', 0)))
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'y', 0)))
-	e.HandleKey(wrapKey(tcell.NewEventKey(tcell.KeyRune, 'p', 0)))
+	pressKeyScript(t, e, "yyp")
 
 	if got := e.Content(); got != "one\none\ntwo" {
 		t.Fatalf("content = %q, want %q", got, "one\\none\\ntwo")
@@ -61,10 +52,9 @@ func TestVimProfileLinewiseYankPaste(t *testing.T) {
 }
 
 func TestBasicProfileAltXOpensCommandLine(t *testing.T) {
-	e := newTestEditor("one")
-	e.SetBehaviorProfile(BehaviorProfileBasic)
+	e := newSimulatedProfileEditor(BehaviorProfileBasic, "one")
 
-	e.HandleKey(eventForKeyString(t, "alt+x"))
+	pressKeyScript(t, e, "<alt+x>")
 
 	if e.mode != ModeCommand {
 		t.Fatalf("mode = %v, want %v", e.mode, ModeCommand)
@@ -91,7 +81,7 @@ func TestBasicProfileAltMEntersMergeReview(t *testing.T) {
 	e.conflicts.dirty = false
 	e.mode = ModeInsert
 
-	e.HandleKey(eventForKeyString(t, "alt+m"))
+	pressKeyScript(t, e, "<alt+m>")
 
 	if e.mode != ModeMerge {
 		t.Fatalf("mode = %v, want %v", e.mode, ModeMerge)

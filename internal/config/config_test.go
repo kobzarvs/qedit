@@ -117,6 +117,40 @@ background = "#bbbbbb"
 	}
 }
 
+func TestLoadEditorProfile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QEDIT_CONFIG_HOME", dir)
+
+	writeFile(t, filepath.Join(dir, "config.toml"), `
+[editor]
+profile = "vim"
+`)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Editor.Profile != "vim" {
+		t.Fatalf("Profile = %q, want %q", cfg.Editor.Profile, "vim")
+	}
+}
+
+func TestUpdateEditorProfileRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("QEDIT_CONFIG_HOME", dir)
+
+	if err := UpdateEditorProfile("basic"); err != nil {
+		t.Fatalf("UpdateEditorProfile: %v", err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if cfg.Editor.Profile != "basic" {
+		t.Fatalf("Profile = %q, want %q", cfg.Editor.Profile, "basic")
+	}
+}
+
 func TestLoadHighlightMaxBytes(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("QEDIT_CONFIG_HOME", dir)

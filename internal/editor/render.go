@@ -68,6 +68,10 @@ func (e *Editor) Render(s Screen) {
 	windowsActive := !mergeReviewActive && !e.fileTreePreviewVisible() && !e.gitDiffPreviewActive() && editorWidth > 0 && contentViewHeight > 0 && e.windowCount() > 1
 	activeWindow := editorWindowLayout{x: editorX, y: 0, w: editorWidth, h: contentViewHeight}
 	var windowLayouts []editorWindowLayout
+	if editorWidth > 0 && contentViewHeight > 0 {
+		e.viewport.layoutW = editorWidth
+		e.viewport.layoutH = contentViewHeight
+	}
 	if windowsActive {
 		windowLayouts = e.windowLayouts(editorX, 0, editorWidth, contentViewHeight)
 		for _, layout := range windowLayouts {
@@ -100,6 +104,8 @@ func (e *Editor) Render(s Screen) {
 			e.renderMergeReview(s, viewHeight, w)
 		} else if windowsActive {
 			e.renderWindows(s, windowLayouts, editorX, 0, editorWidth, contentViewHeight, skipHeavyHugeFirstPaint)
+			e.viewport.height = activeWindow.h
+			e.viewport.width = activeWindow.w
 		} else {
 			if !skipHeavyHugeFirstPaint {
 				e.prefetchHugeViewport(viewHeight)

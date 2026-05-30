@@ -96,6 +96,9 @@ func newConfiguredEditor(cfg *config.Config, sessionStore editor.SessionStore, f
 
 	ed.LoadCmdHistory()
 	ed.LoadSearchHistory()
+	if profile := cfg.Editor.Profile; profile != "" {
+		ed.SetBehaviorProfile(profile)
+	}
 	return ed
 }
 

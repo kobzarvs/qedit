@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -379,6 +380,8 @@ func Default() Config {
 				"enter":         "newline",
 				"tab":           "indent",
 				"shift+tab":     "unindent",
+				"cmd+z":         "undo",
+				"cmd+shift+z":   "redo",
 				"cmd+a":         "select_all",
 				"f3":            "git_next_change",
 				"shift+f3":      "git_prev_change",
@@ -413,6 +416,9 @@ func Load() (Config, error) {
 
 	if userCfg.Editor.TabWidth > 0 {
 		cfg.Editor.TabWidth = userCfg.Editor.TabWidth
+	}
+	if md.IsDefined("editor", "profile") && userCfg.Editor.Profile != "" {
+		cfg.Editor.Profile = normalizeEditorProfile(userCfg.Editor.Profile)
 	}
 	if userCfg.Editor.LineNumbers != "" {
 		cfg.Editor.LineNumbers = userCfg.Editor.LineNumbers
@@ -784,8 +790,18 @@ func UpdateEditorSidebarWidth(width string) error {
 	return os.WriteFile(path, buf.Bytes(), 0o644)
 }
 
+func normalizeEditorProfile(profile string) string {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "basic", "helix", "vim":
+		return strings.ToLower(strings.TrimSpace(profile))
+	default:
+		return "helix"
+	}
+}
+
 // UpdateEditorProfile persists behavior profile in config.
 func UpdateEditorProfile(profile string) error {
+	profile = normalizeEditorProfile(profile)
 	path, err := ConfigPath()
 	if err != nil {
 		return err

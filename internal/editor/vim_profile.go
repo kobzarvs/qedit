@@ -73,21 +73,7 @@ func (e *Editor) handleCommonProfileOverlays(ev EventKey) (bool, bool) {
 	}
 
 	if e.modal.windowMode {
-		e.modal.windowMode = false
-		if ev.Key() == KeyEscape {
-			e.modal.pendingKeys = ""
-			e.modal.windowNewPending = false
-			return true, false
-		}
-		if ev.Key() == KeyRune {
-			return true, e.handleWindowKey(ev.Rune())
-		}
-		if ev.Key() == KeyCtrlW {
-			return true, e.handleWindowKey('w')
-		}
-		e.modal.pendingKeys = ""
-		e.modal.windowNewPending = false
-		return true, false
+		return true, e.handleWindowModeKey(ev)
 	}
 
 	return false, false
@@ -293,16 +279,12 @@ func (e *Editor) handleVimVisual(ev EventKey) bool {
 			e.commandLine.historyIndex = -1
 			return false
 		}
-		before := e.cursor
 		if e.applyVimMotionRune(ev.Rune(), e.consumeVimCount()) {
 			e.selectionActive = true
 			if e.profile.vim.visualLine {
 				e.updateVimVisualLineSelection()
 			} else {
-				e.selectionEnd = e.cursor
-			}
-			if !e.profile.vim.visualLine && before == e.cursor && e.selectionStart == e.selectionEnd {
-				e.selectionEnd.Col++
+				e.updateVimCharVisualSelection()
 			}
 			e.resetVimPendingState()
 			return false
@@ -835,9 +817,9 @@ func (e *Editor) resetVimPendingState() {
 func (e *Editor) enterVimVisualMode() {
 	e.profile.vim.visual = true
 	e.profile.vim.visualLine = false
+	e.profile.vim.visualAnchor = e.cursor
 	e.selectionActive = true
-	e.selectionStart = e.cursor
-	e.selectionEnd = e.cursor
+	e.updateVimCharVisualSelection()
 	e.resetVimPendingState()
 }
 
@@ -1231,6 +1213,18 @@ func (e *Editor) vimYankLines(count int) {
 	}
 	e.vimStoreActiveRegister()
 	e.copyToSystemClipboard(false)
+}
+
+func (e *Editor) updateVimCharVisualSelection() {
+	anchor := e.profile.vim.visualAnchor
+	cur := e.cursor
+	if cursorLess(cur, anchor) {
+		e.selectionStart = cur
+		e.selectionEnd = e.advanceCursorOne(anchor)
+		return
+	}
+	e.selectionStart = anchor
+	e.selectionEnd = e.advanceCursorOne(cur)
 }
 
 func (e *Editor) advanceCursorOne(pos Cursor) Cursor {

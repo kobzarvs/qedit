@@ -96,7 +96,7 @@ func (c *profileSidebarContent) OnEnter() editor.SidebarActionData {
 		return editor.SidebarActionData{Action: editor.SidebarActionNone}
 	}
 	next := c.profiles[c.index]
-	if !c.editor.SetBehaviorProfile(next) {
+	if !c.editor.SetBehaviorProfileAndPersist(next) {
 		return editor.SidebarActionData{Action: editor.SidebarActionNone}
 	}
 	c.editor.SetStatusMessage("profile=" + c.editor.BehaviorProfile())

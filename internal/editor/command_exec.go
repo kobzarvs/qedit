@@ -577,11 +577,7 @@ func (e *Editor) executeProfileCommand(args []string) bool {
 		e.setStatus("unknown profile: " + next)
 		return false
 	}
-	e.enqueueRuntimeRequest(RuntimeRequest{
-		Kind:      RuntimeRequestPersistProfile,
-		Value:     next,
-		PrevValue: prev,
-	})
+	e.enqueuePersistBehaviorProfileChange(prev)
 	e.setStatus("profile=" + e.BehaviorProfile())
 	return false
 }

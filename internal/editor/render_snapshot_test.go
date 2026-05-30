@@ -21,7 +21,7 @@ func TestRenderSnapshotBaseline(t *testing.T) {
 		"hello" + strings.Repeat(".", snapshotWidth-len("hello")),
 		"world" + strings.Repeat(".", snapshotWidth-len("world")),
 		strings.Repeat(".", snapshotWidth),
-		".NORMAL.|.[No.Name]..Ln.1,.Col.1",
+		".NORMAL.|.Helix.|.[N.Ln.1,.Col.1",
 		strings.Repeat(".", snapshotWidth),
 	}, "\n")
 

@@ -5,14 +5,20 @@ import "strings"
 type CommandHandler func(*Editor, []string) bool
 
 type CommandDefinition struct {
-	Names   []string
-	Entries []CommandInfo
-	Handle  CommandHandler
+	Names    []string
+	Entries  []CommandInfo
+	Profiles []string // empty = all behavior profiles
+	Handle   CommandHandler
 }
 
 type commandRegistry struct {
 	handlers     map[string]CommandDefinition
-	autocomplete []CommandInfo
+	autocomplete []commandAutocompleteEntry
+}
+
+type commandAutocompleteEntry struct {
+	info     CommandInfo
+	profiles []string
 }
 
 func newCommandRegistry() commandRegistry {
@@ -28,7 +34,12 @@ func (r *commandRegistry) Register(def CommandDefinition) {
 	for _, name := range def.Names {
 		r.handlers[name] = def
 	}
-	r.autocomplete = append(r.autocomplete, def.Entries...)
+	for _, entry := range def.Entries {
+		r.autocomplete = append(r.autocomplete, commandAutocompleteEntry{
+			info:     entry,
+			profiles: append([]string(nil), def.Profiles...),
+		})
+	}
 }
 
 func (r *commandRegistry) Lookup(name string) (CommandDefinition, bool) {
@@ -36,18 +47,31 @@ func (r *commandRegistry) Lookup(name string) (CommandDefinition, bool) {
 	return def, ok
 }
 
-func (r *commandRegistry) Filter(prefix string) []CommandInfo {
+func (r *commandRegistry) Filter(prefix, profile string) []CommandInfo {
 	prefix = strings.TrimSpace(prefix)
-	if prefix == "" {
-		return append([]CommandInfo(nil), r.autocomplete...)
-	}
 	var result []CommandInfo
-	for _, cmd := range r.autocomplete {
-		if strings.HasPrefix(cmd.Name, prefix) {
-			result = append(result, cmd)
+	for _, entry := range r.autocomplete {
+		if !commandVisibleForProfile(entry.profiles, profile) {
+			continue
 		}
+		if prefix != "" && !strings.HasPrefix(entry.info.Name, prefix) {
+			continue
+		}
+		result = append(result, entry.info)
 	}
 	return result
+}
+
+func commandVisibleForProfile(profiles []string, profile string) bool {
+	if len(profiles) == 0 {
+		return true
+	}
+	for _, name := range profiles {
+		if name == profile {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Editor) RegisterCommand(def CommandDefinition) {
@@ -55,7 +79,7 @@ func (e *Editor) RegisterCommand(def CommandDefinition) {
 }
 
 func (e *Editor) filterCommands(prefix string) []CommandInfo {
-	return e.commands.Filter(prefix)
+	return e.commands.Filter(prefix, e.BehaviorProfile())
 }
 
 func (e *Editor) registerBuiltInCommands() {
@@ -137,7 +161,8 @@ func (e *Editor) registerBuiltInCommands() {
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
-		Names: []string{"set"},
+		Names:    []string{"set"},
+		Profiles: []string{BehaviorProfileVim},
 		Entries: []CommandInfo{
 			{Name: "set", Description: "show editor options", Group: CmdGroupView},
 			{Name: "set ic", Description: "enable ignorecase search", Group: CmdGroupView},
@@ -150,7 +175,8 @@ func (e *Editor) registerBuiltInCommands() {
 		},
 	})
 	e.RegisterCommand(CommandDefinition{
-		Names: []string{"nohlsearch", "noh"},
+		Names:    []string{"nohlsearch", "noh"},
+		Profiles: []string{BehaviorProfileVim},
 		Entries: []CommandInfo{
 			{Name: "nohlsearch", Description: "clear highlighted search matches", Group: CmdGroupView},
 		},
