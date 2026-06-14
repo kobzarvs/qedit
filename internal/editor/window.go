@@ -475,7 +475,7 @@ func newEditorBufferState(filename, title, text string) *BufferState {
 		text:      NewTextBufferFromString(text),
 		filename:  filename,
 		title:     title,
-		file:      editorFileState{diskContent: text},
+		file:      editorFileState{diskContent: text, diskContentValid: true},
 		highlight: editorHighlightState{start: -1, end: -1},
 		mode:      ModeNormal,
 	}

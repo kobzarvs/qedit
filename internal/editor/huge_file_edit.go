@@ -937,6 +937,7 @@ func (e *Editor) ReloadSavedHugeFile(path string, store FileStore) error {
 	e.file.readOnly = false
 	e.file.externalChange = ExternalChangeNone
 	e.file.diskContent = ""
+	e.file.diskContentValid = true
 	e.file.snapshot = snapshotFromMetadata(meta)
 	e.savePoint = len(e.undo)
 	e.updateDirty()

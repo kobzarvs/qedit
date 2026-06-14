@@ -80,6 +80,7 @@ func (e *Editor) LoadFileContent(path string, data []byte) error {
 	e.clearGitDiffPreview()
 	e.cursor = Cursor{}
 	e.file.diskContent = e.Content()
+	e.file.diskContentValid = true
 	e.file.readOnly = false
 	e.resetConflictBlocks()
 	e.viewport.scroll = 0
@@ -156,6 +157,7 @@ func (e *Editor) LoadHugeFileWithKind(path string, store FileStore, meta FileMet
 	e.clearGitDiffPreview()
 	e.cursor = Cursor{}
 	e.file.diskContent = ""
+	e.file.diskContentValid = true
 	e.file.readOnly = false
 	e.resetConflictBlocks()
 	e.viewport.scroll = 0

@@ -214,6 +214,53 @@ func TestSidebarFileTreeContentUsesRuntimeFileStoreReadDir(t *testing.T) {
 	}
 }
 
+func TestSidebarFileTreeMarksChildrenOfIgnoredDir(t *testing.T) {
+	store := &testFileStore{
+		absPaths: map[string]string{
+			".":              "/project",
+			"/project":       "/project",
+			"/project/build": "/project/build",
+		},
+		readDataByPath: map[string][]byte{
+			"/project/.gitignore": []byte("build/\n"),
+		},
+		dirEntries: map[string][]DirEntry{
+			"/project": {
+				{Name: ".git", IsDir: true},
+				{Name: "build", IsDir: true},
+			},
+			"/project/build": {
+				{Name: "out.txt"},
+			},
+		},
+		stats: map[string]FileMetadata{
+			"/project":            {IsDir: true},
+			"/project/.git":       {IsDir: true},
+			"/project/.gitignore": {IsDir: false},
+			"/project/build":      {IsDir: true},
+			"/project/build/out.txt": {
+				IsDir: false,
+			},
+		},
+	}
+
+	content := NewSidebarFileTreeContent(store, "/project", false, true)
+	if err := content.loadDir("/project/build"); err != nil {
+		t.Fatalf("loadDir returned error: %v", err)
+	}
+
+	items := content.Items()
+	if len(items) != 2 {
+		t.Fatalf("items len = %d, want parent and file", len(items))
+	}
+	if items[1].Label != "out.txt" {
+		t.Fatalf("item label = %q, want out.txt", items[1].Label)
+	}
+	if !items[1].IsIgnored {
+		t.Fatalf("child of ignored directory is not marked ignored")
+	}
+}
+
 func TestOpenSidebarFileTreeQueuesRuntimeRequest(t *testing.T) {
 	e := newTestEditor("hello")
 

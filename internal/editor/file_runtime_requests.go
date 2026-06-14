@@ -30,6 +30,7 @@ func (e *Editor) ApplySavedFile(path string) {
 	e.savePoint = len(e.undo)
 	e.file.externalChange = ExternalChangeNone
 	e.file.diskContent = e.Content()
+	e.file.diskContentValid = true
 	e.updateDirty()
 	_ = e.syncFileSnapshot()
 	_ = e.SaveUndoHistory()
@@ -81,6 +82,7 @@ func (e *Editor) ApplyReloadedContent(data []byte) {
 	e.replaceBuffer(string(data), false)
 	e.selectionActive = false
 	e.file.diskContent = e.Content()
+	e.file.diskContentValid = true
 	_ = e.syncFileSnapshot()
 	_ = e.LoadUndoHistory()
 	if e.buffers != nil && e.buffers.Count() > 0 {

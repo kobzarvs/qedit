@@ -61,6 +61,51 @@ func TestHandleAutoReloadResultsUsesRuntimeMerger(t *testing.T) {
 	}
 }
 
+func TestHandleAutoReloadResultsUsesEmptyDiskBase(t *testing.T) {
+	ed := editor.New(editor.Options{})
+	if err := ed.LoadFileContent("/tmp/empty.txt", nil); err != nil {
+		t.Fatalf("LoadFileContent returned error: %v", err)
+	}
+	ed.ApplyFormattedContent("local")
+
+	merger := &testAutoReloadMerger{merged: "merged"}
+	monitor := &externalFileMonitor{
+		ed:                ed,
+		merger:            merger,
+		autoReloadSeq:     1,
+		autoReloadActive:  true,
+		autoReloadResults: make(chan autoReloadResult, 1),
+	}
+	monitor.autoReloadResults <- autoReloadResult{
+		seq:  1,
+		data: []byte("remote"),
+	}
+
+	monitor.HandleAutoReloadResults()
+
+	if merger.base != "" {
+		t.Fatalf("merge base = %q, want empty", merger.base)
+	}
+	if merger.local != "local" {
+		t.Fatalf("merge local = %q, want local", merger.local)
+	}
+	if merger.remote != "remote" {
+		t.Fatalf("merge remote = %q, want remote", merger.remote)
+	}
+	if got := ed.Content(); got != "merged" {
+		t.Fatalf("content = %q, want merged", got)
+	}
+}
+
+func TestFileWatchEventMatchesImmutableWatchedPath(t *testing.T) {
+	if !fileWatchEventMatches("/tmp/project/../project/file.txt", "/tmp/project/file.txt") {
+		t.Fatalf("expected cleaned event path to match watched path")
+	}
+	if fileWatchEventMatches("/tmp/project/old.txt", "/tmp/project/new.txt") {
+		t.Fatalf("old watcher event matched new watched path")
+	}
+}
+
 func TestHandleAutoReloadResultsWithoutMergerKeepsPendingExternalChange(t *testing.T) {
 	ed := editor.New(editor.Options{})
 	if err := ed.LoadFileContent("/tmp/main.txt", []byte("alpha\nbravo\ncharlie\n")); err != nil {

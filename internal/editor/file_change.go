@@ -210,7 +210,7 @@ func (e *Editor) MarkExternalDirty() {
 func (e *Editor) PrepareExternalMerge(remote string) ExternalMergePlan {
 	remoteNormalized := string(normalizeNewlines([]byte(remote)))
 	base := e.file.diskContent
-	if base == "" {
+	if !e.file.diskContentValid {
 		base = e.Content()
 	}
 	local := e.Content()
@@ -245,6 +245,7 @@ func (e *Editor) ApplyExternalMergePlan(plan ExternalMergePlan, merged string, c
 	switch plan.Mode {
 	case ExternalMergeModeNoChange:
 		e.file.diskContent = plan.Remote
+		e.file.diskContentValid = true
 		e.updateDirty()
 		_ = e.syncFileSnapshot()
 		return
@@ -252,6 +253,7 @@ func (e *Editor) ApplyExternalMergePlan(plan ExternalMergePlan, merged string, c
 		e.replaceBuffer(plan.Remote, false)
 		e.selectionActive = false
 		e.file.diskContent = plan.Remote
+		e.file.diskContentValid = true
 		e.updateDirty()
 		e.resetConflictBlocks()
 		_ = e.syncFileSnapshot()
@@ -276,6 +278,7 @@ func (e *Editor) ApplyExternalMergePlan(plan ExternalMergePlan, merged string, c
 		}
 		e.selectionActive = false
 		e.file.diskContent = plan.Remote
+		e.file.diskContentValid = true
 		e.updateDirty()
 		_ = e.syncFileSnapshot()
 	}

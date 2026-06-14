@@ -156,24 +156,7 @@ func matchesGitignore(patterns []gitignorePattern, relPath string, isDir bool) b
 	relPath = filepath.ToSlash(relPath)
 	matched := false
 	for _, p := range patterns {
-		if p.IsDir && !isDir {
-			continue
-		}
-		target := relPath
-		if p.matchBase {
-			target = path.Base(relPath)
-		}
-		if p.regex == nil {
-			if p.matchBase && plainPatternMatch(p.Pattern, target) {
-				if p.Negation {
-					matched = false
-				} else {
-					matched = true
-				}
-			}
-			continue
-		}
-		if p.regex.MatchString(target) || (p.matchBase && plainPatternMatch(p.Pattern, target)) {
+		if gitignorePatternMatches(p, relPath, isDir) {
 			if p.Negation {
 				matched = false
 			} else {
@@ -182,6 +165,42 @@ func matchesGitignore(patterns []gitignorePattern, relPath string, isDir bool) b
 		}
 	}
 	return matched
+}
+
+func gitignorePatternMatches(p gitignorePattern, relPath string, isDir bool) bool {
+	candidates := []string{relPath}
+	if p.IsDir && !isDir {
+		candidates = parentDirs(relPath)
+	}
+	for _, candidate := range candidates {
+		target := candidate
+		if p.matchBase {
+			target = path.Base(candidate)
+		}
+		if p.regex == nil {
+			if p.matchBase && plainPatternMatch(p.Pattern, target) {
+				return true
+			}
+			continue
+		}
+		if p.regex.MatchString(target) || (p.matchBase && plainPatternMatch(p.Pattern, target)) {
+			return true
+		}
+	}
+	return false
+}
+
+func parentDirs(relPath string) []string {
+	relPath = strings.Trim(relPath, "/")
+	if relPath == "" || !strings.Contains(relPath, "/") {
+		return nil
+	}
+	parts := strings.Split(relPath, "/")
+	dirs := make([]string, 0, len(parts)-1)
+	for i := 1; i < len(parts); i++ {
+		dirs = append(dirs, strings.Join(parts[:i], "/"))
+	}
+	return dirs
 }
 
 func plainPatternMatch(pattern, target string) bool {

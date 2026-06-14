@@ -67,6 +67,7 @@ func (e *Editor) openScratchBuffer(title, text string) {
 	e.clearGitDiffPreview()
 	e.cursor = Cursor{}
 	e.file.diskContent = text
+	e.file.diskContentValid = true
 	e.file.readOnly = false
 	e.resetConflictBlocks()
 	e.viewport.scroll = 0

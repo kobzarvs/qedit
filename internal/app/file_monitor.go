@@ -88,10 +88,10 @@ func (m *externalFileMonitor) Watch(path string) {
 	}
 	m.fileWatcher = watcher
 	m.fileEvents = make(chan time.Time, 1)
-	go m.watchLoop(watcher, m.fileEvents)
+	go m.watchLoop(watcher, m.fileEvents, absPath)
 }
 
-func (m *externalFileMonitor) watchLoop(w *fsnotify.Watcher, events chan time.Time) {
+func (m *externalFileMonitor) watchLoop(w *fsnotify.Watcher, events chan time.Time, watchedPath string) {
 	sendEvent := func(ts time.Time) {
 		select {
 		case events <- ts:
@@ -117,7 +117,7 @@ func (m *externalFileMonitor) watchLoop(w *fsnotify.Watcher, events chan time.Ti
 			if ev.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
 				continue
 			}
-			if filepath.Clean(ev.Name) != m.watchedPath {
+			if !fileWatchEventMatches(ev.Name, watchedPath) {
 				continue
 			}
 			sendEvent(time.Now())
@@ -129,6 +129,10 @@ func (m *externalFileMonitor) watchLoop(w *fsnotify.Watcher, events chan time.Ti
 			logger.Warn("file watcher error", "error", err)
 		}
 	}
+}
+
+func fileWatchEventMatches(eventPath, watchedPath string) bool {
+	return filepath.Clean(eventPath) == watchedPath
 }
 
 func (m *externalFileMonitor) readFileStable(path string) ([]byte, error) {

@@ -106,6 +106,7 @@ func TestMergeExternalContentConflict(t *testing.T) {
 	})
 	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
 	e.file.diskContent = e.Content()
+	e.file.diskContentValid = true
 	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
 
 	conflict, err := e.MergeExternalContent("alpha\nremote\ncharlie\n")
@@ -144,6 +145,7 @@ func TestMergeExternalContentNoConflict(t *testing.T) {
 	e.SetMerger(testMerger{merged: "alpha\nmerged\ncharlie\n"})
 	e.replaceBuffer("alpha\nbravo\ncharlie\n", false)
 	e.file.diskContent = e.Content()
+	e.file.diskContentValid = true
 	e.replaceBuffer("alpha\nlocal\ncharlie\n", true)
 
 	conflict, err := e.MergeExternalContent("alpha\nremote\ncharlie\n")
@@ -158,6 +160,26 @@ func TestMergeExternalContentNoConflict(t *testing.T) {
 	}
 	if len(e.conflicts.blocks) != 0 {
 		t.Fatalf("expected no conflict blocks")
+	}
+}
+
+func TestMergeExternalContentUsesEmptyDiskBase(t *testing.T) {
+	e := newTestEditor()
+	if err := e.LoadFileContent("/tmp/empty.txt", nil); err != nil {
+		t.Fatalf("LoadFileContent returned error: %v", err)
+	}
+	e.SetMerger(testMerger{merged: "merged"})
+	e.ApplyFormattedContent("local")
+
+	conflict, err := e.MergeExternalContent("remote")
+	if err != nil {
+		t.Fatalf("merge error: %v", err)
+	}
+	if conflict {
+		t.Fatalf("unexpected conflict")
+	}
+	if got := e.Content(); got != "merged" {
+		t.Fatalf("content=%q, want merged result", got)
 	}
 }
 
